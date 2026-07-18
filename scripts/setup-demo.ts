@@ -1,6 +1,9 @@
+#!/usr/bin/env node
+
 import { execFile } from "node:child_process";
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { promisify } from "node:util";
 
@@ -9,10 +12,16 @@ const parsed = parseArgs({
   options: { target: { type: "string", default: "/tmp/safechange-payment-demo" } },
 });
 const target = resolve(parsed.values.target ?? "/tmp/safechange-payment-demo");
-const template = join(process.cwd(), "demo", "payment-retry-template");
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const template = join(packageRoot, "demo", "payment-retry-template");
 
 await mkdir(dirname(target), { recursive: true });
 await cp(template, target, { recursive: true, errorOnExist: true, force: false });
+await writeFile(
+  join(target, ".gitignore"),
+  "node_modules/\ndist/\n.safechange/\n",
+  "utf8",
+);
 await execFileAsync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], {
   cwd: target,
   timeout: 120_000,
@@ -32,4 +41,7 @@ await execFileAsync("git", ["commit", "-m", "demo baseline"], {
   timeout: 10_000,
 });
 
-process.stdout.write(`${target}\n`);
+const task = "Retry a payment once after a transient timeout without allowing a duplicate charge";
+process.stdout.write(
+  `Demo: ${target}\nRun: safechange run --repo ${JSON.stringify(target)} --plans 3 --task ${JSON.stringify(task)}\n`,
+);

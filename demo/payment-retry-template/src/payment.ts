@@ -1,7 +1,7 @@
 export interface ChargeRequest {
-  paymentId: string;
-  amount: number;
-  idempotencyKey: string;
+  readonly paymentId: string;
+  readonly amount: number;
+  readonly idempotencyKey: string;
 }
 
 export interface ChargeReceipt {

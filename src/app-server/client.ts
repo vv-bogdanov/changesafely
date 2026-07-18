@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
+import { safeEnvironment } from "../environment.js";
 import type { InitializeParams } from "./generated/types/InitializeParams.js";
 import type { InitializeResponse } from "./generated/types/InitializeResponse.js";
 import type { JsonValue } from "./generated/types/serde_json/JsonValue.js";
@@ -7,6 +8,8 @@ import type { ItemCompletedNotification } from "./generated/types/v2/ItemComplet
 import type { SandboxPolicy } from "./generated/types/v2/SandboxPolicy.js";
 import type { ThreadForkParams } from "./generated/types/v2/ThreadForkParams.js";
 import type { ThreadForkResponse } from "./generated/types/v2/ThreadForkResponse.js";
+import type { ThreadResumeParams } from "./generated/types/v2/ThreadResumeParams.js";
+import type { ThreadResumeResponse } from "./generated/types/v2/ThreadResumeResponse.js";
 import type { ThreadStartParams } from "./generated/types/v2/ThreadStartParams.js";
 import type { ThreadStartResponse } from "./generated/types/v2/ThreadStartResponse.js";
 import type { TurnCompletedNotification } from "./generated/types/v2/TurnCompletedNotification.js";
@@ -48,6 +51,7 @@ export interface AppServerClientOptions {
   cwd?: string;
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface RunTurnOptions {
@@ -55,6 +59,8 @@ export interface RunTurnOptions {
   sandboxPolicy: SandboxPolicy;
   outputSchema?: object;
   timeoutMs?: number;
+  effort?: string;
+  model?: string;
 }
 
 export interface TurnResult {
@@ -92,7 +98,7 @@ export class AppServerClient {
     const args = this.options.args ?? ["app-server", "--listen", "stdio://"];
     this.process = spawn(command, args, {
       cwd: this.options.cwd,
-      env: process.env,
+      env: safeEnvironment(this.options.env),
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -134,6 +140,10 @@ export class AppServerClient {
     return this.request("thread/fork", params);
   }
 
+  resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
+    return this.request("thread/resume", params);
+  }
+
   async runTurn(
     threadId: string,
     prompt: string,
@@ -145,6 +155,8 @@ export class AppServerClient {
       cwd: options.cwd,
       approvalPolicy: "never",
       sandboxPolicy: options.sandboxPolicy,
+      ...(options.effort ? { effort: options.effort } : {}),
+      ...(options.model ? { model: options.model } : {}),
       ...(options.outputSchema
         ? { outputSchema: options.outputSchema as JsonValue }
         : {}),

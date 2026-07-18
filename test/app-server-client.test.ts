@@ -8,7 +8,7 @@ test("completes the App Server handshake and one structured turn", async () => {
   const fixture = join(process.cwd(), "dist", "test", "fixtures", "fake-app-server.js");
   const client = new AppServerClient({
     command: process.execPath,
-    args: [fixture],
+    args: [fixture, "expect-spark"],
     requestTimeoutMs: 1_000,
     turnTimeoutMs: 1_000,
   });
@@ -27,6 +27,8 @@ test("completes the App Server handshake and one structured turn", async () => {
     const result = await client.runTurn("thread-1", "Return the smoke artifact.", {
       cwd: process.cwd(),
       sandboxPolicy: { type: "readOnly", networkAccess: false },
+      model: "gpt-5.3-codex-spark",
+      effort: "low",
       outputSchema: smokeArtifactSchema,
     });
     assert.equal(result.status, "completed");

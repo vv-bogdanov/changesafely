@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -12,6 +12,7 @@ export interface BaselineSnapshot {
   commit: string;
   trackedStatus: string;
   files: Record<string, string>;
+  protectedConfiguration: Record<string, string>;
   fingerprint: string;
 }
 
@@ -47,6 +48,35 @@ async function pathExists(path: string): Promise<boolean> {
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+export async function inspectProtectedConfiguration(
+  repoPath: string,
+): Promise<Record<string, string>> {
+  const protectedConfiguration: Record<string, string> = {};
+  for (const path of [".env", ".env.local", ".npmrc"]) {
+    const absolutePath = join(repoPath, path);
+    if (await pathExists(absolutePath)) {
+      const metadata = await stat(absolutePath);
+      protectedConfiguration[path] = sha256(
+        `${metadata.size}:${metadata.mtimeMs}:${metadata.mode}`,
+      );
+    }
+  }
+  return protectedConfiguration;
+}
+
+export async function assertProtectedConfigurationUnchanged(
+  repoPath: string,
+  expected: Record<string, string>,
+): Promise<void> {
+  const actual = await inspectProtectedConfiguration(repoPath);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new PreflightError(
+      "PROTECTED_CONFIGURATION_CHANGED",
+      "Protected configuration metadata changed during the SafeChange run",
+    );
+  }
 }
 
 export async function inspectBaseline(repoPath: string): Promise<BaselineSnapshot> {
@@ -105,10 +135,26 @@ export async function inspectBaseline(repoPath: string): Promise<BaselineSnapsho
     files[path] = sha256(await readFile(join(root, path)));
   }
 
+  const protectedConfiguration = await inspectProtectedConfiguration(root);
+
   const fingerprint = sha256(
-    JSON.stringify({ commit, trackedStatus, files: Object.entries(files) }),
+    JSON.stringify({
+      commit,
+      branch,
+      trackedStatus,
+      files: Object.entries(files),
+      protectedConfiguration: Object.entries(protectedConfiguration),
+    }),
   );
-  return { repoPath: root, branch, commit, trackedStatus, files, fingerprint };
+  return {
+    repoPath: root,
+    branch,
+    commit,
+    trackedStatus,
+    files,
+    protectedConfiguration,
+    fingerprint,
+  };
 }
 
 export async function assertBaselineUnchanged(
@@ -180,4 +226,20 @@ export async function currentCommit(repoPath: string): Promise<string> {
 
 export async function currentBranch(repoPath: string): Promise<string> {
   return git(repoPath, ["branch", "--show-current"]);
+}
+
+export async function isAncestor(
+  repoPath: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+      cwd: repoPath,
+      timeout: 10_000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -9,13 +9,15 @@ import {
 } from "./artifacts.js";
 import {
   changedPaths,
+  assertProtectedConfigurationUnchanged,
   commitPaths,
   createSafeChangeBranch,
+  diffFrom,
   hashFiles,
   inspectBaseline,
 } from "./git.js";
 import { testAuthorPrompt } from "./prompts.js";
-import { runCommand, type CommandResult } from "./runner.js";
+import { isSafetyTestCommand, runCommand, type CommandResult } from "./runner.js";
 import {
   harnessArtifactSchema,
   type ChangeContract,
@@ -29,6 +31,8 @@ export interface HarnessOptions {
   repoPath: string;
   runId: string;
   clientFactory?: () => AppServerClient;
+  sandboxCommands?: boolean;
+  model?: string;
 }
 
 export interface HarnessResult {
@@ -75,8 +79,13 @@ function selectedTestPaths(plan: DetailedPlan): string[] {
   return [...paths];
 }
 
+export function diffRemovesExistingLines(diff: string): boolean {
+  return diff.split("\n").some((line) => line.startsWith("-") && !line.startsWith("---"));
+}
+
 export async function runHarness(options: HarnessOptions): Promise<HarnessResult> {
   const repoPath = resolve(options.repoPath);
+  const roleEffort = options.model ? "medium" : "low";
   const state = await loadRunState(repoPath, options.runId);
   if (state.status !== "PLANNED") {
     throw new Error(`Run ${state.runId} is not ready for harness creation: ${state.status}`);
@@ -151,12 +160,18 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
           excludeTmpdirEnvVar: false,
           excludeSlashTmp: false,
         },
+        effort: roleEffort,
+        ...(options.model ? { model: options.model } : {}),
         outputSchema: harnessArtifactSchema,
       },
     );
     roleContext.turnId = turn.turnId;
     roleContext.status = "completed";
     const harness = parseHarness(turn.message);
+    await assertProtectedConfigurationUnchanged(
+      repoPath,
+      state.baselineProtectedConfiguration ?? {},
+    );
     const paths = await changedPaths(repoPath, "HEAD");
     if (paths.length === 0) throw new Error("Test Author did not create a safety harness");
     const unexpected = paths.filter(
@@ -170,6 +185,10 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     if (undeclared.length > 0) {
       throw new Error(`Harness omitted protected paths: ${undeclared.join(", ")}`);
     }
+    const harnessDiff = await diffFrom(repoPath, "HEAD");
+    if (diffRemovesExistingLines(harnessDiff)) {
+      throw new Error("Harness removed or rewrote existing test/fixture lines");
+    }
     const changedContents = (
       await Promise.all(paths.map((path) => readFile(resolve(repoPath, path), "utf8")))
     ).join("\n");
@@ -177,7 +196,22 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       throw new Error("Harness contains forbidden skip/only usage");
     }
 
-    const command = await runCommand(harness.targetedCommand.argv, repoPath);
+    const plannedSafetyCommands = new Set(
+      plan.safetyTests.map((test) => JSON.stringify(test.argv)),
+    );
+    if (
+      !isSafetyTestCommand(harness.targetedCommand.argv) ||
+      !plannedSafetyCommands.has(JSON.stringify(harness.targetedCommand.argv))
+    ) {
+      throw new Error("Harness targeted command must be a selected-plan test command");
+    }
+    const command = await runCommand(harness.targetedCommand.argv, repoPath, {
+      sandboxed: options.sandboxCommands ?? false,
+    });
+    await assertProtectedConfigurationUnchanged(
+      repoPath,
+      state.baselineProtectedConfiguration ?? {},
+    );
     const combinedOutput = `${command.stdout}\n${command.stderr}`;
     const expectedPass = harness.expectedBaselineOutcome === "pass";
     if ((command.exitCode === 0) !== expectedPass) {
@@ -226,7 +260,12 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     }
     return { branch, testCommit, protectedHashes, command, harness };
   } catch (error) {
-    state.status = "FAILED";
+    state.status =
+      options.sandboxCommands &&
+      error instanceof Error &&
+      /sandbox|test-failure signal/i.test(error.message)
+        ? "BLOCKED"
+        : "FAILED";
     state.phase = "test-author-failed";
     state.reason = error instanceof Error ? error.message : String(error);
     state.nextAction = "Inspect the SafeChange branch and Test Author diff; no cleanup was performed.";

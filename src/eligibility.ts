@@ -1,4 +1,5 @@
 import type { ChangeContract, DetailedPlan } from "./schemas.js";
+import { isSafetyTestCommand } from "./runner.js";
 
 export interface EligibilityFailure {
   code: string;
@@ -76,6 +77,17 @@ export function evaluatePlan(
     failures.push({
       code: "MISSING_VERIFICATION_STRATEGY",
       message: "Plan requires safety tests and deterministic verification commands",
+    });
+  }
+  const invalidSafetyCommands = plan.safetyTests.filter(
+    (test) => !isSafetyTestCommand(test.argv),
+  );
+  if (invalidSafetyCommands.length > 0) {
+    failures.push({
+      code: "INVALID_SAFETY_COMMAND",
+      message: `Safety checks must run tests: ${invalidSafetyCommands
+        .map((test) => test.argv.join(" "))
+        .join("; ")}`,
     });
   }
   if (plan.recovery.length === 0) {

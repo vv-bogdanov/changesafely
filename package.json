@@ -4,10 +4,14 @@
   "description": "A Codex-powered CLI for planned, test-first, independently verified code changes.",
   "type": "module",
   "bin": {
-    "safechange": "dist/src/cli.js"
+    "safechange": "dist/src/cli.js",
+    "safechange-demo": "dist/scripts/setup-demo.js"
   },
   "files": [
-    "dist",
+    "dist/src",
+    "dist/scripts",
+    "demo",
+    "docs",
     "README.md"
   ],
   "engines": {

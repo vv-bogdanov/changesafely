@@ -9,6 +9,8 @@ interface Message {
 
 let threadNumber = 0;
 let turnNumber = 0;
+let verifierNumber = 0;
+const mode = process.argv[2] ?? "default";
 const lines = createInterface({ input: process.stdin });
 const send = (message: unknown): void => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -16,6 +18,7 @@ const send = (message: unknown): void => {
 
 async function structuredOutput(prompt: string): Promise<unknown> {
   if (prompt.includes("[SAFECHANGE_ROLE:discovery]")) {
+    if (mode === "malformed") return { summary: "missing required fields" };
     return {
       summary: "Small TypeScript fixture with one source file.",
       facts: [
@@ -48,6 +51,10 @@ async function structuredOutput(prompt: string): Promise<unknown> {
   if (prompt.includes("[SAFECHANGE_ROLE:planner]")) {
     const planId = prompt.match(/planner (plan-\d+)/)?.[1] ?? "plan-1";
     const lens = prompt.match(/lens is: ([a-z-]+)/)?.[1] ?? "minimal-change";
+    if (mode === "out-of-order") {
+      const delay = planId === "plan-1" ? 40 : planId === "plan-2" ? 20 : 0;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
     return {
       planId,
       lens,
@@ -64,7 +71,16 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         { id: "S1", description: "Add the failing acceptance test.", paths: ["test/value.test.ts"] },
         { id: "S2", description: "Implement the behavior.", paths: ["src/value.ts"] },
       ],
-      safetyTests: [{ name: "acceptance", proves: "AC1 and INV1", argv: ["npm", "test"] }],
+      safetyTests: [
+        {
+          name: "acceptance",
+          proves: "AC1 and INV1",
+          argv:
+            mode === "planner-correction" && !prompt.includes("[SAFECHANGE_CORRECTION]")
+              ? ["npm", "run", "typecheck"]
+              : ["npm", "test"],
+        },
+      ],
       verificationCommands: [{ name: "test", argv: ["npm", "test"], purpose: "Verify behavior" }],
       dependencies: [],
       migrations: [],
@@ -77,6 +93,17 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     };
   }
   if (prompt.includes("[SAFECHANGE_ROLE:judge]")) {
+    if (mode === "judge-correction" && !prompt.includes("[SAFECHANGE_CORRECTION]")) {
+      return {
+        winnerPlanId: "plan-1",
+        reason: "The plan is eligible but a residual policy question remains.",
+        rejectedPlans: [],
+        tradeoffs: [],
+        residualRisks: ["Fixture policy is intentionally narrow."],
+        humanDecisionRequired: true,
+        humanDecisionReason: "Confirm the existing fixture policy.",
+      };
+    }
     return {
       winnerPlanId: "plan-1",
       reason: "It is the smallest admissible plan.",
@@ -103,7 +130,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       fixturePaths: [],
       targetedCommand: {
         name: "targeted acceptance",
-        argv: ["node", "--test", "test/value.test.ts"],
+        argv: ["npm", "test"],
         purpose: "Prove the requested behavior is missing on baseline",
       },
       expectedBaselineOutcome: "fail",
@@ -112,7 +139,22 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     };
   }
   if (prompt.includes("[SAFECHANGE_ROLE:implementer]")) {
-    await writeFile("src/value.ts", "export const value = 2;\n", "utf8");
+    const source =
+      mode === "failed-command"
+        ? "export const value = 3;\n"
+        : mode === "repair"
+          ? "export const value = 2; // verifier repair target\n"
+          : "export const value = 2;\n";
+    await writeFile("src/value.ts", source, "utf8");
+    if (mode === "protected-edit") {
+      await writeFile("test/value.test.ts", "// weakened\n", "utf8");
+    }
+    if (mode === "scope-expansion") {
+      await writeFile("unexpected.ts", "export {};\n", "utf8");
+    }
+    if (mode === "protected-config") {
+      await writeFile(".env", "SAFECHANGE_TEST_VALUE=changed\n", "utf8");
+    }
     return {
       summary: "Changed the existing value implementation within selected scope.",
       changedPaths: ["src/value.ts"],
@@ -121,7 +163,37 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       residualRisks: [],
     };
   }
+  if (prompt.includes("[SAFECHANGE_ROLE:repair]")) {
+    await writeFile("src/value.ts", "export const value = 2;\n", "utf8");
+    return {
+      summary: "Removed the concrete local defect reported by the Verifier.",
+      changedPaths: ["src/value.ts"],
+      testsAdded: [],
+      scopeNotes: ["Repair stayed within the selected production path."],
+      residualRisks: [],
+    };
+  }
   if (prompt.includes("[SAFECHANGE_ROLE:verifier]")) {
+    verifierNumber += 1;
+    if (mode === "repair" && verifierNumber === 1) {
+      return {
+        verdict: "reject",
+        contractFulfilled: false,
+        invariantsPreserved: false,
+        scopeConformant: true,
+        evidenceSufficient: true,
+        reason: "A concrete local implementation defect remains.",
+        findings: [
+          {
+            code: "LOCAL_DEFECT",
+            severity: "error",
+            message: "Remove the temporary implementation marker.",
+            path: "src/value.ts",
+          },
+        ],
+        residualRisks: [],
+      };
+    }
     return {
       verdict: "accept",
       contractFulfilled: true,
@@ -151,13 +223,31 @@ lines.on("line", async (line) => {
     return;
   }
 
-  if (message.method === "thread/start" || message.method === "thread/fork") {
+  if (
+    message.method === "thread/start" ||
+    message.method === "thread/fork"
+  ) {
     threadNumber += 1;
     send({ id: message.id, result: { thread: { id: `thread-${threadNumber}` } } });
     return;
   }
 
+  if (message.method === "thread/resume") {
+    send({
+      id: message.id,
+      result: { thread: { id: String(message.params?.threadId ?? "thread-unknown") } },
+    });
+    return;
+  }
+
   if (message.method === "turn/start") {
+    if (
+      mode === "expect-spark" &&
+      (message.params?.model !== "gpt-5.3-codex-spark" || message.params?.effort !== "low")
+    ) {
+      send({ id: message.id, error: { code: -32602, message: "model/effort mismatch" } });
+      return;
+    }
     turnNumber += 1;
     const turnId = `turn-${turnNumber}`;
     const threadId = String(message.params?.threadId ?? "thread-unknown");

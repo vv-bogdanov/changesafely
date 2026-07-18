@@ -150,13 +150,17 @@ export interface SmokeArtifact {
   message: string;
 }
 
-const stringSchema = { type: "string", minLength: 1 } as const;
-const stringArraySchema = { type: "array", items: stringSchema } as const;
+const stringSchema = { type: "string", minLength: 1, maxLength: 400 } as const;
+const stringArraySchema = {
+  type: "array",
+  maxItems: 12,
+  items: stringSchema,
+} as const;
 const referenceSchema = {
   type: "object",
   additionalProperties: false,
   required: ["path", "detail"],
-  properties: { path: stringSchema, detail: { type: "string" } },
+  properties: { path: stringSchema, detail: { type: "string", maxLength: 400 } },
 } as const;
 const commandSchema = {
   type: "object",
@@ -207,6 +211,7 @@ export const evidenceArtifactSchema = {
     summary: stringSchema,
     facts: {
       type: "array",
+      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -214,11 +219,11 @@ export const evidenceArtifactSchema = {
         properties: {
           id: stringSchema,
           claim: stringSchema,
-          references: { type: "array", items: referenceSchema },
+          references: { type: "array", maxItems: 4, items: referenceSchema },
         },
       },
     },
-    commands: { type: "array", items: commandSchema },
+    commands: { type: "array", maxItems: 6, items: commandSchema },
     testGaps: stringArraySchema,
     constraints: stringArraySchema,
     assumptions: stringArraySchema,
@@ -245,17 +250,20 @@ export const changeContractSchema = {
     acceptanceCriteria: {
       type: "array",
       minItems: 1,
+      maxItems: 12,
       items: contractItemSchema,
     },
     protectedInvariants: {
       type: "array",
       minItems: 1,
+      maxItems: 12,
       items: contractItemSchema,
     },
     nonGoals: stringArraySchema,
     allowedPathPrefixes: {
       type: "array",
       minItems: 1,
+      maxItems: 12,
       items: stringSchema,
     },
     approvalRequiredChanges: stringArraySchema,
@@ -295,11 +303,12 @@ export const detailedPlanSchema = {
     title: stringSchema,
     approach: stringSchema,
     rationale: stringSchema,
-    acceptanceCoverage: { type: "array", items: coverageSchema },
-    invariantProtection: { type: "array", items: coverageSchema },
+    acceptanceCoverage: { type: "array", maxItems: 12, items: coverageSchema },
+    invariantProtection: { type: "array", maxItems: 12, items: coverageSchema },
     files: {
       type: "array",
       minItems: 1,
+      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -310,6 +319,7 @@ export const detailedPlanSchema = {
     steps: {
       type: "array",
       minItems: 1,
+      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -324,6 +334,7 @@ export const detailedPlanSchema = {
     safetyTests: {
       type: "array",
       minItems: 1,
+      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -338,6 +349,7 @@ export const detailedPlanSchema = {
     verificationCommands: {
       type: "array",
       minItems: 1,
+      maxItems: 6,
       items: commandSchema,
     },
     dependencies: stringArraySchema,
@@ -347,6 +359,7 @@ export const detailedPlanSchema = {
     assumptions: stringArraySchema,
     unknowns: {
       type: "array",
+      maxItems: 8,
       items: {
         type: "object",
         additionalProperties: false,
@@ -354,11 +367,11 @@ export const detailedPlanSchema = {
         properties: {
           description: stringSchema,
           critical: { type: "boolean" },
-          resolution: { type: "string" },
+          resolution: { type: "string", maxLength: 400 },
         },
       },
     },
-    recovery: { type: "array", minItems: 1, items: stringSchema },
+    recovery: { type: "array", minItems: 1, maxItems: 6, items: stringSchema },
     rejectionReasons: stringArraySchema,
   },
 } as const;
@@ -380,6 +393,7 @@ export const decisionArtifactSchema = {
     reason: stringSchema,
     rejectedPlans: {
       type: "array",
+      maxItems: 5,
       items: {
         type: "object",
         additionalProperties: false,
@@ -390,7 +404,7 @@ export const decisionArtifactSchema = {
     tradeoffs: stringArraySchema,
     residualRisks: stringArraySchema,
     humanDecisionRequired: { type: "boolean" },
-    humanDecisionReason: { type: "string" },
+    humanDecisionReason: { type: "string", maxLength: 400 },
   },
 } as const;
 
@@ -408,12 +422,12 @@ export const harnessArtifactSchema = {
   ],
   properties: {
     summary: stringSchema,
-    testPaths: { type: "array", minItems: 1, items: stringSchema },
+    testPaths: { type: "array", minItems: 1, maxItems: 12, items: stringSchema },
     fixturePaths: stringArraySchema,
     targetedCommand: commandSchema,
     expectedBaselineOutcome: { type: "string", enum: ["fail", "pass"] },
     expectedFailure: { type: "string" },
-    protectedPaths: { type: "array", minItems: 1, items: stringSchema },
+    protectedPaths: { type: "array", minItems: 1, maxItems: 12, items: stringSchema },
   },
 } as const;
 
@@ -423,7 +437,7 @@ export const implementationArtifactSchema = {
   required: ["summary", "changedPaths", "testsAdded", "scopeNotes", "residualRisks"],
   properties: {
     summary: stringSchema,
-    changedPaths: { type: "array", minItems: 1, items: stringSchema },
+    changedPaths: { type: "array", minItems: 1, maxItems: 12, items: stringSchema },
     testsAdded: stringArraySchema,
     scopeNotes: stringArraySchema,
     residualRisks: stringArraySchema,
@@ -452,6 +466,7 @@ export const verificationArtifactSchema = {
     reason: stringSchema,
     findings: {
       type: "array",
+      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -460,7 +475,7 @@ export const verificationArtifactSchema = {
           code: stringSchema,
           severity: { type: "string", enum: ["error", "warning"] },
           message: stringSchema,
-          path: { type: "string" },
+          path: { type: "string", maxLength: 400 },
         },
       },
     },

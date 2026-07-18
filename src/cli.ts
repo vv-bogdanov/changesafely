@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { loadArtifact, loadRunState } from "./artifacts.js";
 import { PreflightError } from "./git.js";
+import { resumeRun, runFullWorkflow } from "./orchestrator.js";
+import type { DecisionArtifact } from "./schemas.js";
 import { runPlanning } from "./workflow.js";
 
 const VERSION = "0.0.1";
@@ -29,6 +34,36 @@ function requiredString(value: unknown, name: string): string {
     throw new Error(`${name} is required`);
   }
   return value;
+}
+
+async function printRunSummary(
+  repoPath: string,
+  runId: string,
+  reportPath: string,
+): Promise<void> {
+  const state = await loadRunState(repoPath, runId);
+  let selectedPlan = "none";
+  if (state.artifacts.decision) {
+    selectedPlan = (
+      await loadArtifact<DecisionArtifact>(repoPath, runId, "decision.json")
+    ).payload.winnerPlanId;
+  }
+  process.stdout.write(
+    [
+      `Run: ${runId}`,
+      `Phase: ${state.phase}`,
+      `Selected plan: ${selectedPlan}`,
+      `Status: ${state.status}`,
+      `Model: ${state.model || "default"}`,
+      ...(state.branch ? [`Branch: ${state.branch}`] : []),
+      ...(state.testCommit ? [`T1: ${state.testCommit}`] : []),
+      ...(state.implementationCommit ? [`Implementation: ${state.implementationCommit}`] : []),
+      `Report: ${reportPath}`,
+      `Reason: ${state.reason || "none"}`,
+      `Next action: ${state.nextAction || "none"}`,
+      "",
+    ].join("\n"),
+  );
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -60,23 +95,42 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     process.stderr.write(`Unknown command: ${command ?? ""}\n\n${HELP}`);
     return 1;
   }
-  if (command !== "plan") {
-    process.stderr.write(`The ${command} workflow is not implemented yet.\n`);
-    return 1;
-  }
-
   try {
+    const repoPath = resolve(requiredString(parsed.values.repo, "--repo"));
+    if (command === "resume") {
+      const runId = requiredString(parsed.values.run, "--run");
+      const result = await resumeRun(repoPath, runId);
+      await printRunSummary(repoPath, result.runId, result.reportPath);
+      return result.status === "VERIFIED" ? 0 : result.status === "FAILED" ? 1 : 2;
+    }
     const task = requiredString(parsed.values.task, "--task");
+    const testModel = process.env.SAFECHANGE_LIVE_TEST_MODEL?.trim() || undefined;
     const plannerCount = Number(parsed.values.plans);
     if (!Number.isInteger(plannerCount) || plannerCount < 1 || plannerCount > 5) {
       throw new Error("--plans must be an integer from 1 to 5");
     }
-    const repoPath = resolve(requiredString(parsed.values.repo, "--repo"));
-    const result = await runPlanning({ repoPath, task, plannerCount });
-    process.stdout.write(
-      `Run: ${result.runId}\nStatus: ${result.status}\nReport: ${result.reportPath}\n`,
-    );
-    return result.status === "PLANNED" ? 0 : 2;
+    const result =
+      command === "plan"
+        ? await runPlanning({
+            repoPath,
+            task,
+            plannerCount,
+            requireProtocolMatch: true,
+            parallelPlanners: true,
+            ...(testModel ? { model: testModel } : {}),
+          })
+        : await runFullWorkflow({
+            repoPath,
+            task,
+            plannerCount,
+            ...(testModel ? { model: testModel } : {}),
+          });
+    await printRunSummary(repoPath, result.runId, result.reportPath);
+    return result.status === "PLANNED" || result.status === "VERIFIED"
+      ? 0
+      : result.status === "FAILED"
+        ? 1
+        : 2;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`SafeChange failed: ${message}\n`);
@@ -84,6 +138,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedPath = process.argv[1];
+if (
+  invokedPath &&
+  realpathSync(invokedPath) === fileURLToPath(import.meta.url)
+) {
   process.exitCode = await main();
 }
