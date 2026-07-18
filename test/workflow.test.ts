@@ -9,6 +9,7 @@ import { AppServerClient } from "../src/app-server/client.js";
 import type { RunState } from "../src/artifacts.js";
 import { PreflightError } from "../src/git.js";
 import { runHarness } from "../src/harness.js";
+import { runImplementationAndVerification } from "../src/implementation.js";
 import { runPlanning } from "../src/workflow.js";
 
 const execFileAsync = promisify(execFile);
@@ -151,4 +152,65 @@ test("creates a failing-first safety harness on a branch and commits T1", async 
   const contract = state.contexts.find((entry) => entry.role === "contract");
   const testAuthor = state.contexts.find((entry) => entry.role === "test-author");
   assert.equal(testAuthor?.parentThreadId, contract?.threadId);
+});
+
+test("creates I1, preserves T1, runs commands, and verifies from a fresh C0 fork", async (t) => {
+  const repoPath = await fixtureRepo();
+  t.after(async () => rm(repoPath, { recursive: true, force: true }));
+  const fixture = join(process.cwd(), "dist", "test", "fixtures", "fake-app-server.js");
+  const clientFactory = (): AppServerClient =>
+    new AppServerClient({
+      command: process.execPath,
+      args: [fixture],
+      cwd: repoPath,
+      requestTimeoutMs: 1_000,
+      turnTimeoutMs: 1_000,
+    });
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value without changing its export.",
+    plannerCount: 3,
+    clientFactory,
+  });
+  const harness = await runHarness({ repoPath, runId: planning.runId, clientFactory });
+  const protectedBefore = harness.protectedHashes["test/value.test.ts"];
+
+  const implementation = await runImplementationAndVerification({
+    repoPath,
+    runId: planning.runId,
+    clientFactory,
+  });
+
+  assert.equal(implementation.accepted, true);
+  assert.equal(implementation.verification.verdict, "accept");
+  assert.ok(implementation.commands.every((command) => command.exitCode === 0));
+  const state = JSON.parse(
+    await readFile(join(planning.runPath, "state.json"), "utf8"),
+  ) as RunState;
+  assert.equal(state.implementationCommit, implementation.implementationCommit);
+  assert.equal(state.phase, "verification-complete");
+  const harnessArtifact = JSON.parse(
+    await readFile(join(planning.runPath, "harness.json"), "utf8"),
+  ) as { payload: { protectedHashes: Record<string, string> } };
+  assert.equal(harnessArtifact.payload.protectedHashes["test/value.test.ts"], protectedBefore);
+  const { stdout: t1ToI1 } = await execFileAsync(
+    "git",
+    ["diff", "--name-only", state.testCommit, state.implementationCommit],
+    { cwd: repoPath },
+  );
+  assert.equal(t1ToI1.trim(), "src/value.ts");
+  const contract = state.contexts.find((entry) => entry.role === "contract");
+  const implementer = state.contexts.find((entry) => entry.role === "implementer");
+  const verifier = state.contexts.find((entry) => entry.role === "verifier");
+  assert.equal(implementer?.parentThreadId, contract?.threadId);
+  assert.equal(verifier?.parentThreadId, contract?.threadId);
+  assert.notEqual(verifier?.parentThreadId, implementer?.threadId);
+  const { stdout: log } = await execFileAsync("git", ["log", "--format=%s", "--reverse"], {
+    cwd: repoPath,
+  });
+  assert.deepEqual(log.trim().split("\n"), [
+    "fixture baseline",
+    "test: add SafeChange safety harness",
+    "feat: implement selected SafeChange plan",
+  ]);
 });

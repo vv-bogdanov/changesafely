@@ -111,6 +111,28 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       protectedPaths: ["test/value.test.ts"],
     };
   }
+  if (prompt.includes("[SAFECHANGE_ROLE:implementer]")) {
+    await writeFile("src/value.ts", "export const value = 2;\n", "utf8");
+    return {
+      summary: "Changed the existing value implementation within selected scope.",
+      changedPaths: ["src/value.ts"],
+      testsAdded: [],
+      scopeNotes: ["Protected safety test was not changed."],
+      residualRisks: [],
+    };
+  }
+  if (prompt.includes("[SAFECHANGE_ROLE:verifier]")) {
+    return {
+      verdict: "accept",
+      contractFulfilled: true,
+      invariantsPreserved: true,
+      scopeConformant: true,
+      evidenceSufficient: true,
+      reason: "Actual diff is scoped and deterministic tests pass.",
+      findings: [],
+      residualRisks: ["Fixture verification covers only the requested value."],
+    };
+  }
   return { kind: "smoke", message: "ok" };
 }
 

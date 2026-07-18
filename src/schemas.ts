@@ -119,6 +119,32 @@ export interface HarnessArtifact {
   protectedPaths: string[];
 }
 
+export interface ImplementationArtifact {
+  summary: string;
+  changedPaths: string[];
+  testsAdded: string[];
+  scopeNotes: string[];
+  residualRisks: string[];
+}
+
+export interface VerificationFinding {
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+  path: string;
+}
+
+export interface VerificationArtifact {
+  verdict: "accept" | "reject";
+  contractFulfilled: boolean;
+  invariantsPreserved: boolean;
+  scopeConformant: boolean;
+  evidenceSufficient: boolean;
+  reason: string;
+  findings: VerificationFinding[];
+  residualRisks: string[];
+}
+
 export interface SmokeArtifact {
   kind: "smoke";
   message: string;
@@ -391,6 +417,57 @@ export const harnessArtifactSchema = {
   },
 } as const;
 
+export const implementationArtifactSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "changedPaths", "testsAdded", "scopeNotes", "residualRisks"],
+  properties: {
+    summary: stringSchema,
+    changedPaths: { type: "array", minItems: 1, items: stringSchema },
+    testsAdded: stringArraySchema,
+    scopeNotes: stringArraySchema,
+    residualRisks: stringArraySchema,
+  },
+} as const;
+
+export const verificationArtifactSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "verdict",
+    "contractFulfilled",
+    "invariantsPreserved",
+    "scopeConformant",
+    "evidenceSufficient",
+    "reason",
+    "findings",
+    "residualRisks",
+  ],
+  properties: {
+    verdict: { type: "string", enum: ["accept", "reject"] },
+    contractFulfilled: { type: "boolean" },
+    invariantsPreserved: { type: "boolean" },
+    scopeConformant: { type: "boolean" },
+    evidenceSufficient: { type: "boolean" },
+    reason: stringSchema,
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["code", "severity", "message", "path"],
+        properties: {
+          code: stringSchema,
+          severity: { type: "string", enum: ["error", "warning"] },
+          message: stringSchema,
+          path: { type: "string" },
+        },
+      },
+    },
+    residualRisks: stringArraySchema,
+  },
+} as const;
+
 const ajv = new Ajv({ allErrors: true, strict: true });
 
 export class ArtifactValidationError extends Error {
@@ -444,3 +521,13 @@ export const validateHarnessArtifact = compileArtifactValidator<HarnessArtifact>
   "harness artifact",
   harnessArtifactSchema,
 );
+export const validateImplementationArtifact =
+  compileArtifactValidator<ImplementationArtifact>(
+    "implementation artifact",
+    implementationArtifactSchema,
+  );
+export const validateVerificationArtifact =
+  compileArtifactValidator<VerificationArtifact>(
+    "verification artifact",
+    verificationArtifactSchema,
+  );
