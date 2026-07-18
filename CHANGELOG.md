@@ -20,6 +20,7 @@ All notable changes to SafeChange are documented here. The project follows
 - Node 22/24 CI, Biome, coverage thresholds, protocol drift checks, npm audit,
   registry signature verification, package smoke tests, CodeQL, dependency review,
   Dependabot, and OpenSSF Scorecard.
+- Property-based command allowlist fuzzing with generated shell-operator positions.
 
 ### Security
 

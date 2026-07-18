@@ -3,13 +3,35 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import fc from "fast-check";
 import { runCommand, validateCommandArgv } from "../src/runner.js";
+
+const shellOperators = ["|", "||", "&&", ";", ">", ">>", "<"] as const;
+const shellOperatorSet = new Set<string>(shellOperators);
 
 test("runner rejects installers and shell operators", () => {
   assert.throws(() => validateCommandArgv(["npm", "install"]), /not approved/);
   assert.throws(
     () => validateCommandArgv(["npm", "test", "&&", "npm", "run", "build"]),
     /Shell operators are forbidden/,
+  );
+});
+
+test("runner fuzz gate rejects shell operators at every argv position", () => {
+  const nonOperator = fc.string({ minLength: 1 }).filter((value) => !shellOperatorSet.has(value));
+
+  fc.assert(
+    fc.property(
+      fc.array(nonOperator, { maxLength: 8 }),
+      fc.constantFrom(...shellOperators),
+      fc.nat(),
+      (parts, operator, position) => {
+        const argv = [...parts];
+        argv.splice(position % (argv.length + 1), 0, operator);
+        assert.throws(() => validateCommandArgv(argv), /Shell operators are forbidden/);
+      },
+    ),
+    { numRuns: 1_000 },
   );
 });
 
