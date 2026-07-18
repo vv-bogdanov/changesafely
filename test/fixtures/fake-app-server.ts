@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { mkdir, writeFile } from "node:fs/promises";
 
 interface Message {
   id?: number;
@@ -13,7 +14,7 @@ const send = (message: unknown): void => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 };
 
-function structuredOutput(prompt: string): unknown {
+async function structuredOutput(prompt: string): Promise<unknown> {
   if (prompt.includes("[SAFECHANGE_ROLE:discovery]")) {
     return {
       summary: "Small TypeScript fixture with one source file.",
@@ -89,10 +90,31 @@ function structuredOutput(prompt: string): unknown {
       humanDecisionReason: "",
     };
   }
+  if (prompt.includes("[SAFECHANGE_ROLE:test-author]")) {
+    await mkdir("test", { recursive: true });
+    await writeFile(
+      "test/value.test.ts",
+      `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { value } from "../src/value.ts";\n\ntest("requested value", () => {\n  assert.equal(value, 2);\n});\n`,
+      "utf8",
+    );
+    return {
+      summary: "Added a failing acceptance test for the requested value.",
+      testPaths: ["test/value.test.ts"],
+      fixturePaths: [],
+      targetedCommand: {
+        name: "targeted acceptance",
+        argv: ["node", "--test", "test/value.test.ts"],
+        purpose: "Prove the requested behavior is missing on baseline",
+      },
+      expectedBaselineOutcome: "fail",
+      expectedFailure: "Expected values to be strictly equal",
+      protectedPaths: ["test/value.test.ts"],
+    };
+  }
   return { kind: "smoke", message: "ok" };
 }
 
-lines.on("line", (line) => {
+lines.on("line", async (line) => {
   const message = JSON.parse(line) as Message;
   if (message.method === "initialize") {
     send({
@@ -119,7 +141,7 @@ lines.on("line", (line) => {
     const threadId = String(message.params?.threadId ?? "thread-unknown");
     const input = message.params?.input as Array<{ type: string; text?: string }> | undefined;
     const prompt = input?.find((item) => item.type === "text")?.text ?? "";
-    const text = JSON.stringify(structuredOutput(prompt));
+    const text = JSON.stringify(await structuredOutput(prompt));
     send({ id: message.id, result: { turn: { id: turnId } } });
     send({
       method: "item/completed",

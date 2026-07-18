@@ -123,3 +123,61 @@ export async function assertBaselineUnchanged(
   }
   return actual;
 }
+
+export async function createSafeChangeBranch(
+  baseline: BaselineSnapshot,
+  runId: string,
+): Promise<string> {
+  await assertBaselineUnchanged(baseline);
+  const branch = `safechange/${runId}`;
+  await git(baseline.repoPath, ["switch", "-c", branch, baseline.commit]);
+  return branch;
+}
+
+export async function changedPaths(repoPath: string, from = "HEAD"): Promise<string[]> {
+  const tracked = await git(repoPath, ["diff", "--name-only", from, "--"]);
+  const untracked = await git(repoPath, ["ls-files", "--others", "--exclude-standard"]);
+  return [
+    ...new Set(
+      `${tracked}\n${untracked}`
+        .split("\n")
+        .filter((path) => path && !path.startsWith(".safechange/")),
+    ),
+  ].sort();
+}
+
+export async function diffFrom(repoPath: string, from: string): Promise<string> {
+  return git(repoPath, ["diff", "--no-ext-diff", from, "--"]);
+}
+
+export async function commitPaths(
+  repoPath: string,
+  paths: string[],
+  message: string,
+): Promise<string> {
+  if (paths.length === 0) {
+    throw new PreflightError("NO_CHANGES", "No paths are available to commit");
+  }
+  await git(repoPath, ["add", "--", ...paths]);
+  await git(repoPath, ["commit", "-m", message, "--", ...paths]);
+  return git(repoPath, ["rev-parse", "HEAD"]);
+}
+
+export async function hashFiles(
+  repoPath: string,
+  paths: string[],
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  for (const path of [...paths].sort()) {
+    result[path] = sha256(await readFile(join(repoPath, path)));
+  }
+  return result;
+}
+
+export async function currentCommit(repoPath: string): Promise<string> {
+  return git(repoPath, ["rev-parse", "HEAD"]);
+}
+
+export async function currentBranch(repoPath: string): Promise<string> {
+  return git(repoPath, ["branch", "--show-current"]);
+}

@@ -109,6 +109,16 @@ export interface DecisionArtifact {
   humanDecisionReason: string;
 }
 
+export interface HarnessArtifact {
+  summary: string;
+  testPaths: string[];
+  fixturePaths: string[];
+  targetedCommand: CommandSpec;
+  expectedBaselineOutcome: "fail" | "pass";
+  expectedFailure: string;
+  protectedPaths: string[];
+}
+
 export interface SmokeArtifact {
   kind: "smoke";
   message: string;
@@ -358,6 +368,29 @@ export const decisionArtifactSchema = {
   },
 } as const;
 
+export const harnessArtifactSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "summary",
+    "testPaths",
+    "fixturePaths",
+    "targetedCommand",
+    "expectedBaselineOutcome",
+    "expectedFailure",
+    "protectedPaths",
+  ],
+  properties: {
+    summary: stringSchema,
+    testPaths: { type: "array", minItems: 1, items: stringSchema },
+    fixturePaths: stringArraySchema,
+    targetedCommand: commandSchema,
+    expectedBaselineOutcome: { type: "string", enum: ["fail", "pass"] },
+    expectedFailure: { type: "string" },
+    protectedPaths: { type: "array", minItems: 1, items: stringSchema },
+  },
+} as const;
+
 const ajv = new Ajv({ allErrors: true, strict: true });
 
 export class ArtifactValidationError extends Error {
@@ -406,4 +439,8 @@ export const validateDetailedPlan = compileArtifactValidator<DetailedPlan>(
 export const validateDecisionArtifact = compileArtifactValidator<DecisionArtifact>(
   "decision artifact",
   decisionArtifactSchema,
+);
+export const validateHarnessArtifact = compileArtifactValidator<HarnessArtifact>(
+  "harness artifact",
+  harnessArtifactSchema,
 );

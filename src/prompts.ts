@@ -1,5 +1,6 @@
 import type {
   ChangeContract,
+  DecisionArtifact,
   DetailedPlan,
   EvidenceArtifact,
 } from "./schemas.js";
@@ -62,4 +63,28 @@ ${data(plans)}
 
 Eligibility:
 ${data(eligibility)}`;
+}
+
+export function testAuthorPrompt(
+  contract: ChangeContract,
+  plan: DetailedPlan,
+  decision: DecisionArtifact,
+  allowedTestPaths: string[],
+): string {
+  return `[SAFECHANGE_ROLE:test-author]
+You are SafeChange Test Author, forked directly from C0. Work as the only writer with network off. Create the minimum meaningful safety harness before production implementation.
+
+You may change only these repository-relative test or fixture paths/prefixes:
+${data(allowedTestPaths)}
+
+Do not change production code, manifests, lockfiles, instruction files, existing public behavior, or secret/config files. Do not use skip, only, weak assertions, or excessive mocks. For a new feature, the new targeted acceptance check must fail on baseline for the expected missing behavior. expectedFailure is a concise human explanation of that missing behavior, not a required literal output substring. Run no deployment or external command. After editing, return only the schema-constrained Harness Artifact. protectedPaths must contain every path you changed.
+
+Contract:
+${data(contract)}
+
+Selected plan:
+${data(plan)}
+
+Judge decision:
+${data(decision)}`;
 }

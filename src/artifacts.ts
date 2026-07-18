@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export type RunStatus =
@@ -118,4 +118,20 @@ export class ArtifactStore {
   private async writeJson(relativePath: string, value: unknown): Promise<void> {
     await this.writeText(relativePath, `${JSON.stringify(value, null, 2)}\n`);
   }
+}
+
+export async function loadRunState(repoPath: string, runId: string): Promise<RunState> {
+  return JSON.parse(
+    await readFile(join(repoPath, ".safechange", "runs", runId, "state.json"), "utf8"),
+  ) as RunState;
+}
+
+export async function loadArtifact<T>(
+  repoPath: string,
+  runId: string,
+  relativePath: string,
+): Promise<ArtifactEnvelope<T>> {
+  return JSON.parse(
+    await readFile(join(repoPath, ".safechange", "runs", runId, relativePath), "utf8"),
+  ) as ArtifactEnvelope<T>;
 }

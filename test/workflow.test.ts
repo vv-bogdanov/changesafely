@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { AppServerClient } from "../src/app-server/client.js";
 import type { RunState } from "../src/artifacts.js";
 import { PreflightError } from "../src/git.js";
+import { runHarness } from "../src/harness.js";
 import { runPlanning } from "../src/workflow.js";
 
 const execFileAsync = promisify(execFile);
@@ -96,4 +97,58 @@ test("blocks before App Server work when tracked state is dirty", async (t) => {
     (error: unknown) =>
       error instanceof PreflightError && error.reasonCode === "DIRTY_TRACKED_STATE",
   );
+});
+
+test("creates a failing-first safety harness on a branch and commits T1", async (t) => {
+  const repoPath = await fixtureRepo();
+  t.after(async () => rm(repoPath, { recursive: true, force: true }));
+  const fixture = join(process.cwd(), "dist", "test", "fixtures", "fake-app-server.js");
+  const clientFactory = (): AppServerClient =>
+    new AppServerClient({
+      command: process.execPath,
+      args: [fixture],
+      cwd: repoPath,
+      requestTimeoutMs: 1_000,
+      turnTimeoutMs: 1_000,
+    });
+  const { stdout: baseline } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+    cwd: repoPath,
+  });
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value without changing its export.",
+    plannerCount: 3,
+    clientFactory,
+  });
+
+  const harness = await runHarness({
+    repoPath,
+    runId: planning.runId,
+    clientFactory,
+  });
+
+  assert.match(harness.branch, /^safechange\//);
+  assert.equal(harness.command.exitCode, 1);
+  assert.deepEqual(Object.keys(harness.protectedHashes), ["test/value.test.ts"]);
+  const { stdout: changed } = await execFileAsync(
+    "git",
+    ["diff", "--name-only", baseline.trim(), harness.testCommit],
+    { cwd: repoPath },
+  );
+  assert.equal(changed.trim(), "test/value.test.ts");
+  const { stdout: log } = await execFileAsync("git", ["log", "--format=%s", "--reverse"], {
+    cwd: repoPath,
+  });
+  assert.deepEqual(log.trim().split("\n"), [
+    "fixture baseline",
+    "test: add SafeChange safety harness",
+  ]);
+  const state = JSON.parse(
+    await readFile(join(planning.runPath, "state.json"), "utf8"),
+  ) as RunState;
+  assert.equal(state.testCommit, harness.testCommit);
+  assert.equal(state.phase, "harness-complete");
+  const contract = state.contexts.find((entry) => entry.role === "contract");
+  const testAuthor = state.contexts.find((entry) => entry.role === "test-author");
+  assert.equal(testAuthor?.parentThreadId, contract?.threadId);
 });
