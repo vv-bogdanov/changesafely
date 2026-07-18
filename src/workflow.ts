@@ -1,0 +1,342 @@
+import { resolve } from "node:path";
+import { AppServerClient } from "./app-server/client.js";
+import {
+  ArtifactStore,
+  createRunId,
+  type ContextEntry,
+  type RunState,
+  type RunStatus,
+} from "./artifacts.js";
+import { evaluatePlans, type PlanEligibility } from "./eligibility.js";
+import { assertBaselineUnchanged, inspectBaseline } from "./git.js";
+import {
+  contractPrompt,
+  discoveryPrompt,
+  judgePrompt,
+  plannerPrompt,
+} from "./prompts.js";
+import { planningReport } from "./report.js";
+import {
+  changeContractSchema,
+  decisionArtifactSchema,
+  detailedPlanSchema,
+  evidenceArtifactSchema,
+  type ChangeContract,
+  type DecisionArtifact,
+  type DetailedPlan,
+  type EvidenceArtifact,
+  validateChangeContract,
+  validateDecisionArtifact,
+  validateDetailedPlan,
+  validateEvidenceArtifact,
+} from "./schemas.js";
+
+const plannerLenses = [
+  "minimal-change",
+  "reversible-change",
+  "risk-first",
+  "testability-first",
+  "operations-first",
+] as const;
+
+const readOnlyPolicy = { type: "readOnly", networkAccess: false } as const;
+
+export interface PlanningOptions {
+  repoPath: string;
+  task: string;
+  plannerCount: number;
+  clientFactory?: () => AppServerClient;
+}
+
+export interface PlanningResult {
+  runId: string;
+  runPath: string;
+  reportPath: string;
+  status: RunStatus;
+  decision?: DecisionArtifact;
+}
+
+function parseStructured<T>(message: string, validate: (value: unknown) => T): T {
+  let value: unknown;
+  try {
+    value = JSON.parse(message);
+  } catch {
+    throw new Error(`Role returned invalid JSON: ${message.slice(0, 300)}`);
+  }
+  return validate(value);
+}
+
+function context(
+  role: string,
+  threadId: string,
+  parentThreadId: string | null,
+  checkpointTurnId: string | null,
+): ContextEntry {
+  return {
+    role,
+    threadId,
+    parentThreadId,
+    checkpointTurnId,
+    turnId: null,
+    status: "started",
+  };
+}
+
+export async function runPlanning(options: PlanningOptions): Promise<PlanningResult> {
+  const repoPath = resolve(options.repoPath);
+  const baseline = await inspectBaseline(repoPath);
+  const runId = createRunId();
+  const store = new ArtifactStore(baseline.repoPath, runId, baseline.commit);
+  await store.initialize();
+
+  const state: RunState = {
+    runId,
+    task: options.task,
+    repoPath: baseline.repoPath,
+    baselineCommit: baseline.commit,
+    baselineFingerprint: baseline.fingerprint,
+    phase: "preflight",
+    status: "RUNNING",
+    reason: "",
+    nextAction: "Wait for planning to complete.",
+    artifacts: {},
+    contexts: [],
+    branch: "",
+    testCommit: "",
+    implementationCommit: "",
+  };
+  await store.writeState(state);
+
+  const client = options.clientFactory?.() ?? new AppServerClient({ cwd: baseline.repoPath });
+  const plans: DetailedPlan[] = [];
+  let eligibility: PlanEligibility[] = [];
+  let decision: DecisionArtifact | undefined;
+
+  const persist = async (phase: string): Promise<void> => {
+    state.phase = phase;
+    await store.writeState(state);
+  };
+  const addArtifact = (name: string, artifactHash: string): void => {
+    state.artifacts[name] = artifactHash;
+  };
+
+  try {
+    await client.start();
+
+    await persist("discovery");
+    const discoveryThread = await client.startThread({
+      cwd: baseline.repoPath,
+      approvalPolicy: "never",
+      sandbox: "read-only",
+    });
+    const discoveryContext = context("discovery", discoveryThread.thread.id, null, null);
+    state.contexts.push(discoveryContext);
+    await store.writeState(state);
+    const discoveryTurn = await client.runTurn(
+      discoveryThread.thread.id,
+      discoveryPrompt(options.task),
+      {
+        cwd: baseline.repoPath,
+        sandboxPolicy: readOnlyPolicy,
+        outputSchema: evidenceArtifactSchema,
+      },
+    );
+    discoveryContext.turnId = discoveryTurn.turnId;
+    discoveryContext.status = "completed";
+    const evidence = parseStructured<EvidenceArtifact>(
+      discoveryTurn.message,
+      validateEvidenceArtifact,
+    );
+    const evidenceStored = await store.writeArtifact(
+      "evidence.json",
+      "discovery",
+      evidence,
+    );
+    addArtifact("evidence", evidenceStored.hash);
+    await store.writeState(state);
+
+    await persist("contract");
+    const contractThread = await client.startThread({
+      cwd: baseline.repoPath,
+      approvalPolicy: "never",
+      sandbox: "read-only",
+    });
+    const contractContext = context("contract", contractThread.thread.id, null, null);
+    state.contexts.push(contractContext);
+    await store.writeState(state);
+    const contractTurn = await client.runTurn(
+      contractThread.thread.id,
+      contractPrompt(options.task, evidence),
+      {
+        cwd: baseline.repoPath,
+        sandboxPolicy: readOnlyPolicy,
+        outputSchema: changeContractSchema,
+      },
+    );
+    contractContext.turnId = contractTurn.turnId;
+    contractContext.status = "completed";
+    const contractArtifact = parseStructured<ChangeContract>(
+      contractTurn.message,
+      validateChangeContract,
+    );
+    const contractStored = await store.writeArtifact(
+      "contract.json",
+      "contract",
+      contractArtifact,
+      [evidenceStored.hash],
+    );
+    addArtifact("contract", contractStored.hash);
+    await store.writeState(state);
+
+    await persist("planners");
+    for (let index = 0; index < options.plannerCount; index += 1) {
+      const planId = `plan-${index + 1}`;
+      const lens = plannerLenses[index];
+      if (!lens) throw new Error(`No planner lens for index ${index}`);
+      const fork = await client.forkThread({
+        threadId: contractThread.thread.id,
+        lastTurnId: contractTurn.turnId,
+        cwd: baseline.repoPath,
+        approvalPolicy: "never",
+        sandbox: "read-only",
+      });
+      const plannerContext = context(
+        `planner:${planId}`,
+        fork.thread.id,
+        contractThread.thread.id,
+        contractTurn.turnId,
+      );
+      state.contexts.push(plannerContext);
+      await store.writeState(state);
+      const plannerTurn = await client.runTurn(
+        fork.thread.id,
+        plannerPrompt(planId, lens, contractArtifact),
+        {
+          cwd: baseline.repoPath,
+          sandboxPolicy: readOnlyPolicy,
+          outputSchema: detailedPlanSchema,
+        },
+      );
+      plannerContext.turnId = plannerTurn.turnId;
+      plannerContext.status = "completed";
+      const plan = parseStructured<DetailedPlan>(plannerTurn.message, validateDetailedPlan);
+      if (plan.planId !== planId || plan.lens !== lens) {
+        throw new Error(
+          `Planner identity mismatch: expected ${planId}/${lens}, got ${plan.planId}/${plan.lens}`,
+        );
+      }
+      plans.push(plan);
+      const stored = await store.writeArtifact(
+        `plans/${planId}.json`,
+        `planner:${planId}`,
+        plan,
+        [contractStored.hash],
+      );
+      addArtifact(planId, stored.hash);
+      await store.writeState(state);
+    }
+
+    await persist("eligibility");
+    eligibility = evaluatePlans(contractArtifact, plans);
+    const eligibilityStored = await store.writeArtifact(
+      "eligibility.json",
+      "deterministic-eligibility",
+      eligibility,
+      plans.map((plan) => state.artifacts[plan.planId] ?? ""),
+    );
+    addArtifact("eligibility", eligibilityStored.hash);
+    const eligiblePlanIds = new Set(
+      eligibility.filter((item) => item.eligible).map((item) => item.planId),
+    );
+    const eligiblePlans = plans.filter((plan) => eligiblePlanIds.has(plan.planId));
+
+    if (eligiblePlans.length === 0) {
+      const humanReasons = eligibility.flatMap((item) => item.humanDecisionReasons);
+      state.status = humanReasons.length > 0 ? "HUMAN_DECISION_REQUIRED" : "BLOCKED";
+      state.reason =
+        humanReasons.length > 0
+          ? humanReasons.join("; ")
+          : "No plan passed deterministic eligibility gates.";
+      state.nextAction =
+        humanReasons.length > 0
+          ? "Approve or reject the declared sensitive changes, then start a new plan run."
+          : "Resolve the reported evidence, scope, or verification gaps and start a new run.";
+    } else {
+      await persist("judge");
+      const judgeFork = await client.forkThread({
+        threadId: contractThread.thread.id,
+        lastTurnId: contractTurn.turnId,
+        cwd: baseline.repoPath,
+        approvalPolicy: "never",
+        sandbox: "read-only",
+      });
+      const judgeContext = context(
+        "judge",
+        judgeFork.thread.id,
+        contractThread.thread.id,
+        contractTurn.turnId,
+      );
+      state.contexts.push(judgeContext);
+      await store.writeState(state);
+      const judgeTurn = await client.runTurn(
+        judgeFork.thread.id,
+        judgePrompt(contractArtifact, eligiblePlans, eligibility),
+        {
+          cwd: baseline.repoPath,
+          sandboxPolicy: readOnlyPolicy,
+          outputSchema: decisionArtifactSchema,
+        },
+      );
+      judgeContext.turnId = judgeTurn.turnId;
+      judgeContext.status = "completed";
+      decision = parseStructured<DecisionArtifact>(
+        judgeTurn.message,
+        validateDecisionArtifact,
+      );
+      if (!eligiblePlanIds.has(decision.winnerPlanId)) {
+        throw new Error(`Judge selected ineligible or unknown plan ${decision.winnerPlanId}`);
+      }
+      const decisionStored = await store.writeArtifact(
+        "decision.json",
+        "judge",
+        decision,
+        [contractStored.hash, eligibilityStored.hash],
+      );
+      addArtifact("decision", decisionStored.hash);
+      if (decision.humanDecisionRequired) {
+        state.status = "HUMAN_DECISION_REQUIRED";
+        state.reason = decision.humanDecisionReason;
+        state.nextAction = "Resolve the Judge's explicit human decision before implementation.";
+      } else {
+        state.status = "PLANNED";
+        state.reason = `Selected ${decision.winnerPlanId}: ${decision.reason}`;
+        state.nextAction = "Run SafeChange with the approved selected plan to create the safety harness.";
+      }
+    }
+
+    await assertBaselineUnchanged(baseline);
+    state.phase = "planning-complete";
+    await store.writeState(state);
+    const reportPath = await store.writeText(
+      "report.md",
+      planningReport(state, plans, eligibility, decision),
+    );
+    return {
+      runId,
+      runPath: store.runPath,
+      reportPath,
+      status: state.status,
+      ...(decision ? { decision } : {}),
+    };
+  } catch (error) {
+    state.status = "FAILED";
+    state.phase = "failed";
+    state.reason = error instanceof Error ? error.message : String(error);
+    state.nextAction = "Inspect state.json and the last role artifact, then fix the cause and retry.";
+    await store.writeState(state);
+    await store.writeText("report.md", planningReport(state, plans, eligibility, decision));
+    throw error;
+  } finally {
+    await client.close();
+  }
+}
