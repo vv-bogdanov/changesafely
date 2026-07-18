@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible SafeChange defect or unsafe stop.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, `.env` contents, or private source code.
+  - type: input
+    id: version
+    attributes:
+      label: SafeChange and Codex versions
+      placeholder: safechange 0.1.0; codex-cli 0.144.5
+    validations:
+      required: true
+  - type: dropdown
+    id: command
+    attributes:
+      label: Command
+      options: [plan, run, resume, safechange-demo, installation]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include sanitized commands, status, and the smallest relevant fixture.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, secret values, and private repository content.
+          required: true
