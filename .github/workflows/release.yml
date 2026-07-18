@@ -6,8 +6,7 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -23,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
