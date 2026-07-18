@@ -1,15 +1,10 @@
-import { basename, resolve } from "node:path";
 import { readFile } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
+import { ArtifactStore, type ContextEntry, loadArtifact, loadRunState } from "./artifacts.js";
 import {
-  ArtifactStore,
-  loadArtifact,
-  loadRunState,
-  type ContextEntry,
-} from "./artifacts.js";
-import {
-  changedPaths,
   assertProtectedConfigurationUnchanged,
+  changedPaths,
   commitPaths,
   currentBranch,
   currentCommit,
@@ -18,18 +13,18 @@ import {
 } from "./git.js";
 import { implementerPrompt, repairPrompt, verifierPrompt } from "./prompts.js";
 import { implementationReport } from "./report.js";
-import { runCommand, type CommandResult } from "./runner.js";
+import { type CommandResult, runCommand } from "./runner.js";
 import {
-  implementationArtifactSchema,
-  verificationArtifactSchema,
   type ChangeContract,
   type DecisionArtifact,
   type DetailedPlan,
   type HarnessArtifact,
   type ImplementationArtifact,
+  implementationArtifactSchema,
   type VerificationArtifact,
   validateImplementationArtifact,
   validateVerificationArtifact,
+  verificationArtifactSchema,
 } from "./schemas.js";
 
 interface StoredHarness extends HarnessArtifact {
@@ -71,10 +66,7 @@ function pathMatches(path: string, allowed: string[]): boolean {
   });
 }
 
-function sameHashes(
-  expected: Record<string, string>,
-  actual: Record<string, string>,
-): boolean {
+function sameHashes(expected: Record<string, string>, actual: Record<string, string>): boolean {
   return Object.keys(expected).every((path) => expected[path] === actual[path]);
 }
 
@@ -108,19 +100,14 @@ function verificationAccepted(verification: VerificationArtifact): boolean {
   );
 }
 
-function repairableVerification(
-  verification: VerificationArtifact,
-  planPaths: string[],
-): boolean {
+function repairableVerification(verification: VerificationArtifact, planPaths: string[]): boolean {
   const errors = verification.findings.filter((finding) => finding.severity === "error");
   return (
     verification.verdict === "reject" &&
     verification.scopeConformant &&
     verification.evidenceSufficient &&
     errors.length > 0 &&
-    errors.every(
-      (finding) => finding.path !== "" && pathMatches(finding.path, planPaths),
-    )
+    errors.every((finding) => finding.path !== "" && pathMatches(finding.path, planPaths))
   );
 }
 
@@ -145,9 +132,7 @@ async function validateImplementationChange(input: {
   if (!sameHashes(input.harness.protectedHashes, protectedAfter)) {
     throw new Error("Implementer changed a protected T1 path");
   }
-  const outsidePlan = actualPaths.filter(
-    (path) => !pathMatches(path, input.planPaths),
-  );
+  const outsidePlan = actualPaths.filter((path) => !pathMatches(path, input.planPaths));
   if (outsidePlan.length > 0) {
     input.state.status = "REPLAN_REQUIRED";
     throw new Error(`Implementation expanded beyond selected plan: ${outsidePlan.join(", ")}`);
@@ -155,8 +140,7 @@ async function validateImplementationChange(input: {
   const protectedNames = new Set(["AGENTS.md", "package.json", "package-lock.json"]);
   const sensitive = actualPaths.filter(
     (path) =>
-      protectedNames.has(basename(path)) ||
-      /(?:^|\/)(?:migrations?|secrets?)(?:\/|$)/i.test(path),
+      protectedNames.has(basename(path)) || /(?:^|\/)(?:migrations?|secrets?)(?:\/|$)/i.test(path),
   );
   if (sensitive.length > 0) {
     input.state.status = "HUMAN_DECISION_REQUIRED";
@@ -184,10 +168,7 @@ async function runProjectCommands(
   if (!sameHashes(harness.protectedHashes, protectedFinal)) {
     throw new Error("Protected T1 paths changed during deterministic verification");
   }
-  await assertProtectedConfigurationUnchanged(
-    repoPath,
-    protectedConfiguration,
-  );
+  await assertProtectedConfigurationUnchanged(repoPath, protectedConfiguration);
   return results;
 }
 
@@ -197,7 +178,7 @@ function assertCommandsPassed(results: CommandResult[]): void {
     throw new Error(
       `Deterministic verification failed: ${failed
         .map((result) => `${result.argv.join(" ")} exit ${result.exitCode}`)
-      .join("; ")}`,
+        .join("; ")}`,
     );
   }
 }
@@ -219,22 +200,15 @@ export async function runImplementationAndVerification(
     throw new Error("Current Git branch or HEAD does not match the recorded T1 state");
   }
 
-  const contract = (
-    await loadArtifact<ChangeContract>(repoPath, state.runId, "contract.json")
-  ).payload;
-  const decision = (
-    await loadArtifact<DecisionArtifact>(repoPath, state.runId, "decision.json")
-  ).payload;
+  const contract = (await loadArtifact<ChangeContract>(repoPath, state.runId, "contract.json"))
+    .payload;
+  const decision = (await loadArtifact<DecisionArtifact>(repoPath, state.runId, "decision.json"))
+    .payload;
   const plan = (
-    await loadArtifact<DetailedPlan>(
-      repoPath,
-      state.runId,
-      `plans/${decision.winnerPlanId}.json`,
-    )
+    await loadArtifact<DetailedPlan>(repoPath, state.runId, `plans/${decision.winnerPlanId}.json`)
   ).payload;
-  const harness = (
-    await loadArtifact<StoredHarness>(repoPath, state.runId, "harness.json")
-  ).payload;
+  const harness = (await loadArtifact<StoredHarness>(repoPath, state.runId, "harness.json"))
+    .payload;
   const harnessCommandResults = (
     await loadArtifact<CommandResult[]>(repoPath, state.runId, "commands.json")
   ).payload;
@@ -497,9 +471,7 @@ export async function runImplementationAndVerification(
     }
 
     const finalImplementationHash =
-      state.repairCount === 1
-        ? (state.artifacts.repair ?? "")
-        : implementationStored.hash;
+      state.repairCount === 1 ? (state.artifacts.repair ?? "") : implementationStored.hash;
     const verificationStored = await store.writeArtifact(
       "verification.json",
       state.repairCount === 1 ? "verifier:repair" : "verifier",

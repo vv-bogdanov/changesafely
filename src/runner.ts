@@ -55,7 +55,9 @@ export function validateCommandArgv(argv: string[]): void {
   if (program === "npm") {
     const allowed =
       isTestCommand(argv) ||
-      (args.length === 2 && args[0] === "run" && ["test", "typecheck", "build"].includes(args[1] ?? ""));
+      (args.length === 2 &&
+        args[0] === "run" &&
+        ["test", "typecheck", "build"].includes(args[1] ?? ""));
     if (!allowed) throw new Error(`npm command is not approved: ${argv.join(" ")}`);
     return;
   }
@@ -78,16 +80,7 @@ export async function runCommand(
   const sandboxed = options.sandboxed ?? false;
   const program = sandboxed ? "codex" : directProgram;
   const args = sandboxed
-    ? [
-        "sandbox",
-        "-P",
-        ":workspace",
-        "--sandbox-state-disable-network",
-        "-C",
-        cwd,
-        "--",
-        ...argv,
-      ]
+    ? ["sandbox", "-P", ":workspace", "--sandbox-state-disable-network", "-C", cwd, "--", ...argv]
     : argv.slice(1);
 
   const outputDir = await mkdtemp(join(tmpdir(), "safechange-command-"));

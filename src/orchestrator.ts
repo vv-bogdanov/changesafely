@@ -20,6 +20,9 @@ import { assertProtocolVersion } from "./protocol.js";
 import { implementationReport } from "./report.js";
 import type { CommandResult } from "./runner.js";
 import {
+  type DecisionArtifact,
+  type HarnessArtifact,
+  type VerificationArtifact,
   validateChangeContract,
   validateDecisionArtifact,
   validateDetailedPlan,
@@ -27,9 +30,6 @@ import {
   validateHarnessArtifact,
   validateImplementationArtifact,
   validateVerificationArtifact,
-  type DecisionArtifact,
-  type HarnessArtifact,
-  type VerificationArtifact,
 } from "./schemas.js";
 import { runPlanning } from "./workflow.js";
 
@@ -52,10 +52,7 @@ export interface FullRunResult {
   branch: string;
 }
 
-function hashesMatch(
-  expected: Record<string, string>,
-  actual: Record<string, string>,
-): boolean {
+function hashesMatch(expected: Record<string, string>, actual: Record<string, string>): boolean {
   return Object.keys(expected).every((path) => expected[path] === actual[path]);
 }
 
@@ -89,8 +86,7 @@ function validateArtifactPayload(name: string, payload: unknown): void {
     const value = payload as Record<string, unknown>;
     const { protectedHashes: _hashes, testCommit: _commit, ...artifact } = value;
     validateHarnessArtifact(artifact);
-  }
-  else if (name === "implementation" || name === "repair") {
+  } else if (name === "implementation" || name === "repair") {
     const value = payload as Record<string, unknown>;
     const { implementationCommit: _commit, actualPaths: _paths, ...artifact } = value;
     validateImplementationArtifact(artifact);
@@ -114,9 +110,7 @@ function validateLineage(state: RunState): void {
   for (const entry of state.contexts) {
     if (
       entry.role.startsWith("planner:") ||
-      ["judge", "test-author", "implementer", "verifier", "verifier:repair"].includes(
-        entry.role,
-      )
+      ["judge", "test-author", "implementer", "verifier", "verifier:repair"].includes(entry.role)
     ) {
       if (
         entry.parentThreadId !== contract.threadId ||
@@ -163,10 +157,7 @@ function validateLineage(state: RunState): void {
   }
 }
 
-export async function validateResumeBoundary(
-  repoPath: string,
-  runId: string,
-): Promise<RunState> {
+export async function validateResumeBoundary(repoPath: string, runId: string): Promise<RunState> {
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
   state.model ??= "";
@@ -175,12 +166,7 @@ export async function validateResumeBoundary(
     throw new Error("Run state identity or repair bound is invalid");
   }
   for (const name of Object.keys(state.artifacts)) {
-    const envelope = await loadVerifiedArtifact<unknown>(
-      repoPath,
-      state,
-      name,
-      artifactPath(name),
-    );
+    const envelope = await loadVerifiedArtifact<unknown>(repoPath, state, name, artifactPath(name));
     validateArtifactPayload(name, envelope.payload);
   }
   validateLineage(state);
@@ -216,30 +202,19 @@ export async function validateResumeBoundary(
     throw new Error("Recorded phase commit does not descend from B0");
   }
   const harness = (
-    await loadVerifiedArtifact<StoredHarness>(
-      repoPath,
-      state,
-      "harness",
-      "harness.json",
-    )
+    await loadVerifiedArtifact<StoredHarness>(repoPath, state, "harness", "harness.json")
   ).payload;
   if (harness.testCommit !== state.testCommit) {
     throw new Error("T1 artifact does not match persisted state");
   }
-  const protectedActual = await hashFiles(
-    repoPath,
-    Object.keys(harness.protectedHashes),
-  );
+  const protectedActual = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
   if (!hashesMatch(harness.protectedHashes, protectedActual)) {
     throw new Error("Protected T1 hashes changed before resume");
   }
   return state;
 }
 
-async function finalizeVerifiedRun(
-  repoPath: string,
-  runId: string,
-): Promise<FullRunResult> {
+async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<FullRunResult> {
   await assertProtocolVersion();
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
@@ -259,27 +234,14 @@ async function finalizeVerifiedRun(
     }
     await inspectBaseline(repoPath);
     const harness = (
-      await loadVerifiedArtifact<StoredHarness>(
-        repoPath,
-        state,
-        "harness",
-        "harness.json",
-      )
+      await loadVerifiedArtifact<StoredHarness>(repoPath, state, "harness", "harness.json")
     ).payload;
-    const protectedActual = await hashFiles(
-      repoPath,
-      Object.keys(harness.protectedHashes),
-    );
+    const protectedActual = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
     if (!hashesMatch(harness.protectedHashes, protectedActual)) {
       throw new Error("Protected T1 hashes changed before release gate");
     }
     const baselineCommands = (
-      await loadVerifiedArtifact<CommandResult[]>(
-        repoPath,
-        state,
-        "commands",
-        "commands.json",
-      )
+      await loadVerifiedArtifact<CommandResult[]>(repoPath, state, "commands", "commands.json")
     ).payload;
     const finalCommandArtifact =
       state.repairCount === 1
@@ -305,8 +267,7 @@ async function finalizeVerifiedRun(
     if (
       verificationCommands.some((command) => command.exitCode !== 0) ||
       baselineCommands.some(
-        (command) =>
-          command.exitCode === 0 && harness.expectedBaselineOutcome === "fail",
+        (command) => command.exitCode === 0 && harness.expectedBaselineOutcome === "fail",
       )
     ) {
       throw new Error("Recorded command outcomes do not satisfy the harness and final checks");
@@ -339,17 +300,13 @@ async function finalizeVerifiedRun(
     }
 
     const decision = (
-      await loadVerifiedArtifact<DecisionArtifact>(
-        repoPath,
-        state,
-        "decision",
-        "decision.json",
-      )
+      await loadVerifiedArtifact<DecisionArtifact>(repoPath, state, "decision", "decision.json")
     ).payload;
     state.status = "VERIFIED";
     state.phase = "verified";
     state.reason = verification.reason;
-    state.nextAction = "Review the SafeChange branch and merge it through the normal repository process.";
+    state.nextAction =
+      "Review the SafeChange branch and merge it through the normal repository process.";
     await store.writeState(state);
     const reportPath = await store.writeText(
       "report.md",

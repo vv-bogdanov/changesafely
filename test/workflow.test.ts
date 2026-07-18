@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -54,9 +54,7 @@ test("runs D0 and C0 as roots and decision roles as C0 forks", async (t) => {
 
   assert.equal(result.status, "PLANNED");
   assert.equal(result.decision?.winnerPlanId, "plan-1");
-  const state = JSON.parse(
-    await readFile(join(result.runPath, "state.json"), "utf8"),
-  ) as RunState;
+  const state = JSON.parse(await readFile(join(result.runPath, "state.json"), "utf8")) as RunState;
   const discovery = state.contexts.find((entry) => entry.role === "discovery");
   const contract = state.contexts.find((entry) => entry.role === "contract");
   assert.ok(discovery);
@@ -120,13 +118,9 @@ test("corrects one planner artifact in the same fork before Judge", async (t) =>
   });
 
   assert.equal(result.status, "PLANNED");
-  const state = JSON.parse(
-    await readFile(join(result.runPath, "state.json"), "utf8"),
-  ) as RunState;
+  const state = JSON.parse(await readFile(join(result.runPath, "state.json"), "utf8")) as RunState;
   const planner = state.contexts.find((entry) => entry.role === "planner:plan-1");
-  const correction = state.contexts.find(
-    (entry) => entry.role === "planner-correction:plan-1",
-  );
+  const correction = state.contexts.find((entry) => entry.role === "planner-correction:plan-1");
   assert.equal(correction?.threadId, planner?.threadId);
   assert.equal(correction?.checkpointTurnId, planner?.turnId);
 });
@@ -149,9 +143,7 @@ test("corrects one Judge decision in the same fork before planning completes", a
   });
 
   assert.equal(result.status, "PLANNED");
-  const state = JSON.parse(
-    await readFile(join(result.runPath, "state.json"), "utf8"),
-  ) as RunState;
+  const state = JSON.parse(await readFile(join(result.runPath, "state.json"), "utf8")) as RunState;
   const judge = state.contexts.find((entry) => entry.role === "judge");
   const correction = state.contexts.find((entry) => entry.role === "judge-correction");
   assert.equal(correction?.threadId, judge?.threadId);

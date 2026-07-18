@@ -36,12 +36,7 @@ async function writeProtocol(): Promise<void> {
   await markGeneratedTypesAsDeclarations(join(generatedRoot, "types"));
   await execFileAsync(
     "codex",
-    [
-      "app-server",
-      "generate-json-schema",
-      "--out",
-      join(generatedRoot, "json-schema"),
-    ],
+    ["app-server", "generate-json-schema", "--out", join(generatedRoot, "json-schema")],
     { timeout: 30_000 },
   );
   await writeFile(

@@ -198,15 +198,7 @@ export const smokeArtifactSchema = {
 export const evidenceArtifactSchema = {
   type: "object",
   additionalProperties: false,
-  required: [
-    "summary",
-    "facts",
-    "commands",
-    "testGaps",
-    "constraints",
-    "assumptions",
-    "unknowns",
-  ],
+  required: ["summary", "facts", "commands", "testGaps", "constraints", "assumptions", "unknowns"],
   properties: {
     summary: stringSchema,
     facts: {
@@ -536,13 +528,11 @@ export const validateHarnessArtifact = compileArtifactValidator<HarnessArtifact>
   "harness artifact",
   harnessArtifactSchema,
 );
-export const validateImplementationArtifact =
-  compileArtifactValidator<ImplementationArtifact>(
-    "implementation artifact",
-    implementationArtifactSchema,
-  );
-export const validateVerificationArtifact =
-  compileArtifactValidator<VerificationArtifact>(
-    "verification artifact",
-    verificationArtifactSchema,
-  );
+export const validateImplementationArtifact = compileArtifactValidator<ImplementationArtifact>(
+  "implementation artifact",
+  implementationArtifactSchema,
+);
+export const validateVerificationArtifact = compileArtifactValidator<VerificationArtifact>(
+  "verification artifact",
+  verificationArtifactSchema,
+);

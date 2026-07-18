@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  PaymentService,
   type ChargeReceipt,
   type ChargeRequest,
   type PaymentProvider,
+  PaymentService,
 } from "../src/payment.js";
 
 class RecordingProvider implements PaymentProvider {

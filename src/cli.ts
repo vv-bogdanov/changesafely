@@ -36,17 +36,12 @@ function requiredString(value: unknown, name: string): string {
   return value;
 }
 
-async function printRunSummary(
-  repoPath: string,
-  runId: string,
-  reportPath: string,
-): Promise<void> {
+async function printRunSummary(repoPath: string, runId: string, reportPath: string): Promise<void> {
   const state = await loadRunState(repoPath, runId);
   let selectedPlan = "none";
   if (state.artifacts.decision) {
-    selectedPlan = (
-      await loadArtifact<DecisionArtifact>(repoPath, runId, "decision.json")
-    ).payload.winnerPlanId;
+    selectedPlan = (await loadArtifact<DecisionArtifact>(repoPath, runId, "decision.json")).payload
+      .winnerPlanId;
   }
   process.stdout.write(
     [
@@ -139,9 +134,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 }
 
 const invokedPath = process.argv[1];
-if (
-  invokedPath &&
-  realpathSync(invokedPath) === fileURLToPath(import.meta.url)
-) {
+if (invokedPath && realpathSync(invokedPath) === fileURLToPath(import.meta.url)) {
   process.exitCode = await main();
 }

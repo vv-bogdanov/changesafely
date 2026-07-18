@@ -1,5 +1,5 @@
-import { createInterface } from "node:readline";
 import { mkdir, writeFile } from "node:fs/promises";
+import { createInterface } from "node:readline";
 
 interface Message {
   id?: number;
@@ -68,7 +68,11 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         { path: "src/value.ts", purpose: "Implementation" },
       ],
       steps: [
-        { id: "S1", description: "Add the failing acceptance test.", paths: ["test/value.test.ts"] },
+        {
+          id: "S1",
+          description: "Add the failing acceptance test.",
+          paths: ["test/value.test.ts"],
+        },
         { id: "S2", description: "Implement the behavior.", paths: ["src/value.ts"] },
       ],
       safetyTests: [
@@ -223,10 +227,7 @@ lines.on("line", async (line) => {
     return;
   }
 
-  if (
-    message.method === "thread/start" ||
-    message.method === "thread/fork"
-  ) {
+  if (message.method === "thread/start" || message.method === "thread/fork") {
     threadNumber += 1;
     send({ id: message.id, result: { thread: { id: `thread-${threadNumber}` } } });
     return;

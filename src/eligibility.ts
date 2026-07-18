@@ -1,5 +1,5 @@
-import type { ChangeContract, DetailedPlan } from "./schemas.js";
 import { isSafetyTestCommand } from "./runner.js";
+import type { ChangeContract, DetailedPlan } from "./schemas.js";
 
 export interface EligibilityFailure {
   code: string;
@@ -26,10 +26,7 @@ function missingIds(required: string[], covered: string[]): string[] {
   return required.filter((id) => !coverage.has(id));
 }
 
-export function evaluatePlan(
-  contract: ChangeContract,
-  plan: DetailedPlan,
-): PlanEligibility {
+export function evaluatePlan(contract: ChangeContract, plan: DetailedPlan): PlanEligibility {
   const failures: EligibilityFailure[] = [];
   const missingCriteria = missingIds(
     contract.acceptanceCriteria.map((item) => item.id),
@@ -79,9 +76,7 @@ export function evaluatePlan(
       message: "Plan requires safety tests and deterministic verification commands",
     });
   }
-  const invalidSafetyCommands = plan.safetyTests.filter(
-    (test) => !isSafetyTestCommand(test.argv),
-  );
+  const invalidSafetyCommands = plan.safetyTests.filter((test) => !isSafetyTestCommand(test.argv));
   if (invalidSafetyCommands.length > 0) {
     failures.push({
       code: "INVALID_SAFETY_COMMAND",
@@ -111,9 +106,6 @@ export function evaluatePlan(
   };
 }
 
-export function evaluatePlans(
-  contract: ChangeContract,
-  plans: DetailedPlan[],
-): PlanEligibility[] {
+export function evaluatePlans(contract: ChangeContract, plans: DetailedPlan[]): PlanEligibility[] {
   return plans.map((plan) => evaluatePlan(contract, plan));
 }

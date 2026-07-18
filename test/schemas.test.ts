@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  ArtifactValidationError,
-  validateSmokeArtifact,
-} from "../src/schemas.js";
+import { ArtifactValidationError, validateSmokeArtifact } from "../src/schemas.js";
 
 test("accepts a valid structured artifact", () => {
   assert.deepEqual(validateSmokeArtifact({ kind: "smoke", message: "ready" }), {

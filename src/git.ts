@@ -17,7 +17,10 @@ export interface BaselineSnapshot {
 }
 
 export class PreflightError extends Error {
-  constructor(public readonly reasonCode: string, message: string) {
+  constructor(
+    public readonly reasonCode: string,
+    message: string,
+  ) {
     super(message);
     this.name = "PreflightError";
   }
@@ -87,11 +90,7 @@ export async function inspectBaseline(repoPath: string): Promise<BaselineSnapsho
     throw new PreflightError("DETACHED_HEAD", "SafeChange requires a named current branch");
   }
 
-  const trackedStatus = await git(root, [
-    "status",
-    "--porcelain=v1",
-    "--untracked-files=no",
-  ]);
+  const trackedStatus = await git(root, ["status", "--porcelain=v1", "--untracked-files=no"]);
   if (trackedStatus) {
     throw new PreflightError(
       "DIRTY_TRACKED_STATE",
@@ -117,9 +116,7 @@ export async function inspectBaseline(repoPath: string): Promise<BaselineSnapsho
     }
   }
 
-  const trackedFiles = (await git(root, ["ls-files"]))
-    .split("\n")
-    .filter(Boolean);
+  const trackedFiles = (await git(root, ["ls-files"])).split("\n").filter(Boolean);
   const manifestNames = new Set([
     "package.json",
     "package-lock.json",

@@ -2,8 +2,8 @@ import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
 import {
   ArtifactStore,
-  createRunId,
   type ContextEntry,
+  createRunId,
   type RunState,
   type RunStatus,
 } from "./artifacts.js";
@@ -17,17 +17,17 @@ import {
   plannerCorrectionPrompt,
   plannerPrompt,
 } from "./prompts.js";
-import { planningReport } from "./report.js";
 import { assertProtocolVersion } from "./protocol.js";
+import { planningReport } from "./report.js";
 import {
-  changeContractSchema,
-  decisionArtifactSchema,
-  detailedPlanSchema,
-  evidenceArtifactSchema,
   type ChangeContract,
+  changeContractSchema,
   type DecisionArtifact,
   type DetailedPlan,
+  decisionArtifactSchema,
+  detailedPlanSchema,
   type EvidenceArtifact,
+  evidenceArtifactSchema,
   validateChangeContract,
   validateDecisionArtifact,
   validateDetailedPlan,
@@ -160,11 +160,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       discoveryTurn.message,
       validateEvidenceArtifact,
     );
-    const evidenceStored = await store.writeArtifact(
-      "evidence.json",
-      "discovery",
-      evidence,
-    );
+    const evidenceStored = await store.writeArtifact("evidence.json", "discovery", evidence);
     addArtifact("evidence", evidenceStored.hash);
     await store.writeState(state);
 
@@ -265,10 +261,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
           );
           correctionContext.turnId = correctionTurn.turnId;
           correctionContext.status = "completed";
-          plan = parseStructured<DetailedPlan>(
-            correctionTurn.message,
-            validateDetailedPlan,
-          );
+          plan = parseStructured<DetailedPlan>(correctionTurn.message, validateDetailedPlan);
           if (plan.planId !== planId || plan.lens !== lens) {
             throw new Error(
               `Corrected planner identity mismatch: expected ${planId}/${lens}, got ${plan.planId}/${plan.lens}`,
@@ -287,12 +280,9 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         );
     for (const { planId, plan } of plannerResults) {
       plans.push(plan);
-      const stored = await store.writeArtifact(
-        `plans/${planId}.json`,
-        `planner:${planId}`,
-        plan,
-        [contractStored.hash],
-      );
+      const stored = await store.writeArtifact(`plans/${planId}.json`, `planner:${planId}`, plan, [
+        contractStored.hash,
+      ]);
       addArtifact(planId, stored.hash);
     }
     await store.writeState(state);
@@ -352,10 +342,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       );
       judgeContext.turnId = judgeTurn.turnId;
       judgeContext.status = "completed";
-      decision = parseStructured<DecisionArtifact>(
-        judgeTurn.message,
-        validateDecisionArtifact,
-      );
+      decision = parseStructured<DecisionArtifact>(judgeTurn.message, validateDecisionArtifact);
       if (decision.humanDecisionRequired) {
         const correctionContext = context(
           "judge-correction",
@@ -385,12 +372,10 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       if (!eligiblePlanIds.has(decision.winnerPlanId)) {
         throw new Error(`Judge selected ineligible or unknown plan ${decision.winnerPlanId}`);
       }
-      const decisionStored = await store.writeArtifact(
-        "decision.json",
-        "judge",
-        decision,
-        [contractStored.hash, eligibilityStored.hash],
-      );
+      const decisionStored = await store.writeArtifact("decision.json", "judge", decision, [
+        contractStored.hash,
+        eligibilityStored.hash,
+      ]);
       addArtifact("decision", decisionStored.hash);
       if (decision.humanDecisionRequired) {
         state.status = "HUMAN_DECISION_REQUIRED";
@@ -399,7 +384,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       } else {
         state.status = "PLANNED";
         state.reason = `Selected ${decision.winnerPlanId}: ${decision.reason}`;
-        state.nextAction = "Run SafeChange with the approved selected plan to create the safety harness.";
+        state.nextAction =
+          "Run SafeChange with the approved selected plan to create the safety harness.";
       }
     }
 
@@ -421,7 +407,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     state.status = "FAILED";
     state.phase = "failed";
     state.reason = error instanceof Error ? error.message : String(error);
-    state.nextAction = "Inspect state.json and the last role artifact, then fix the cause and retry.";
+    state.nextAction =
+      "Inspect state.json and the last role artifact, then fix the cause and retry.";
     await store.writeState(state);
     await store.writeText("report.md", planningReport(state, plans, eligibility, decision));
     throw error;

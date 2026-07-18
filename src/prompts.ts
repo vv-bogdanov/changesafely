@@ -1,10 +1,10 @@
+import type { PlanEligibility } from "./eligibility.js";
 import type {
   ChangeContract,
   DecisionArtifact,
   DetailedPlan,
   EvidenceArtifact,
 } from "./schemas.js";
-import type { PlanEligibility } from "./eligibility.js";
 
 function data(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -33,11 +33,7 @@ ${data(evidence)}
 Create a concise Change Contract. Give every acceptance criterion and protected invariant a stable unique id. allowedPathPrefixes must be repository-relative path prefixes sufficient for the task, never absolute paths. Mark changes needing human approval. Keep prose fields to one concise sentence and do not repeat the same constraint across arrays. Return only the schema-constrained JSON object.`;
 }
 
-export function plannerPrompt(
-  planId: string,
-  lens: string,
-  contract: ChangeContract,
-): string {
+export function plannerPrompt(planId: string, lens: string, contract: ChangeContract): string {
   return `[SAFECHANGE_ROLE:planner]
 You are independent planner ${planId}, forked directly from C0. Your lens is: ${lens}.
 

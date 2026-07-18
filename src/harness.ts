@@ -1,15 +1,10 @@
-import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
+import { ArtifactStore, type ContextEntry, loadArtifact, loadRunState } from "./artifacts.js";
 import {
-  ArtifactStore,
-  loadArtifact,
-  loadRunState,
-  type ContextEntry,
-} from "./artifacts.js";
-import {
-  changedPaths,
   assertProtectedConfigurationUnchanged,
+  changedPaths,
   commitPaths,
   createSafeChangeBranch,
   diffFrom,
@@ -17,13 +12,13 @@ import {
   inspectBaseline,
 } from "./git.js";
 import { testAuthorPrompt } from "./prompts.js";
-import { isSafetyTestCommand, runCommand, type CommandResult } from "./runner.js";
+import { type CommandResult, isSafetyTestCommand, runCommand } from "./runner.js";
 import {
-  harnessArtifactSchema,
   type ChangeContract,
   type DecisionArtifact,
   type DetailedPlan,
   type HarnessArtifact,
+  harnessArtifactSchema,
   validateHarnessArtifact,
 } from "./schemas.js";
 
@@ -103,18 +98,12 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     throw new Error(state.reason);
   }
 
-  const contract = (
-    await loadArtifact<ChangeContract>(repoPath, state.runId, "contract.json")
-  ).payload;
-  const decision = (
-    await loadArtifact<DecisionArtifact>(repoPath, state.runId, "decision.json")
-  ).payload;
+  const contract = (await loadArtifact<ChangeContract>(repoPath, state.runId, "contract.json"))
+    .payload;
+  const decision = (await loadArtifact<DecisionArtifact>(repoPath, state.runId, "decision.json"))
+    .payload;
   const plan = (
-    await loadArtifact<DetailedPlan>(
-      repoPath,
-      state.runId,
-      `plans/${decision.winnerPlanId}.json`,
-    )
+    await loadArtifact<DetailedPlan>(repoPath, state.runId, `plans/${decision.winnerPlanId}.json`)
   ).payload;
   const allowedTestPaths = selectedTestPaths(plan);
   const contractContext = state.contexts.find((entry) => entry.role === "contract");
@@ -228,11 +217,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       );
     }
 
-    const testCommit = await commitPaths(
-      repoPath,
-      paths,
-      "test: add SafeChange safety harness",
-    );
+    const testCommit = await commitPaths(repoPath, paths, "test: add SafeChange safety harness");
     const protectedHashes = await hashFiles(repoPath, paths);
     const harnessStored = await store.writeArtifact(
       "harness.json",
@@ -268,7 +253,8 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
         : "FAILED";
     state.phase = "test-author-failed";
     state.reason = error instanceof Error ? error.message : String(error);
-    state.nextAction = "Inspect the SafeChange branch and Test Author diff; no cleanup was performed.";
+    state.nextAction =
+      "Inspect the SafeChange branch and Test Author diff; no cleanup was performed.";
     await store.writeState(state);
     throw error;
   } finally {

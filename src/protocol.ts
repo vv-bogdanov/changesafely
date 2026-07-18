@@ -1,8 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import protocolVersion from "./app-server/generated/protocol-version.json" with {
-  type: "json",
-};
+import protocolVersion from "./app-server/generated/protocol-version.json" with { type: "json" };
 import { safeEnvironment } from "./environment.js";
 import { PreflightError } from "./git.js";
 

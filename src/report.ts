@@ -1,8 +1,7 @@
-import type { PlanEligibility } from "./eligibility.js";
-import type { DecisionArtifact, DetailedPlan } from "./schemas.js";
-import type { VerificationArtifact } from "./schemas.js";
 import type { RunState } from "./artifacts.js";
+import type { PlanEligibility } from "./eligibility.js";
 import type { CommandResult } from "./runner.js";
+import type { DecisionArtifact, DetailedPlan, VerificationArtifact } from "./schemas.js";
 
 export function planningReport(
   state: RunState,

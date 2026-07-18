@@ -1,8 +1,5 @@
 import { AppServerClient } from "../src/app-server/client.js";
-import {
-  smokeArtifactSchema,
-  validateSmokeArtifact,
-} from "../src/schemas.js";
+import { smokeArtifactSchema, validateSmokeArtifact } from "../src/schemas.js";
 
 const cwd = process.cwd();
 const client = new AppServerClient({ cwd, turnTimeoutMs: 120_000 });

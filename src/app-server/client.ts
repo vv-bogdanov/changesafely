@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 import { safeEnvironment } from "../environment.js";
 import type { InitializeParams } from "./generated/types/InitializeParams.js";
@@ -71,7 +71,10 @@ export interface TurnResult {
 }
 
 export class AppServerError extends Error {
-  constructor(message: string, public readonly rpcError?: RpcError) {
+  constructor(
+    message: string,
+    public readonly rpcError?: RpcError,
+  ) {
     super(message);
     this.name = "AppServerError";
   }
@@ -144,11 +147,7 @@ export class AppServerClient {
     return this.request("thread/resume", params);
   }
 
-  async runTurn(
-    threadId: string,
-    prompt: string,
-    options: RunTurnOptions,
-  ): Promise<TurnResult> {
+  async runTurn(threadId: string, prompt: string, options: RunTurnOptions): Promise<TurnResult> {
     const params: TurnStartParams = {
       threadId,
       input: [{ type: "text", text: prompt, text_elements: [] }],
@@ -157,9 +156,7 @@ export class AppServerClient {
       sandboxPolicy: options.sandboxPolicy,
       ...(options.effort ? { effort: options.effort } : {}),
       ...(options.model ? { model: options.model } : {}),
-      ...(options.outputSchema
-        ? { outputSchema: options.outputSchema as JsonValue }
-        : {}),
+      ...(options.outputSchema ? { outputSchema: options.outputSchema as JsonValue } : {}),
     };
     const started = await this.request<TurnStartResponse>("turn/start", params);
     const turnId = started.turn.id;

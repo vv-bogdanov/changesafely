@@ -68,14 +68,13 @@ test("requires human approval for a dependency", () => {
 test("rejects a safety check that does not execute tests", () => {
   const result = evaluatePlan(contract, {
     ...plan,
-    safetyTests: [
-      { name: "not a test", proves: "AC1", argv: ["npm", "run", "typecheck"] },
-    ],
+    safetyTests: [{ name: "not a test", proves: "AC1", argv: ["npm", "run", "typecheck"] }],
   });
   assert.equal(result.eligible, false);
-  assert.deepEqual(result.failures.map((failure) => failure.code), [
-    "INVALID_SAFETY_COMMAND",
-  ]);
+  assert.deepEqual(
+    result.failures.map((failure) => failure.code),
+    ["INVALID_SAFETY_COMMAND"],
+  );
 });
 
 test("rejects a direct source test command outside the npm MVP contract", () => {

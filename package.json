@@ -19,18 +19,30 @@
   },
   "scripts": {
     "build": "node scripts/clean.mjs && tsc -p tsconfig.json",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test dist/test/*.test.js",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage --test-coverage-include=dist/src/**/*.js --test-coverage-exclude=dist/src/app-server/generated/** --test-coverage-lines=80 --test-coverage-branches=65 --test-coverage-functions=80 dist/test/*.test.js",
     "smoke:app-server": "npm run build && node dist/scripts/smoke-app-server.js",
     "demo:setup": "npm run build && node dist/scripts/setup-demo.js",
+    "package:smoke": "npm run build && node dist/scripts/package-smoke.js",
     "protocol:generate": "npm run build && node dist/scripts/generate-protocol.js --write",
     "protocol:check": "npm run build && node dist/scripts/generate-protocol.js --check",
+    "security:audit": "npm audit --audit-level=moderate",
+    "security:signatures": "npm audit signatures",
+    "ci": "npm run check && npm run typecheck && npm run test:coverage && npm run protocol:check && npm run security:audit && npm run package:smoke",
     "prepack": "npm run build"
   },
   "dependencies": {
     "ajv": "8.20.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.4",
+    "@openai/codex": "0.144.5",
     "@types/node": "26.1.1",
     "typescript": "7.0.2"
   },

@@ -4,8 +4,7 @@ import { execFile } from "node:child_process";
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
-import { promisify } from "node:util";
+import { parseArgs, promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const parsed = parseArgs({
@@ -17,11 +16,7 @@ const template = join(packageRoot, "demo", "payment-retry-template");
 
 await mkdir(dirname(target), { recursive: true });
 await cp(template, target, { recursive: true, errorOnExist: true, force: false });
-await writeFile(
-  join(target, ".gitignore"),
-  "node_modules/\ndist/\n.safechange/\n",
-  "utf8",
-);
+await writeFile(join(target, ".gitignore"), "node_modules/\ndist/\n.safechange/\n", "utf8");
 await execFileAsync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], {
   cwd: target,
   timeout: 120_000,
