@@ -122,7 +122,14 @@ Inspect a persisted run without changing Git or artifacts:
 changesafely status --repo /path/to/repo --run <run-id>
 ```
 
-`plan`, `run`, `resume`, `status`, and `doctor` accept `--json`. Run commands emit
+Inspect the ordered local execution timeline without changing the run:
+
+```sh
+changesafely trace --repo /path/to/repo --run <run-id>
+changesafely trace --repo /path/to/repo --run <run-id> --json
+```
+
+`plan`, `run`, `resume`, `status`, `trace`, and `doctor` accept `--json`. Run commands emit
 one versioned outcome document on stdout; human diagnostics remain on stderr and the
 exit code remains authoritative. Without `--json`, phase progress is written to
 stderr while the final outcome remains on stdout:
@@ -137,6 +144,11 @@ Check local readiness without starting an AI turn or repository script:
 changesafely doctor --repo /path/to/repo
 changesafely doctor --repo /path/to/repo --json
 ```
+
+Default traces store structured metadata and hashes, not raw model messages or
+command output. For local troubleshooting, `plan`, `run`, and `resume` accept
+`--diagnostics`, which persists bounded App Server stderr and command-output tails.
+Those files may contain sensitive data and remain local under the run directory.
 
 ChangeSafely never stashes, cleans, resets, amends, or rewrites user history.
 
@@ -161,8 +173,8 @@ git -C /tmp/changesafely-payment-demo log --oneline --reverse
 cat /tmp/changesafely-payment-demo/.changesafely/runs/<run-id>/report.md
 ```
 
-Two fresh live rehearsals completed in 118.90 and 122.30 seconds. The sanitized
-evidence is in [`docs/RELEASE_REHEARSAL.md`](docs/RELEASE_REHEARSAL.md) and
+Sanitized live rehearsal evidence is kept in
+[`docs/RELEASE_REHEARSAL.md`](docs/RELEASE_REHEARSAL.md); an example result is in
 [`docs/sample-report.md`](docs/sample-report.md).
 
 Live performance tests can opt into Spark without changing the product default:
@@ -185,6 +197,11 @@ Runs are stored under `.changesafely/runs/<run-id>/`:
 - `implementation.json`, optional `repair.json`, command evidence, and
   `verification.json`: the actual change and independent verdict.
 - `report.md`: concise outcome, residual risks, and next action.
+- `trace.jsonl`: a versioned append-only timeline for phases, roles, RPC methods,
+  artifacts, deterministic commands, failures, and Git boundaries.
+- `manifest.json`: run provenance, runtime versions, role policies, and prompt/schema
+  hashes.
+- `diagnostics/`: optional bounded raw tails created only with `--diagnostics`.
 
 Writes are atomic. State and artifact envelopes carry format and producer versions;
 artifacts name their hashed predecessors. Resume revalidates these contracts,
@@ -208,10 +225,12 @@ expected branch and commits, baseline ancestry, and protected T1 files.
 
 - AI roles and repository commands use network-disabled sandbox policies.
 - Repository commands use structured argv, `shell: false`, a sanitized
-  non-interactive environment, timeouts, real exit codes, and bounded logs.
+  non-interactive environment, timeouts, real exit codes, and bounded in-memory
+  output.
 - ChangeSafely core does not add `.env`, `.env.local`, or `.npmrc` contents to
   prompts. Repository scripts can still read files available to local developer
-  tools and may print them into persisted command output.
+  tools. Default evidence stores output byte counts, hashes, and truncation flags;
+  raw bounded tails are persisted only with explicit `--diagnostics` opt-in.
 - ChangeSafely protects tracked Git changes. It does not roll back ignored files,
   services, databases, queues, containers, volumes, or external systems.
 - Production credentials, deployments, destructive migrations, external writes,
@@ -237,7 +256,7 @@ prompts, artifacts, Git data, command output, environment values, and user field
 Delivery uses an HTTPS Sentry envelope with a two-second timeout and never changes
 the CLI exit code. As with any HTTPS request, the Sentry host and network provider
 can observe the source IP. This opt-in is the only ChangeSafely core network request
-outside Codex.
+outside Codex. Local trace and diagnostic files are never sent to Sentry.
 
 ## Development
 

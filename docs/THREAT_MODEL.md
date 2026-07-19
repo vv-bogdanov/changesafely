@@ -12,6 +12,7 @@ and verifies the resulting Git branch. It is not a deployment or rollback system
 - Local Codex authentication and configuration.
 - Ignored files and local configuration such as `.env` and `.npmrc`.
 - Persisted run artifacts under `.changesafely/runs/`.
+- Local trace metadata and optional diagnostic output under each run directory.
 - The integrity of the published npm package and generated App Server protocol.
 - Optional Sentry configuration and sanitized failure-code events.
 
@@ -40,6 +41,9 @@ package manager, or operating-system sandbox.
   responses are validated fail closed instead of trusting a version string.
 - Resume validates artifact hashes, lineage, Git branch, commits, ancestry, protected
   files, and phase boundaries.
+- Default trace events contain allowlisted metadata and hashes, not prompts, model
+  messages, JSON-RPC bodies, repository contents, environment values, or raw command
+  output. Run directories and trace files use restrictive POSIX permissions.
 - Sentry telemetry is disabled unless both opt-in variables are set. It sends only a
   stable reason code, command, and ChangeSafely version over HTTPS, with no exception,
   stack, path, task, prompt, artifact, Git, environment, or command-output fields.
@@ -49,14 +53,17 @@ package manager, or operating-system sandbox.
 - AI roles and repository scripts need read access to the checkout. ChangeSafely does
   not provide a deny-read boundary around ignored files. Core prompts do not include
   `.env`, `.env.local`, or `.npmrc` contents, but a malicious repository script could
-  read local files and print them into captured command output. Do not run ChangeSafely
-  in a checkout containing credentials that local development tools must not read.
+  read local files and print them. Default command evidence stores only byte counts,
+  hashes, and truncation flags. Explicit `--diagnostics` persists bounded raw tails,
+  which may therefore contain secrets. Do not enable it in a checkout containing
+  credentials that local development tools must not read, and protect the run directory.
 - A Git branch only protects tracked source. Ignored files, databases, services,
   queues, containers, volumes, and external APIs are not rolled back.
 - Network denial applies to AI role policies and deterministic command sandboxes; it
   does not make a compromised host or runtime safe. Explicitly enabled Sentry error
   telemetry performs a separate outbound HTTPS request after a CLI failure. Its
   event has no user fields, but the receiving host can observe the source IP.
+  Trace and diagnostic files and their contents are never attached to Sentry events.
 - The MVP supports a bounded npm/TypeScript command contract. Other ecosystems and
   production workflows have not been security-qualified.
 - Availability attacks remain possible through CPU, disk, or process exhaustion by

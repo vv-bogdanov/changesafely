@@ -1,151 +1,151 @@
-# ChangeSafely — зафиксированные архитектурные решения
+# ChangeSafely - recorded architecture decisions
 
-**Статус:** действующие решения MVP. Это пересматриваемые defaults, а не неизменяемые запреты.
+**Status:** active MVP decisions. These are revisable defaults, not immutable prohibitions.
 
-Этот документ сохраняет уже принятые решения и причины их выбора. При новой фактической причине решение меняется минимальным документированным diff в том же commit, без обязательного отдельного proposal phase.
+This document preserves decisions already made and why they were chosen. When new evidence warrants a change, update the decision with the smallest documented diff in the same commit; a separate proposal phase is not required.
 
-## AD-01. Продукт: orchestration и verification, а не новый coding agent
+## AD-01. Product: orchestration and verification, not a new coding agent
 
-**Решение:** ChangeSafely управляет процессом вокруг Codex: contract, competing plans, safety harness, implementation и independent verification.
+**Decision:** ChangeSafely manages the process around Codex: contract, competing plans, safety harness, implementation, and independent verification.
 
-**Почему:** ценность проекта находится в безопасной организации изменения, а не в повторении возможностей Codex по написанию кода.
+**Why:** the project's value is in organizing a change safely, not in duplicating Codex's code-writing capabilities.
 
-## AD-02. Основной интерфейс — CLI
+## AD-02. The primary interface is a CLI
 
-**Решение:** строить standalone TypeScript CLI; Codex Skill добавить как тонкую точку входа после стабилизации CLI.
+**Decision:** build a standalone TypeScript CLI; add a Codex Skill as a thin entry point after the CLI stabilizes.
 
-**Почему:** CLI естественен для developer/DevOps workflow, быстро строится, легко демонстрируется и не требует UI debugging.
+**Why:** a CLI is natural for developer and DevOps workflows, quick to build, easy to demonstrate, and does not require UI debugging.
 
 ## AD-03. TypeScript / Node.js
 
-**Решение:** ядро проекта писать на TypeScript.
+**Decision:** implement the project core in TypeScript.
 
-**Почему:** целевой пользовательский стек, удобное тестирование и packaging, хорошее соответствие локальному developer tooling.
+**Why:** it matches the target user stack, supports convenient testing and packaging, and fits local developer tooling well.
 
-## AD-04. Codex App Server вместо SDK и прямого `codex exec`
+## AD-04. Codex App Server instead of an SDK or direct `codex exec`
 
-**Решение:** использовать `codex app-server` через `stdio` JSON-RPC.
+**Decision:** use `codex app-server` over `stdio` JSON-RPC.
 
-**Почему:** ChangeSafely требует точного `thread/fork` до checkpoint, session trees, per-turn output schemas и явных sandbox policies. Прямой CLI требует слишком много process/protocol glue, а публичная поверхность SDK не является основой для требуемого fork graph.
+**Why:** ChangeSafely requires precise `thread/fork` behavior at a checkpoint, session trees, per-turn output schemas, and explicit sandbox policies. The direct CLI would require too much process and protocol glue, while the public SDK surface is not the basis for the required fork graph.
 
-**Ограничение:** реализовать тонкий runtime client, а не универсальный SDK.
+**Constraint:** implement a thin runtime client, not a general-purpose SDK.
 
-## AD-05. Воспроизводимый protocol baseline
+## AD-05. Reproducible protocol baseline
 
-**Решение:** генерировать и проверять TypeScript/JSON Schema artifacts на точной dev/CI версии Codex. В runtime использовать стандартный `codex` из `PATH`, проверять handshake и фактически используемые сообщения, но не блокировать запуск по несовпадению строки версии.
+**Decision:** generate and verify TypeScript and JSON Schema artifacts against an exact Codex development/CI version. At runtime, use the standard `codex` from `PATH`, validate the handshake and messages actually used, and do not block execution solely because the version string differs.
 
-**Почему:** exact dev baseline сохраняет воспроизводимость, а runtime validation останавливает реальную несовместимость без ежедневного принуждения пользователей к конкретной сборке Codex.
+**Why:** an exact development baseline preserves reproducibility, while runtime validation stops real incompatibilities without forcing users onto a specific Codex build every day.
 
-## AD-06. `stdio`, не WebSocket
+## AD-06. `stdio`, not WebSocket
 
-**Решение:** использовать локальный `stdio` transport.
+**Decision:** use local `stdio` transport.
 
-**Почему:** это стабильный, минимальный и безопасный вариант для локального CLI. WebSocket transport не нужен MVP.
+**Why:** it is the stable, minimal, and safe option for a local CLI. The MVP does not need WebSocket transport.
 
-## AD-07. Два root contexts
+## AD-07. Two root contexts
 
-**Решение:** Scratch Discovery `D0` и Canonical Contract `C0` — разные новые threads.
+**Decision:** Scratch Discovery `D0` and Canonical Contract `C0` are separate new threads.
 
-**Почему:** Discovery содержит шум, промежуточные гипотезы и потенциальные ошибки. Если fork-ать все роли от него, одна ошибка становится общей для всего дерева.
+**Why:** Discovery contains noise, intermediate hypotheses, and potential errors. Forking every role from it would make one error common to the whole tree.
 
-## AD-08. `C0` — единственный канонический fork point
+## AD-08. `C0` is the only canonical fork point
 
-**Решение:** Planners, Judge, Test Author, Implementer и Verifier fork-аются от завершённого checkpoint `C0`.
+**Decision:** Planners, Judge, Test Author, Implementer, and Verifier fork from the completed `C0` checkpoint.
 
-**Почему:** роли получают одинаковое понимание задачи, но сохраняют независимую последующую историю.
+**Why:** roles receive the same understanding of the task while retaining independent subsequent histories.
 
-## AD-09. Implementer не наследует Planner transcript
+## AD-09. Implementer does not inherit a Planner transcript
 
-**Решение:** Implementer fork-ается от `C0` и получает selected plan как validated artifact.
+**Decision:** Implementer forks from `C0` and receives the selected plan as a validated artifact.
 
-**Почему:** подробный план должен быть самодостаточным. Наследование transcript усиливает confirmation bias и скрывает неявные assumptions.
+**Why:** the detailed plan must be self-contained. Inheriting the transcript increases confirmation bias and hides implicit assumptions.
 
-## AD-10. Verifier не наследует Implementer transcript
+## AD-10. Verifier does not inherit the Implementer transcript
 
-**Решение:** Verifier fork-ается от `C0` и получает contract, plan, actual diff и deterministic results.
+**Decision:** Verifier forks from `C0` and receives the contract, plan, actual diff, and deterministic results.
 
-**Почему:** проверять нужно исходную задачу, а не продолжать объяснение автора реализации.
+**Why:** verification must evaluate the original task, not continue the implementation author's explanation.
 
-## AD-11. `N` независимых plans, одна реализация
+## AD-11. `N` independent plans, one implementation
 
-**Решение:** `N` настраивается, default 3, разумный MVP limit 5. Каждый Planner формирует approach и detailed plan под своей lens. Реализуется только победивший plan.
+**Decision:** `N` is configurable, defaults to 3, and has a reasonable MVP limit of 5. Each Planner develops an approach and detailed plan through its assigned lens. Only the winning plan is implemented.
 
-**Почему:** это даёт разнообразие решений без тройной стоимости и конфликтов нескольких implementations.
+**Why:** this provides solution diversity without triple implementation cost or conflicts among multiple implementations.
 
-## AD-12. Нет отдельного Approach Generator в стандартном workflow
+## AD-12. No separate Approach Generator in the standard workflow
 
-**Решение:** high-level approach и detailed plan создаются внутри каждого независимого Planner.
+**Decision:** each independent Planner creates both its high-level approach and detailed plan.
 
-**Почему:** единый idea generator становится bottleneck разнообразия и добавляет лишний узел. Широкий ideation mode можно добавить позже.
+**Why:** a single idea generator becomes a diversity bottleneck and adds an unnecessary node. A broader ideation mode can be added later.
 
-## AD-13. Формальные gates до LLM Judge
+## AD-13. Formal gates before the LLM Judge
 
-**Решение:** сначала исключать планы по обязательным критериям, затем сравнивать допустимые планы через Judge.
+**Decision:** first exclude plans using mandatory criteria, then have the Judge compare eligible plans.
 
-**Почему:** Judge не должен единолично решать вопросы, которые проверяются формально. Не использовать псевдоточные numerical scores.
+**Why:** the Judge should not decide alone what can be checked formally. Do not use pseudo-precise numerical scores.
 
-## AD-14. Safety harness до реализации
+## AD-14. Safety harness before implementation
 
-**Решение:** отдельный Test Author создаёт protected tests/validation до production-code change; затем создаётся отдельный commit.
+**Decision:** a separate Test Author creates protected tests or validation before any production-code change; then a separate commit is created.
 
-**Почему:** тесты должны проверять контракт, а не быть подогнаны под уже написанное решение.
+**Why:** tests should verify the contract rather than be tailored to an implementation already written.
 
-## AD-15. Один write actor
+## AD-15. One write actor
 
-**Решение:** planners могут работать параллельно; Test Author и Implementer работают последовательно.
+**Decision:** planners may work in parallel; Test Author and Implementer work sequentially.
 
-**Почему:** параллельная запись в один checkout создаёт конфликты, нестабильное состояние и сложную координацию.
+**Why:** parallel writes to one checkout create conflicts, unstable state, and complex coordination.
 
-## AD-16. Deterministic runner вне LLM
+## AD-16. Deterministic runner outside the LLM
 
-**Решение:** test/typecheck/lint/build/Git checks выполняет обычный код.
+**Decision:** ordinary code performs test, typecheck, lint, build, and Git checks.
 
-**Почему:** утверждение модели не заменяет реальные exit codes и diff.
+**Why:** a model assertion cannot replace real exit codes and a real diff.
 
-## AD-17. Текущий checkout + отдельная branch
+## AD-17. Current checkout plus a separate branch
 
-**Решение:** ChangeSafely работает в текущем checkout и создаёт branch перед первым write; worktrees не управляются ядром MVP.
+**Decision:** ChangeSafely works in the current checkout and creates a branch before the first write; the MVP core does not manage worktrees.
 
-**Почему:** сохраняется настроенная среда, `.env`, dependencies и локальные services. Worktree setup добавляет лишние проблемы с ignored files, ports, volumes и dependencies.
+**Why:** this preserves the configured environment, `.env`, dependencies, and local services. Worktree setup adds avoidable problems with ignored files, ports, volumes, and dependencies.
 
-## AD-18. Чистый tracked baseline
+## AD-18. Clean tracked baseline
 
-**Решение:** dirty tracked/staged state блокирует запуск; ChangeSafely не делает автоматический stash/reset/clean.
+**Decision:** dirty tracked or staged state blocks the run; ChangeSafely never automatically stashes, resets, or cleans.
 
-**Почему:** инструмент безопасности не должен самовольно управлять пользовательскими незакоммиченными изменениями.
+**Why:** a safety tool must not unilaterally manage a user's uncommitted changes.
 
-## AD-19. Два основных commits
+## AD-19. Two primary commits
 
-**Решение:** `T1` содержит safety harness, `I1` — implementation.
+**Decision:** `T1` contains the safety harness and `I1` contains the implementation.
 
-**Почему:** это делает test-first sequence наблюдаемой и позволяет отдельно проверять тесты и код.
+**Why:** this makes the test-first sequence observable and allows separate review of tests and code.
 
-## AD-20. Ограниченная гарантия rollback
+## AD-20. Limited rollback guarantee
 
-**Решение:** MVP гарантирует возврат tracked source code к baseline, но не внешнего состояния.
+**Decision:** the MVP guarantees a return to baseline tracked source code, not external state.
 
-**Почему:** branch не откатывает БД, volumes, очереди и внешние APIs. Поэтому production writes исключены.
+**Why:** a branch cannot roll back databases, volumes, queues, or external APIs. Production writes are therefore excluded.
 
-## AD-21. Persisted run state без БД
+## AD-21. Persisted run state without a database
 
-**Решение:** сохранять state и artifacts в `.changesafely/runs/<run-id>/`.
+**Decision:** store state and artifacts under `.changesafely/runs/<run-id>/`.
 
-**Почему:** workflow длинный и может прерываться; обычных JSON/Markdown достаточно для MVP.
+**Why:** the workflow is long and may be interrupted; ordinary JSON and Markdown are sufficient for the MVP.
 
-## AD-22. Cache — оптимизация, не зависимость
+## AD-22. Cache is an optimization, not a dependency
 
-**Решение:** одинаковый `C0` prefix и fork graph должны помогать prompt caching, но workflow обязан быть корректным без cache hit.
+**Decision:** the identical `C0` prefix and fork graph should help prompt caching, but the workflow must remain correct without a cache hit.
 
-**Почему:** cache routing не является логической гарантией.
+**Why:** cache routing is not a logical guarantee.
 
-## AD-23. Skill после CLI
+## AD-23. Skill after CLI
 
-**Решение:** сначала закончить CLI, затем добавить repo/user skill, а plugin рассматривать только как способ распространения.
+**Decision:** complete the CLI first, then add a repository or user skill, and consider a plugin only as a distribution mechanism.
 
-**Почему:** workflow и детерминированная логика принадлежат приложению; skill не должен заменять runtime.
+**Why:** the workflow and deterministic logic belong in the application; a skill must not replace the runtime.
 
-## AD-24. Golden path прежде универсальности
+## AD-24. Golden path before universality
 
-**Решение:** сначала один контролируемый TypeScript payment/retry demo, затем robustness и только после этого расширение.
+**Decision:** start with one controlled TypeScript payment/retry demo, then improve robustness, and expand only afterward.
 
-**Почему:** цель хакатона — законченный runnable product; широкая незавершённая поддержка хуже одного убедительного сценария.
+**Why:** the hackathon goal is a finished, runnable product; broad unfinished support is worse than one convincing scenario.

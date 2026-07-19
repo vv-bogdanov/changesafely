@@ -61,6 +61,8 @@ task -> evidence -> contract -> plans -> eligibility -> decision
 - Explicit App Server thread ids, turn ids, parent C0 id, and checkpoint turn id.
 
 Model statements are proposals or findings, never sufficient proof of success.
+The append-only trace is diagnostic history, not a source of workflow truth and not
+an event-sourced state machine.
 
 ## CLI boundary
 
@@ -69,7 +71,8 @@ versioned `--json` document are renderings of that same value, and one status ta
 defines exit codes. `status` reconstructs the outcome from verified persisted state
 without changing Git or artifacts. Expected operational failures use bounded
 `ChangeSafelyError` codes; unexpected exceptions are not converted into successful or
-blocked workflow results.
+blocked workflow results. Outcomes include direct paths to state, report, trace,
+manifest, and schema-validated artifacts.
 
 ## Runtime boundary
 
@@ -82,7 +85,9 @@ validated before their data is trusted.
 
 Repository commands are independent child processes wrapped by the Codex sandbox.
 They are allowlisted, non-interactive, network-disabled, and run with a sanitized
-environment. See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the limits of this boundary.
+environment. Their evidence includes exact argv, repository-relative cwd, timing,
+exit/signal/timeout, sandbox state, byte counts, SHA-256 hashes, and truncation flags.
+See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the limits of this boundary.
 
 ## Persistence and recovery
 
@@ -93,6 +98,22 @@ phase/status contract, named artifact inputs, artifact hashes and schemas, role
 lineage, Git branch and HEAD, baseline ancestry, protected configuration metadata,
 and T1 hashes. Unknown state or artifact versions fail closed; migrations are added
 only when a second supported persisted format exists.
+
+Each run also has `trace.jsonl`, a versioned append-only sequence written through one
+serialized `TraceWriter`. It correlates phase and state transitions, role turns,
+App Server lifecycle and JSON-RPC method timing, artifact hashes, deterministic
+commands, Git branch/commit boundaries, interruptions, resumes, and failures.
+`manifest.json` records ChangeSafely, Node, Git, Codex, platform, model, role effort,
+sandbox policy, and prompt/output-schema hashes. The trace stores metadata and hashes,
+not task text, prompts, model messages, JSON-RPC bodies, repository contents, or raw
+command output. Malformed payloads are represented by type, validation paths, byte
+count, and SHA-256 only.
+
+`--diagnostics` is an explicit local opt-in that writes bounded command stdout/stderr
+and App Server stderr tails under `diagnostics/`. On POSIX, run directories use mode
+`0700` and trace, manifest, and diagnostic files use `0600`. The default mode does not
+create the diagnostics directory. `changesafely trace --run <run-id> [--json]` reads
+the timeline without mutating it. Trace replay is never used for workflow recovery.
 
 Failures keep the branch, working tree, and artifacts inspectable. ChangeSafely does
 not claim automatic rollback or clean up user state.

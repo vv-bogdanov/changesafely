@@ -25,4 +25,6 @@ ChangeSafely is not a deployment tool and does not claim to roll back external s
 Optional Sentry error telemetry is disabled by default and requires both
 `CHANGESAFELY_TELEMETRY=1` and `CHANGESAFELY_SENTRY_DSN`. It sends only allowlisted
 failure metadata described in the threat model. Never place a private credential in
-the DSN variable.
+the DSN variable. Local run traces contain structured metadata and hashes by default;
+`--diagnostics` additionally stores bounded raw output tails that may contain sensitive
+data. Diagnostic files are never sent to Sentry.

@@ -12,6 +12,8 @@ All notable changes to ChangeSafely are documented here. The project follows
 - Versioned text/JSON outcomes, read-only `status`, explicit `--model`, total
   workflow `--timeout`, phase progress, and resumable pre-write interruption handling.
 - Packed CLI functional coverage plus macOS and Windows package/process smoke jobs.
+- Versioned append-only run traces, provenance manifests, read-only `trace`, and
+  opt-in bounded local diagnostics with privacy-preserving command evidence.
 
 ### Changed
 
@@ -19,6 +21,8 @@ All notable changes to ChangeSafely are documented here. The project follows
   and validate runtime compatibility through the App Server contract.
 - Allow bounded targeted npm test scripts and common verification script variants.
 - Resolve npm, Codex, and package binaries portably without shell interpolation.
+- Use the ChangeSafely product, package, CLI, branch, storage, environment-variable,
+  and repository names consistently across the public surface.
 
 ## [0.1.0] - 2026-07-18
 

@@ -29,6 +29,15 @@ publishing the first public prerelease.
 
 ## Privacy and security
 
+- [ ] Run a successful, failed, blocked, interrupted, timed-out, and resumed workflow;
+  inspect `trace.jsonl` for continuous sequence numbers and accurate terminal events.
+- [ ] Confirm the default trace contains no task, prompt, model response, JSON-RPC
+  body, repository contents, environment values, or raw command/App Server output.
+- [ ] Exercise `--diagnostics`; confirm bounded local tails, the warning, and POSIX
+  `0700` run-directory / `0600` file permissions. Confirm no diagnostics directory is
+  created without opt-in.
+- [ ] Verify `changesafely trace --run <run-id>` and `--json` are read-only and the
+  JSON result remains isolated from progress output.
 - [ ] Send one staging Sentry event using explicit telemetry opt-in and inspect the
   received payload. It must contain only version, command, and stable reason code.
 - [ ] Confirm Sentry receives no exception, stack, path, task, prompt, artifact, Git,

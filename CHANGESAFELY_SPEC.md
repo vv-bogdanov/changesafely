@@ -1,83 +1,83 @@
-# ChangeSafely — техническое задание для coding-агента
+# ChangeSafely - technical specification for a coding agent
 
-**Статус:** принятое исходное ТЗ для PoC и MVP; сохраняется как design record
+**Status:** accepted initial specification for the PoC and MVP; retained as a design record
 
-**Проект:** ChangeSafely
-**Трек:** OpenAI Build Week — Developer Tools  
-**Основной стек:** TypeScript / Node.js  
-**Основной интерфейс:** CLI  
-**AI runtime:** Codex App Server через локальный `stdio` transport
+**Project:** ChangeSafely
+**Track:** OpenAI Build Week - Developer Tools
+**Primary stack:** TypeScript / Node.js
+**Primary interface:** CLI
+**AI runtime:** Codex App Server over local `stdio` transport
 
 ---
 
-## 1. Контекст проекта
+## 1. Project context
 
-ChangeSafely создаётся для OpenAI Build Week. Проект относится к категории **Developer Tools**, куда входят инструменты для testing, DevOps, agentic workflows и security.
+ChangeSafely is being built for OpenAI Build Week. The project belongs to the **Developer Tools** category, which includes tools for testing, DevOps, agentic workflows, and security.
 
-Хакатон оценивает проекты по четырём равнозначным направлениям:
+The hackathon evaluates projects across four equally weighted dimensions:
 
-1. технологическая реализация и реальное использование Codex;
-2. целостность и работоспособность продукта;
-3. потенциальный практический эффект;
-4. качество и новизна идеи.
+1. technical implementation and genuine use of Codex;
+2. product completeness and functionality;
+3. potential practical impact;
+4. quality and originality of the idea.
 
-Для submission нужен работающий проект, репозиторий с понятным запуском, публичное демо-видео продолжительностью менее трёх минут и способ протестировать developer tool без его пересборки с нуля. Дедлайн — **21 июля 2026 года, 17:00 PT**, то есть **22 июля 2026 года, 07:00 по Бангкоку**.
+A submission requires a working project, a repository with clear startup instructions, a public demo video shorter than three minutes, and a way to test the developer tool without rebuilding it from scratch. The deadline is **July 21, 2026, 5:00 PM PT**, which is **July 22, 2026, 7:00 AM in Bangkok**.
 
-Цель команды — не просто показать технический эксперимент, а сделать небольшой, законченный и убедительный инструмент, который демонстрирует новый способ работы с coding-агентами.
+The team's goal is not merely to show a technical experiment, but to build a small, complete, and convincing tool that demonstrates a new way of working with coding agents.
 
-### Почему выбран ChangeSafely
+### Why ChangeSafely was chosen
 
-Современный coding-агент часто выполняет весь цикл в одном контексте:
+A modern coding agent often performs the entire cycle in one context:
 
 ```text
-понять задачу
-→ выбрать первое правдоподобное решение
-→ изменить код
-→ изменить или добавить тесты
-→ самостоятельно оценить результат
+understand the task
+-> choose the first plausible solution
+-> change the code
+-> change or add tests
+-> evaluate the result itself
 ```
 
-Такой процесс имеет системные слабости:
+This process has systemic weaknesses:
 
-- первая идея может быть не лучшей и создаёт anchoring;
-- планирование часто недостаточно отделено от реализации;
-- агент может не заметить недостающие проверки до изменения кода;
-- тесты могут быть подогнаны под выбранную реализацию;
-- область изменения может незаметно расшириться;
-- автор изменения склонен подтверждать собственное решение;
-- «тесты прошли» не означает, что выполнен исходный контракт;
-- длинная сессия загрязняется логами, ошибочными гипотезами и промежуточными попытками;
-- Git rollback возвращает исходный код, но не обязательно внешнее состояние.
+- the first idea may not be the best one and creates anchoring;
+- planning is often insufficiently separated from implementation;
+- the agent may not notice missing checks before changing code;
+- tests may be tailored to the chosen implementation;
+- the change scope may expand unnoticed;
+- the change author is inclined to confirm its own solution;
+- "tests passed" does not mean the original contract was satisfied;
+- a long session becomes polluted with logs, incorrect hypotheses, and intermediate attempts;
+- Git rollback restores source code, but not necessarily external state.
 
-ChangeSafely должен уменьшить эти риски с помощью структурированного процесса, а не обещать абсолютную невозможность поломки.
+ChangeSafely must reduce these risks through a structured process, not promise that breakage is absolutely impossible.
 
 ---
 
-## 2. Суть продукта
+## 2. Product concept
 
-ChangeSafely — orchestration- и verification-слой вокруг Codex для безопасного внесения изменений в существующий репозиторий.
+ChangeSafely is an orchestration and verification layer around Codex for safely making changes to an existing repository.
 
-Пользователь формулирует намерение обычным языком, например:
+The user states an intent in ordinary language, for example:
 
-> Добавь автоматические повторы платежа при временном сбое провайдера, но не допускай двойного списания и не меняй публичный API.
+> Add automatic payment retries when the provider fails temporarily, but prevent duplicate charges and do not change the public API.
 
 ChangeSafely:
 
-1. исследует репозиторий;
-2. формализует задачу и защищаемые свойства;
-3. независимо рассматривает несколько подходов;
-4. выбирает минимально достаточный безопасный план;
-5. сначала создаёт недостающую страховочную сетку;
-6. реализует один выбранный план в отдельной Git-ветке;
-7. запускает объективные проверки;
-8. независимо сопоставляет фактический результат с исходной задачей;
-9. выдаёт готовую ветку и отчёт либо останавливается с конкретной причиной.
+1. explores the repository;
+2. formalizes the task and protected properties;
+3. independently considers several approaches;
+4. selects the minimally sufficient safe plan;
+5. first creates the missing safety net;
+6. implements one selected plan on a separate Git branch;
+7. runs objective checks;
+8. independently compares the actual result with the original task;
+9. delivers a ready branch and report or stops with a concrete reason.
 
-### Краткий product pitch
+### Short product pitch
 
 > **ChangeSafely explores multiple approaches before touching code, builds the missing safety net, implements the safest minimal plan, and independently verifies the actual change.**
 
-### Основная формула
+### Core formula
 
 ```text
 COMPARE BEFORE CODING
@@ -87,111 +87,111 @@ COMPARE BEFORE CODING
 
 ---
 
-## 3. Целевая аудитория
+## 3. Target audience
 
-Основная аудитория MVP:
+The primary MVP audience:
 
-- разработчики, использующие Codex для изменений в существующих проектах;
-- команды, которым важны регрессии, scope control и объяснимость решений;
-- DevOps-инженеры, использующие агентов для изменения конфигурации и инфраструктурного кода;
-- владельцы критичных частей продукта: платежи, auth, permissions, данные, интеграции.
+- developers who use Codex to change existing projects;
+- teams that care about regressions, scope control, and explainable decisions;
+- DevOps engineers who use agents to change configuration and infrastructure code;
+- owners of critical product areas: payments, authentication, permissions, data, and integrations.
 
-MVP оптимизируется под **TypeScript / Node.js repositories**, но архитектура не должна искусственно связывать orchestration с конкретным test framework.
-
----
-
-## 4. Цели MVP
-
-ChangeSafely MVP должен доказать следующие продуктовые гипотезы.
-
-### 4.1. Несколько независимых планов полезнее первого ответа
-
-Пользователь задаёт количество планов `N`. Значение по умолчанию — 3; разумный диапазон MVP — от 1 до 5.
-
-Каждый planner должен предложить не косметическую вариацию, а самостоятельный подход и затем превратить его в конкретный план по текущему репозиторию.
-
-### 4.2. Контекст можно сохранять без загрязнения ролей
-
-Общее понимание задачи должно сохраняться через fork канонической Codex-сессии, но промежуточные рассуждения одного исполнителя не должны автоматически переходить другому.
-
-### 4.3. Проверки должны появляться до реализации
-
-ChangeSafely должен сначала определить, каких доказательств не хватает для выбранного изменения, и создать защищаемый safety harness до реализации production-кода.
-
-### 4.4. Реализация должна соответствовать выбранному scope
-
-Фактические изменения должны сравниваться с планом. Неожиданная dependency, migration, protected-file change или расширение затронутой области должны приводить к остановке или перепланированию.
-
-### 4.5. Итог должен проверяться независимо
-
-Verifier должен оценивать изменение относительно исходного Change Contract и фактических результатов команд, не наследуя transcript Implementer.
-
-### 4.6. Пользователь должен получить законченный артефакт
-
-Успешный запуск заканчивается:
-
-- отдельной Git-веткой;
-- понятной историей коммитов;
-- добавленными проверками;
-- реализованным изменением;
-- verification report;
-- явным остаточным риском и ограничениями rollback.
+The MVP is optimized for **TypeScript / Node.js repositories**, but the architecture must not artificially couple orchestration to a particular test framework.
 
 ---
 
-## 5. Не-цели MVP
+## 4. MVP goals
 
-Следующие возможности сознательно исключаются до доказательства основного workflow:
+The ChangeSafely MVP must prove the following product hypotheses.
+
+### 4.1. Several independent plans are more useful than the first answer
+
+The user sets the number of plans `N`. The default is 3; a reasonable MVP range is 1 to 5.
+
+Each planner must propose an independent approach, not a cosmetic variation, and then turn it into a concrete plan for the current repository.
+
+### 4.2. Context can be preserved without contaminating roles
+
+A shared understanding of the task must be preserved by forking the canonical Codex session, while one actor's intermediate reasoning must not automatically pass to another.
+
+### 4.3. Checks must be created before implementation
+
+ChangeSafely must first identify what evidence is missing for the selected change and create a protected safety harness before implementing production code.
+
+### 4.4. Implementation must match the selected scope
+
+Actual changes must be compared with the plan. An unexpected dependency, migration, protected-file change, or scope expansion must cause a stop or replanning.
+
+### 4.5. The result must be verified independently
+
+Verifier must assess the change against the original Change Contract and actual command results without inheriting the Implementer transcript.
+
+### 4.6. The user must receive a complete artifact
+
+A successful run ends with:
+
+- a separate Git branch;
+- a clear commit history;
+- added checks;
+- an implemented change;
+- a verification report;
+- explicit residual risk and rollback limitations.
+
+---
+
+## 5. MVP non-goals
+
+The following capabilities are deliberately excluded until the core workflow is proven:
 
 - web UI;
 - GitHub App;
 - MCP integrations;
 - production deployment;
-- выполнение `terraform apply`, `kubectl apply` и других production writes;
-- реальный canary rollout;
-- автоматический rollback внешних систем;
-- управление Git worktrees;
-- реализация нескольких competing plans;
-- универсальный policy language;
-- поддержка всех языков и package managers;
-- полноценная CI/CD platform;
-- доказательство отсутствия любых возможных регрессий;
-- сложный multi-agent framework или workflow engine;
-- длительные agent debates и рекурсивные brainstorm trees.
+- running `terraform apply`, `kubectl apply`, or other production writes;
+- a real canary rollout;
+- automatic rollback of external systems;
+- Git worktree management;
+- implementing multiple competing plans;
+- a universal policy language;
+- support for every language and package manager;
+- a full CI/CD platform;
+- proof that every possible regression is absent;
+- a complex multi-agent framework or workflow engine;
+- long agent debates and recursive brainstorming trees.
 
-Не добавлять эти возможности «на будущее», пока не завершён и не продемонстрирован основной вертикальный сценарий.
+Do not add these capabilities "for the future" until the core vertical workflow is complete and demonstrated.
 
 ---
 
-## 6. Основные принципы
+## 6. Core principles
 
-### 6.1. KISS и YAGNI
+### 6.1. KISS and YAGNI
 
-Выбирать самое простое решение, которое полностью поддерживает утверждённый workflow. Не создавать общие abstraction layers без реального второго use case.
+Choose the simplest solution that fully supports the approved workflow. Do not create general abstraction layers without a real second use case.
 
-### 6.2. No evidence — no change
+### 6.2. No evidence - no change
 
-Если для значимого требования или защищаемого свойства нет достаточной проверки, ChangeSafely должен сначала создать проверку либо честно остановиться.
+If a significant requirement or protected property lacks a sufficient check, ChangeSafely must create that check first or stop honestly.
 
-### 6.3. Самый простой допустимый план, а не самый короткий план
+### 6.3. The simplest eligible plan, not the shortest plan
 
-KISS применяется после исключения планов, которые не выполняют контракт, недостаточно проверяемы или имеют неприемлемый recovery path.
+KISS applies after excluding plans that fail the contract, cannot be verified sufficiently, or have an unacceptable recovery path.
 
-### 6.4. Один writer
+### 6.4. One writer
 
-Параллельность разрешена для read-only planning. Изменения рабочей директории выполняются строго последовательно одним write-актором за раз.
+Parallelism is allowed for read-only planning. Working-directory changes are performed strictly sequentially by one write actor at a time.
 
 ### 6.5. Fail closed
 
-При неизвестном состоянии, изменившемся baseline, неоднозначном результате или выходе за scope система останавливается, а не продолжает на предположениях.
+When state is unknown, the baseline has changed, a result is ambiguous, or work exceeds scope, the system stops instead of continuing on assumptions.
 
-### 6.6. Threads передают контекст; artifacts передают обязательства
+### 6.6. Threads carry context; artifacts carry commitments
 
-Fork помогает роли понимать исходную задачу. Но межролевой контракт всегда выражается schema-validated artifact, а не скрытой историей разговора.
+A fork helps a role understand the original task. The inter-role contract is always expressed as a schema-validated artifact, not hidden conversation history.
 
-### 6.7. Источник истины — не мнение модели
+### 6.7. The source of truth is not model opinion
 
-Источник истины:
+The sources of truth are:
 
 ```text
 Git state
@@ -199,19 +199,19 @@ Git state
 + deterministic command results
 ```
 
-LLM анализирует и объясняет результаты, но не подменяет exit codes, Git diff и содержимое файлов.
+The LLM analyzes and explains results, but does not replace exit codes, the Git diff, or file contents.
 
-### 6.8. Независимость проверки
+### 6.8. Verification independence
 
-Verifier не должен наследовать reasoning или самооценку Implementer.
+Verifier must not inherit the Implementer's reasoning or self-assessment.
 
-### 6.9. Честная граница rollback
+### 6.9. Honest rollback boundary
 
-MVP гарантирует возможность вернуться к исходному **tracked source code** через baseline branch/commit. Он не утверждает, что откатывает локальные БД, Docker volumes, очереди, внешние API или production state.
+The MVP guarantees the ability to return to the original **tracked source code** through the baseline branch or commit. It does not claim to roll back local databases, Docker volumes, queues, external APIs, or production state.
 
 ---
 
-## 7. Канонический workflow
+## 7. Canonical workflow
 
 ```text
 PREFLIGHT
@@ -247,49 +247,49 @@ REPORT / VERIFIED BRANCH / EXPLICIT BLOCK
 
 ### 7.1. Preflight
 
-До дорогостоящей работы ChangeSafely проверяет, что:
+Before expensive work, ChangeSafely checks that:
 
-- запуск происходит в Git repository;
-- определены текущая ветка и baseline commit;
-- нет незакоммиченных tracked/staged изменений;
-- нет незавершённого merge/rebase;
-- рабочее состояние пригодно для безопасного запуска;
-- доступен Codex App Server;
-- требования среды не противоречат безопасному режиму MVP.
+- the run is inside a Git repository;
+- the current branch and baseline commit are known;
+- there are no uncommitted tracked or staged changes;
+- no merge or rebase is in progress;
+- the working state is suitable for a safe run;
+- Codex App Server is available;
+- environment requirements do not conflict with the MVP safe mode.
 
-ChangeSafely не должен автоматически делать `stash`, `reset --hard`, `clean`, коммитить пользовательские изменения или удалять файлы.
+ChangeSafely must not automatically run `stash`, `reset --hard`, or `clean`, commit user changes, or delete files.
 
-Ignored-файлы, включая локальную конфигурацию и зависимости, остаются в текущем checkout. ChangeSafely не должен копировать `.env`, публиковать его содержимое или включать секреты в prompts/reports.
+Ignored files, including local configuration and dependencies, remain in the current checkout. ChangeSafely must not copy `.env`, disclose its contents, or include secrets in prompts or reports.
 
-### 7.2. Scratch Discovery — `D0`
+### 7.2. Scratch Discovery - `D0`
 
-Discovery выполняется в новой read-only сессии.
+Discovery runs in a new read-only session.
 
-Его задача:
+Its task is to:
 
-- понять релевантную часть проекта;
-- найти существующие execution paths;
-- определить доступные test/build/lint/validation команды;
-- найти текущие тесты и пробелы;
-- зафиксировать ограничения из repository instructions;
-- выявить неизвестные факторы;
-- собрать проверяемые ссылки на файлы, символы и команды.
+- understand the relevant part of the project;
+- find existing execution paths;
+- identify available test, build, lint, and validation commands;
+- find current tests and gaps;
+- record constraints from repository instructions;
+- identify unknown factors;
+- collect verifiable references to files, symbols, and commands.
 
-`D0` считается исследовательским и потенциально шумным. Он может содержать неверные промежуточные гипотезы, поэтому **не является родителем всех следующих ролей**.
+`D0` is exploratory and potentially noisy. It may contain incorrect intermediate hypotheses, so it **is not the parent of all subsequent roles**.
 
-Результат `D0` — компактный `Evidence Artifact`, содержащий подтверждённые факты, assumptions, unknowns и evidence references.
+The result of `D0` is a compact `Evidence Artifact` containing confirmed facts, assumptions, unknowns, and evidence references.
 
-### 7.3. Canonical Contract — `C0`
+### 7.3. Canonical Contract - `C0`
 
-`C0` создаётся как новая чистая сессия, а не как продолжение Discovery.
+`C0` is created as a new clean session, not as a continuation of Discovery.
 
-Она получает:
+It receives:
 
-- исходное намерение пользователя;
+- the user's original intent;
 - validated evidence;
-- критичные repository constraints.
+- critical repository constraints.
 
-`C0` при необходимости выборочно перепроверяет факты и создаёт канонический Change Contract:
+When needed, `C0` selectively rechecks facts and creates the canonical Change Contract:
 
 - goal;
 - acceptance criteria;
@@ -301,195 +301,195 @@ Discovery выполняется в новой read-only сессии.
 - risk flags;
 - unresolved unknowns.
 
-Завершённый turn `C0` становится immutable checkpoint, от которого fork-аются независимые роли.
+The completed `C0` turn becomes an immutable checkpoint from which independent roles fork.
 
-В `C0` не должны попадать raw logs, planner debates, implementation attempts или длинные stack traces.
+`C0` must not contain raw logs, planner debates, implementation attempts, or long stack traces.
 
-### 7.4. Независимые planners
+### 7.4. Independent planners
 
-Создаётся `N` fork-ов от канонического checkpoint `C0`.
+Create `N` forks from the canonical `C0` checkpoint.
 
-Каждый planner:
+Each planner:
 
-1. формулирует самостоятельный high-level approach;
-2. проверяет его по реальному репозиторию;
-3. разворачивает в detailed plan;
-4. может признать свой подход непригодным.
+1. formulates an independent high-level approach;
+2. checks it against the real repository;
+3. expands it into a detailed plan;
+4. may conclude that its approach is unsuitable.
 
-Стандартные lenses для `N = 3`:
+Standard lenses for `N = 3`:
 
 #### Minimal-change lens
 
-- минимальный diff;
-- существующие abstractions;
-- отсутствие спекулятивной архитектуры;
-- отсутствие необязательных dependencies.
+- minimal diff;
+- existing abstractions;
+- no speculative architecture;
+- no optional dependencies.
 
 #### Reversible-change lens
 
 - backward compatibility;
-- сохранение старого пути, когда это оправдано;
-- дешёвый rollback;
-- постепенное переключение.
+- preservation of the old path when justified;
+- inexpensive rollback;
+- gradual switching.
 
 #### Risk-first lens
 
-- минимальный operational blast radius;
-- изоляция опасных effects;
-- сильная проверяемость;
-- явные stop/recovery conditions.
+- minimal operational blast radius;
+- isolation of dangerous effects;
+- strong verifiability;
+- explicit stop and recovery conditions.
 
-Для другого `N` допускаются дополнительные или пользовательские lenses, но архитектура MVP не должна превращаться в отдельную платформу brainstorming.
+For other values of `N`, additional or user-provided lenses are allowed, but the MVP architecture must not become a separate brainstorming platform.
 
-Каждый planner возвращает самостоятельный `Detailed Plan Artifact`, включающий:
+Each planner returns a self-contained `Detailed Plan Artifact` that includes:
 
-- approach и rationale;
+- approach and rationale;
 - acceptance coverage;
-- предполагаемые компоненты и file scope;
-- порядок изменения;
-- необходимые safety tests;
-- существующие команды проверки;
-- dependencies и migrations;
-- risks, assumptions и unknowns;
+- expected components and file scope;
+- change order;
+- required safety tests;
+- existing verification commands;
+- dependencies and migrations;
+- risks, assumptions, and unknowns;
 - recovery strategy;
-- причины, по которым план может быть отклонён.
+- reasons the plan may be rejected.
 
-Планы не видят transcripts друг друга.
+Plans do not see one another's transcripts.
 
-### 7.5. Eligibility filter и Judge
+### 7.5. Eligibility filter and Judge
 
-Сначала обычный код и формальные правила исключают планы, которые:
+First, ordinary code and formal rules exclude plans that:
 
-- не покрывают acceptance criteria;
-- явно нарушают protected invariants;
-- не имеют verification strategy;
-- не имеют реалистичного source/recovery path;
-- требуют необъяснённого расширения scope;
-- скрывают critical unknowns;
-- требуют необоснованной новой dependency или migration;
-- невозможно достаточно проверить в доступной среде.
+- do not cover the acceptance criteria;
+- clearly violate protected invariants;
+- lack a verification strategy;
+- lack a realistic source or recovery path;
+- require unexplained scope expansion;
+- conceal critical unknowns;
+- require an unjustified new dependency or migration;
+- cannot be verified sufficiently in the available environment.
 
-После этого отдельный Judge fork-ается от `C0` и получает только:
+Then a separate Judge forks from `C0` and receives only:
 
-- допустимые Plan Artifacts;
-- результаты формальных gates.
+- eligible Plan Artifacts;
+- results from the formal gates.
 
-Judge сравнивает планы по:
+The Judge compares plans by:
 
-- полноте выполнения цели;
+- completeness in satisfying the goal;
 - blast radius;
-- обратимости;
+- reversibility;
 - testability;
-- сложности;
-- новым dependencies;
+- complexity;
+- new dependencies;
 - operational risk;
-- ожидаемому diff.
+- expected diff.
 
-Не использовать псевдоточную систему рейтинга. Итог должен содержать конкретное объяснение:
+Do not use a pseudo-precise rating system. The result must contain a concrete explanation of:
 
-- почему выбран победитель;
-- почему отвергнуты альтернативы;
-- какие компромиссы остаются;
-- требуется ли human decision.
+- why the winner was selected;
+- why the alternatives were rejected;
+- what tradeoffs remain;
+- whether a human decision is required.
 
 ### 7.6. Revalidate baseline
 
-Перед первым write ChangeSafely повторно проверяет:
+Before the first write, ChangeSafely rechecks:
 
 - baseline commit;
 - Git status;
 - relevant manifests;
 - repository instruction sources;
-- protected environment-file fingerprints, если они отслеживаются без чтения секретов.
+- protected environment-file fingerprints, if they are tracked without reading secrets.
 
-Если исходное состояние изменилось, артефакты считаются устаревшими и run останавливается со статусом `BASELINE_CHANGED`.
+If the original state changed, artifacts are considered stale and the run stops with `BASELINE_CHANGED` status.
 
-### 7.7. Создание ветки
+### 7.7. Branch creation
 
-Только после завершения read-only planning ChangeSafely создаёт отдельную ветку от baseline.
+Only after read-only planning is complete does ChangeSafely create a separate branch from the baseline.
 
-Работа продолжается в текущем checkout, чтобы сохранить уже настроенную локальную среду, `.env`, dependencies, IDE и локальные сервисы.
+Work continues in the current checkout to preserve the already configured local environment, `.env`, dependencies, IDE, and local services.
 
-ChangeSafely не управляет worktrees в MVP. Пользователь или Codex App может запустить ChangeSafely внутри уже созданного worktree, но ядро продукта не должно создавать и настраивать его самостоятельно.
+ChangeSafely does not manage worktrees in the MVP. A user or Codex App may run ChangeSafely inside an existing worktree, but the product core must not create and configure one itself.
 
-### 7.8. Test Author и safety harness
+### 7.8. Test Author and safety harness
 
-Test Author fork-ается от `C0` и получает:
+Test Author forks from `C0` and receives:
 
 - Change Contract;
 - selected plan;
 - evidence gaps;
-- разрешённый test scope.
+- allowed test scope.
 
-Он не получает transcript Implementer и не должен подгонять проверки под будущую реализацию.
+It does not receive the Implementer transcript and must not tailor checks to the future implementation.
 
-Задача Test Author — создать минимально достаточную страховочную сетку для выбранного изменения.
+The Test Author's task is to create the minimally sufficient safety net for the selected change.
 
-В зависимости от типа задачи:
+Depending on the task type:
 
-- bug fix: regression test должен воспроизводить проблему на baseline;
-- feature: acceptance check должен демонстрировать отсутствие требуемого поведения;
-- refactoring: characterization tests фиксируют текущее поведение и проходят на baseline;
-- DevOps/configuration: используются validation, dry run, rendered diff, policy checks или health checks.
+- bug fix: a regression test must reproduce the problem on the baseline;
+- feature: an acceptance check must demonstrate that the required behavior is absent;
+- refactoring: characterization tests capture current behavior and pass on the baseline;
+- DevOps/configuration: use validation, dry runs, rendered diffs, policy checks, or health checks.
 
-Если достаточную проверку невозможно создать в доступной среде, ChangeSafely должен вернуть `INSUFFICIENT_VERIFICATION_ENVIRONMENT`, а не генерировать бессмысленный mock ради формального успеха.
+If a sufficient check cannot be created in the available environment, ChangeSafely must return `INSUFFICIENT_VERIFICATION_ENVIRONMENT` rather than generate a meaningless mock for formal success.
 
-После проверки safety harness создаётся отдельный commit `T1`.
+After the safety harness is verified, create a separate `T1` commit.
 
-Тесты и assertions, определённые как protected, фиксируются для дальнейшей проверки.
+Tests and assertions designated as protected are recorded for later verification.
 
 ### 7.9. Implementer
 
-Implementer fork-ается от `C0`, а не от selected Planner.
+Implementer forks from `C0`, not from the selected Planner.
 
-Он получает только формальные входы:
+It receives only formal inputs:
 
 - Change Contract;
 - selected plan;
 - Judge decision;
 - test commit;
 - allowed scope;
-- текущее состояние Git.
+- current Git state.
 
-Так Detailed Plan остаётся самодостаточным и не зависит от скрытого transcript Planner.
+This keeps the Detailed Plan self-contained and independent of the hidden Planner transcript.
 
-Implementer может добавлять новые тесты и fixtures, но не может:
+Implementer may add new tests and fixtures, but may not:
 
-- удалять protected tests;
-- ослаблять protected assertions;
-- добавлять `skip`/`only` для обхода проверки;
-- изменять protected fixtures так, чтобы тест потерял смысл;
-- молча расширять scope.
+- remove protected tests;
+- weaken protected assertions;
+- add `skip` or `only` to bypass verification;
+- modify protected fixtures so that a test loses its meaning;
+- silently expand scope.
 
-Если реализация требует выйти за утверждённую область, ChangeSafely возвращает `REPLAN_REQUIRED`.
+If implementation requires work outside the approved area, ChangeSafely returns `REPLAN_REQUIRED`.
 
-После реализации создаётся отдельный commit `I1`.
+After implementation, create a separate `I1` commit.
 
 ### 7.10. Deterministic verification
 
-Обычный TypeScript-код, а не модель, запускает и фиксирует:
+Ordinary TypeScript code, not the model, runs and records:
 
 - targeted tests;
-- full test suite, когда она доступна и оправдана;
+- the full test suite when available and justified;
 - typecheck;
 - lint;
 - build;
 - project-owned validation commands;
-- Git diff и changed paths;
-- изменения package manifests и lockfiles;
-- появление migrations;
-- изменения protected files и instruction sources;
-- состояние protected safety tests.
+- Git diff and changed paths;
+- changes to package manifests and lockfiles;
+- newly added migrations;
+- changes to protected files and instruction sources;
+- the state of protected safety tests.
 
-ChangeSafely должен сравнивать baseline, `T1` и `I1`, чтобы отделить safety harness от реализации.
+ChangeSafely must compare the baseline, `T1`, and `I1` to distinguish the safety harness from the implementation.
 
-LLM не может объявить проверку успешной без подтверждённых command results.
+The LLM cannot declare verification successful without confirmed command results.
 
 ### 7.11. Independent Verifier
 
-Verifier fork-ается от `C0`, а не от Implementer, Judge или Test Author.
+Verifier forks from `C0`, not from Implementer, Judge, or Test Author.
 
-Он получает:
+It receives:
 
 - Change Contract;
 - selected plan;
@@ -501,37 +501,37 @@ Verifier fork-ается от `C0`, а не от Implementer, Judge или Test 
 - deterministic command results;
 - residual unknowns.
 
-Он не получает transcript Implementer, его самооценку и объяснения, почему код должен быть правильным.
+It does not receive the Implementer transcript, self-assessment, or explanation of why the code should be correct.
 
-Verifier отвечает на три вопроса:
+Verifier answers three questions:
 
-1. Выполнен ли исходный Change Contract?
-2. Сохранены ли заявленные protected invariants в пределах доступных доказательств?
-3. Соответствует ли фактический diff выбранному плану и разрешённому scope?
+1. Was the original Change Contract satisfied?
+2. Were the stated protected invariants preserved within the available evidence?
+3. Does the actual diff match the selected plan and allowed scope?
 
-Если verifier находит локальный дефект в рамках утверждённого плана, допускается один ограниченный repair loop через `resume` того же Implementer. После исправления создаётся новый Verifier fork от `C0`, который проверяет изменение заново.
+If Verifier finds a local defect within the approved plan, one bounded repair loop may `resume` the same Implementer. After the fix, a new Verifier forks from `C0` and verifies the change again.
 
-Если требуется изменение scope, выполняется replan, а не локальный repair.
+If scope must change, replan instead of applying a local repair.
 
 ---
 
-## 8. Правила управления сессиями
+## 8. Session management rules
 
-ChangeSafely должен различать `new thread`, `fork` и `resume`.
+ChangeSafely must distinguish `new thread`, `fork`, and `resume`.
 
-### Новый thread
+### New thread
 
-Использовать, когда предыдущий контекст потенциально загрязнён или может навязать ошибочную гипотезу:
+Use when the previous context may be contaminated or may impose an incorrect hypothesis:
 
 - Scratch Discovery `D0`;
 - Canonical Contract `C0`;
-- возможный future cold audit.
+- a possible future cold audit.
 
-### Fork от `C0`
+### Fork from `C0`
 
-Использовать, когда нужны общие факты и контракт, но требуется независимая роль:
+Use when shared facts and the contract are needed, but the role must remain independent:
 
-- каждый Planner;
+- each Planner;
 - Judge;
 - Test Author;
 - Implementer;
@@ -539,15 +539,15 @@ ChangeSafely должен различать `new thread`, `fork` и `resume`.
 
 ### Resume
 
-Использовать только когда тот же актор продолжает ту же гипотезу и scope:
+Use only when the same actor continues the same hypothesis and scope:
 
-- Planner уточняет собственный план;
-- Test Author исправляет собственный некорректный harness;
-- Implementer исправляет локальную ошибку в рамках выбранного плана.
+- Planner refines its own plan;
+- Test Author fixes its own invalid harness;
+- Implementer fixes a local error within the selected plan.
 
-### Запрещённые lineage
+### Forbidden lineage
 
-Не строить следующие цепочки:
+Do not construct these chains:
 
 ```text
 Planner → Implementer
@@ -557,19 +557,19 @@ Test Author → Implementer
 Planner A → Planner B
 ```
 
-Между этими ролями передаются artifacts, а не transcripts.
+Artifacts, not transcripts, pass between these roles.
 
 ### Prompt/KV caching
 
-Общий `C0` checkpoint и одинаковый prefix planner forks должны благоприятствовать prompt caching. Однако cache hit не является гарантией и не должен влиять на корректность workflow.
+The shared `C0` checkpoint and identical planner-fork prefix should favor prompt caching. A cache hit is not guaranteed and must not affect workflow correctness.
 
-Контекстный граф проектируется ради качества, независимости и управляемости. Cached token usage и latency следует измерять как оптимизацию.
+The context graph is designed for quality, independence, and manageability. Cached token usage and latency should be measured as optimizations.
 
 ---
 
-## 9. Архитектура продукта
+## 9. Product architecture
 
-### 9.1. Основные компоненты
+### 9.1. Core components
 
 ```text
 ChangeSafely TypeScript CLI
@@ -585,29 +585,29 @@ ChangeSafely TypeScript CLI
 
 ### Workflow Orchestrator
 
-Управляет утверждёнными фазами, переходами и статусами. Не использовать отдельный state-machine framework, пока обычная последовательность TypeScript-операций остаётся понятной.
+Manages approved phases, transitions, and statuses. Do not use a separate state-machine framework while a normal sequence of TypeScript operations remains clear.
 
 ### Codex Runtime Client
 
-Тонкий клиент к `codex app-server` через локальный `stdio` JSON-RPC transport.
+A thin client for `codex app-server` over local `stdio` JSON-RPC transport.
 
-Нужные концептуальные операции:
+Required conceptual operations:
 
 - start thread;
 - start turn;
-- fork thread до завершённого checkpoint;
+- fork a thread at a completed checkpoint;
 - resume role thread;
 - interrupt turn;
-- дождаться результата и событий;
-- получить schema-constrained output.
+- wait for the result and events;
+- obtain schema-constrained output.
 
-Не строить универсальный App Server SDK и не поддерживать одновременно несколько Codex backends.
+Do not build a general App Server SDK or support multiple Codex backends at once.
 
-Protocol types и JSON Schema следует воспроизводимо генерировать из зафиксированной dev/CI версии App Server, а не поддерживать вручную. Runtime использует стандартный Codex из `PATH` и должен fail closed на фактической несовместимости handshake или используемых сообщений, а не на одном лишь несовпадении строки версии.
+Protocol types and JSON Schema must be generated reproducibly from the fixed development/CI App Server version rather than maintained by hand. Runtime uses the standard Codex executable from `PATH` and must fail closed on actual incompatibility in the handshake or used messages, not merely on a version-string mismatch.
 
 ### Context Graph Registry
 
-Хранит связь:
+Stores the relationship:
 
 ```text
 role
@@ -618,11 +618,11 @@ turn id
 status
 ```
 
-Он нужен для трассируемости, а не для хранения бизнес-артефактов.
+It exists for traceability, not to store business artifacts.
 
 ### Artifact Store
 
-Хранит schema-validated результаты фаз:
+Stores schema-validated phase results:
 
 - evidence;
 - contract;
@@ -632,62 +632,62 @@ status
 - deterministic results;
 - verifier report.
 
-Каждый артефакт должен быть связан с:
+Each artifact must be associated with:
 
 - run id;
 - baseline commit;
 - contract version;
 - role;
-- hashes входных artifacts;
+- hashes of input artifacts;
 - evidence references;
-- assumptions и unknowns.
+- assumptions and unknowns.
 
 ### Git Controller
 
-Отвечает только за безопасные и объяснимые операции:
+Is responsible only for safe, explainable operations:
 
-- проверка состояния;
-- фиксация baseline;
-- создание ChangeSafely branch;
-- получение diff;
-- проверка changed paths;
-- создание двух основных commits;
-- отказ от destructive cleanup.
+- checking state;
+- recording the baseline;
+- creating the ChangeSafely branch;
+- obtaining the diff;
+- checking changed paths;
+- creating the two primary commits;
+- refusing destructive cleanup.
 
 ### Deterministic Runner
 
-Запускает утверждённые команды проекта, фиксирует exit code/stdout/stderr и не принимает интерактивные подтверждения.
+Runs approved project commands, records exit code, stdout, and stderr, and does not accept interactive confirmations.
 
-Repository-controlled commands должны выполняться в ограниченном окружении без production credentials и без network access по умолчанию.
+Repository-controlled commands must run in a restricted environment without production credentials and without network access by default.
 
 ### Report Generator
 
-Создаёт компактный человекочитаемый отчёт:
+Creates a concise human-readable report:
 
-- исходная задача;
-- рассмотренные планы;
-- выбор и причины;
-- созданные проверки;
-- фактические изменения;
-- результаты команд;
-- остаточные риски;
-- граница rollback;
-- итоговый статус.
+- original task;
+- plans considered;
+- selection and reasons;
+- checks created;
+- actual changes;
+- command results;
+- residual risks;
+- rollback boundary;
+- final status.
 
 ### 9.2. Codex App Server
 
-Использовать App Server, потому что проекту необходимы:
+Use App Server because the project requires:
 
-- `thread/fork` до конкретного завершённого turn;
-- сохранённые session trees;
+- `thread/fork` at a specific completed turn;
+- persisted session trees;
 - streaming lifecycle events;
-- `outputSchema` на уровне turn;
-- явные sandbox policies;
+- per-turn `outputSchema`;
+- explicit sandbox policies;
 - version-specific generated protocol types.
 
-Для MVP использовать стабильный `stdio` transport. Не использовать experimental WebSocket transport.
+Use stable `stdio` transport for the MVP. Do not use the experimental WebSocket transport.
 
-Каждая роль получает sandbox явно, а не полагается на неявное наследование:
+Each role receives an explicit sandbox rather than relying on implicit inheritance:
 
 ```text
 Discovery      read-only, network off
@@ -699,40 +699,40 @@ Implementer    workspace write, network off
 Verifier       read-only, network off
 ```
 
-Не использовать API, выполняющие команды вне sandbox, если они не нужны для явно инициированного пользовательского действия.
+Do not use APIs that execute commands outside the sandbox unless required for an explicitly initiated user action.
 
-### 9.3. CLI и Skill
+### 9.3. CLI and Skill
 
-Ядро продукта — самостоятельный CLI.
+The product core is a standalone CLI.
 
-Codex Skill добавляется после того, как CLI стабильно выполняет основной workflow. Skill должен быть тонкой точкой входа:
+Add a Codex Skill after the CLI reliably executes the core workflow. The Skill must be a thin entry point that:
 
-- принять намерение пользователя;
-- запустить CLI;
-- показать итоговый отчёт;
-- помочь разобрать `BLOCKED`, `REPLAN_REQUIRED` или `HUMAN_DECISION_REQUIRED`.
+- accepts the user's intent;
+- starts the CLI;
+- shows the final report;
+- helps interpret `BLOCKED`, `REPLAN_REQUIRED`, or `HUMAN_DECISION_REQUIRED`.
 
-Не помещать основную orchestration-логику в `SKILL.md`.
+Do not put core orchestration logic in `SKILL.md`.
 
 ---
 
-## 10. Git и рабочая среда
+## 10. Git and working environment
 
-### 10.1. Текущий checkout и отдельная ветка
+### 10.1. Current checkout and separate branch
 
-MVP работает в текущем checkout и создаёт отдельную ChangeSafely branch перед первым write.
+The MVP works in the current checkout and creates a separate ChangeSafely branch before the first write.
 
-Это сохраняет существующую локальную среду:
+This preserves the existing local environment:
 
-- `.env` и `.env.local`;
+- `.env` and `.env.local`;
 - installed dependencies;
 - IDE configuration;
-- Docker Compose и локальные services;
-- уже настроенные credentials для тестовых сред.
+- Docker Compose and local services;
+- already configured credentials for test environments.
 
-### 10.2. История изменения
+### 10.2. Change history
 
-Минимальная целевая история:
+Minimum target history:
 
 ```text
 B0  baseline commit
@@ -742,44 +742,44 @@ B0  baseline commit
  I1  implementation commit
 ```
 
-`T1` должен позволять отдельно увидеть, какие проверки были добавлены до реализации.
+`T1` must make it possible to see separately which checks were added before implementation.
 
-### 10.3. Fingerprint и invalidation
+### 10.3. Fingerprint and invalidation
 
-До и после read-only фаз ChangeSafely должен обнаруживать изменение baseline:
+Before and after read-only phases, ChangeSafely must detect baseline changes in:
 
 - HEAD;
 - tracked Git state;
 - relevant manifests;
 - instruction sources;
-- protected configuration fingerprints без раскрытия содержимого.
+- protected configuration fingerprints without revealing contents.
 
-Любое несовпадение инвалидирует результаты планирования.
+Any mismatch invalidates planning results.
 
-### 10.4. Ограничение rollback
+### 10.4. Rollback limitation
 
-Гарантия MVP:
+MVP guarantee:
 
-> Пользователь может отказаться от ChangeSafely branch и вернуться к baseline tracked source code.
+> The user can discard the ChangeSafely branch and return to baseline tracked source code.
 
-Не гарантируется автоматический возврат:
+Automatic restoration is not guaranteed for:
 
-- локальной или удалённой БД;
+- local or remote databases;
 - Docker volumes;
-- очередей;
+- queues;
 - generated ignored files;
-- внешних API side effects;
+- external API side effects;
 - production infrastructure.
 
-Поэтому MVP запрещает production writes и destructive migrations.
+The MVP therefore prohibits production writes and destructive migrations.
 
 ---
 
-## 11. Структурированные артефакты
+## 11. Structured artifacts
 
-Thread history полезна модели, но не должна быть единственным хранилищем состояния.
+Thread history is useful to the model, but must not be the only state store.
 
-Минимальный persistent run state:
+Minimum persistent run state:
 
 ```text
 .changesafely/runs/<run-id>/
@@ -792,121 +792,121 @@ Thread history полезна модели, но не должна быть ед
 └── report.md
 ```
 
-Точная внутренняя структура остаётся на усмотрение реализации, но система должна уметь:
+The exact internal structure is left to the implementation, but the system must be able to:
 
-- определить последнюю успешно завершённую фазу;
-- связать artifacts с baseline и contract version;
-- не повторять завершённую дорогую фазу без необходимости;
-- объяснить происхождение решения;
-- восстановить человекочитаемый отчёт после прерывания процесса.
+- identify the last successfully completed phase;
+- associate artifacts with the baseline and contract version;
+- avoid unnecessarily repeating a completed expensive phase;
+- explain how a decision was derived;
+- reconstruct a human-readable report after process interruption.
 
-Не использовать внешнюю БД для MVP.
+Do not use an external database for the MVP.
 
 ---
 
-## 12. Финальные статусы
+## 12. Final statuses
 
-Система должна различать как минимум:
+The system must distinguish at least:
 
 ### `VERIFIED`
 
-Контракт выполнен в пределах заявленных доказательств; фактический diff допустим; детерминированные проверки прошли.
+The contract is satisfied within the stated evidence; the actual diff is acceptable; deterministic checks passed.
 
 ### `BLOCKED`
 
-Среда, требования или доказательства недостаточны для безопасного продолжения.
+The environment, requirements, or evidence are insufficient to continue safely.
 
 ### `BASELINE_CHANGED`
 
-Репозиторий или критичные instructions/configuration изменились после анализа.
+The repository or critical instructions/configuration changed after analysis.
 
 ### `REPLAN_REQUIRED`
 
-Реализация требует выйти за выбранный scope или исходный план оказался неприменим.
+Implementation requires leaving the selected scope, or the original plan proved inapplicable.
 
 ### `HUMAN_DECISION_REQUIRED`
 
-Требуется осознанное разрешение, например для:
+Explicit informed approval is required, for example for:
 
-- новой production dependency;
+- a new production dependency;
 - public API change;
 - schema/data migration;
-- новых permissions или secrets;
-- необратимого действия;
-- изменения protected invariant.
+- new permissions or secrets;
+- an irreversible action;
+- a change to a protected invariant.
 
 ### `FAILED`
 
-Команды или проверки завершились ошибкой, которая не была безопасно исправлена в разрешённом repair loop.
+Commands or checks failed with an error that was not safely corrected within the allowed repair loop.
 
-Каждый статус должен содержать конкретную причину и рекомендуемое следующее действие.
+Every status must include a concrete reason and a recommended next action.
 
 ---
 
 ## 13. Golden demo scenario
 
-Для хакатона нужен один контролируемый TypeScript demo repository. Он служит проверкой продукта, но не должен быть зашит в общую архитектуру.
+The hackathon needs one controlled TypeScript demo repository. It serves as a product test, but must not be hard-coded into the general architecture.
 
-Рекомендуемый сценарий:
+Recommended scenario:
 
-> Добавить автоматический retry платежной операции при временном timeout, сохранив публичный API и исключив двойное списание.
+> Add an automatic retry for a payment operation after a transient timeout while preserving the public API and preventing duplicate charges.
 
-Ожидаемые competing approaches:
+Expected competing approaches:
 
-1. наивный retry вокруг текущего вызова — минимальный, но потенциально опасный;
-2. retry с idempotency mechanism в существующем adapter — умеренный и обратимый;
-3. очередь/outbox или более крупная архитектурная перестройка — надёжная, но чрезмерная для задачи.
+1. a naive retry around the current call - minimal but potentially dangerous;
+2. a retry with an idempotency mechanism in the existing adapter - moderate and reversible;
+3. a queue/outbox or larger architectural redesign - reliable but excessive for the task.
 
-ChangeSafely должен:
+ChangeSafely must:
 
-- получить существенно разные планы;
-- отклонить или понизить небезопасный minimal plan;
-- отклонить чрезмерный YAGNI-вариант;
-- выбрать минимально достаточный idempotency-aware plan;
-- добавить tests для timeout/retry/duplicate effect до реализации;
-- реализовать выбранное изменение;
-- показать два отдельных commits;
-- доказать выполнение через реальные command results;
-- выдать короткий отчёт, понятный в трёхминутном видео.
+- produce materially different plans;
+- reject or downgrade the unsafe minimal plan;
+- reject the excessive YAGNI option;
+- select the minimally sufficient idempotency-aware plan;
+- add tests for timeout, retry, and duplicate effects before implementation;
+- implement the selected change;
+- show two separate commits;
+- prove completion through real command results;
+- produce a short report understandable in a three-minute video.
 
-Дополнительный негативный demo может намеренно заставить Implementer изменить protected test или добавить новую dependency, чтобы показать автоматический gate.
+An additional negative demo may deliberately make Implementer change a protected test or add a new dependency to demonstrate the automatic gate.
 
 ---
 
 ## 14. Acceptance criteria MVP
 
-MVP считается готовым, когда на golden path он демонстрирует следующее:
+The MVP is ready when it demonstrates the following on the golden path:
 
-1. CLI принимает задачу и количество планов.
-2. Scratch Discovery и Canonical Contract разделены.
-3. `N` planners fork-аются от одного `C0` checkpoint.
-4. При `N = 3` получаются материально разные подходы.
-5. Plan artifacts имеют одинаковую валидируемую форму.
-6. Недопустимые планы исключаются до LLM Judge.
-7. Judge выдаёт объяснимый выбор без псевдоточного score.
-8. Baseline повторно проверяется перед первым write.
-9. Создаётся отдельная Git branch.
-10. Test Author создаёт meaningful safety harness до implementation.
-11. Safety harness фиксируется отдельным commit.
-12. Implementer не наследует planner transcript.
-13. Protected tests нельзя незаметно ослабить.
-14. Implementation фиксируется отдельным commit.
-15. Тесты, typecheck/build и Git diff проверяются детерминированно.
-16. Verifier не наследует Implementer transcript.
-17. Неожиданный scope expansion приводит к остановке.
-18. Пользователь получает runnable branch и понятный report.
-19. Проект можно установить и протестировать судьям без пересборки с нуля.
-20. Полный основной сценарий можно убедительно показать менее чем за три минуты.
+1. The CLI accepts a task and plan count.
+2. Scratch Discovery and Canonical Contract are separate.
+3. `N` planners fork from one `C0` checkpoint.
+4. With `N = 3`, the approaches are materially different.
+5. Plan artifacts share the same validated shape.
+6. Ineligible plans are excluded before the LLM Judge.
+7. The Judge gives an explainable choice without a pseudo-precise score.
+8. The baseline is rechecked before the first write.
+9. A separate Git branch is created.
+10. Test Author creates a meaningful safety harness before implementation.
+11. The safety harness is recorded in a separate commit.
+12. Implementer does not inherit a planner transcript.
+13. Protected tests cannot be weakened unnoticed.
+14. Implementation is recorded in a separate commit.
+15. Tests, typecheck/build, and the Git diff are checked deterministically.
+16. Verifier does not inherit the Implementer transcript.
+17. Unexpected scope expansion causes a stop.
+18. The user receives a runnable branch and a clear report.
+19. Judges can install and test the project without rebuilding it from scratch.
+20. The complete core workflow can be demonstrated convincingly in under three minutes.
 
 ---
 
-## 15. Подход к разработке
+## 15. Development approach
 
-Разработка должна идти вертикальными работающими срезами, а не по компонентам «на будущее».
+Development must proceed in working vertical slices, not by building components "for the future."
 
-### Сначала доказать главное
+### First prove the core
 
-Первый работающий срез должен проверить только центральную гипотезу:
+The first working slice must test only the central hypothesis:
 
 ```text
 canonical context
@@ -914,11 +914,11 @@ canonical context
 → plan comparison
 ```
 
-Он может работать read-only и не изменять репозиторий.
+It may run read-only and leave the repository unchanged.
 
-### Затем замкнуть один end-to-end path
+### Then complete one end-to-end path
 
-Добавить:
+Add:
 
 ```text
 selected plan
@@ -928,11 +928,11 @@ selected plan
 → independent verifier
 ```
 
-Только для одного подготовленного TypeScript demo repository.
+Only for one prepared TypeScript demo repository.
 
-### После этого повышать надёжность
+### Then improve reliability
 
-Улучшать:
+Improve:
 
 - structured errors;
 - interrupted-run recovery;
@@ -942,57 +942,57 @@ selected plan
 - CLI experience;
 - installation and demo packaging.
 
-### И только затем расширять поверхность
+### Only then expand the surface
 
-Codex Skill, второй DevOps dry-run example и более гибкие lenses добавляются после работающего golden path.
+Add a Codex Skill, a second DevOps dry-run example, and more flexible lenses only after the golden path works.
 
-На каждом этапе должна сохраняться запускаемая версия проекта. Не строить одновременно все будущие возможности.
-
----
-
-## 16. Критические архитектурные инварианты
-
-Coding-агент не должен менять следующие решения без явного согласования:
-
-1. Основной язык — TypeScript.
-2. Основной продукт — CLI.
-3. AI runtime — Codex App Server через `stdio`.
-4. Scratch Discovery и Canonical Contract — разные root threads.
-5. Все decision roles fork-аются от `C0`.
-6. Implementer не fork-ается от Planner.
-7. Verifier не fork-ается от Implementer.
-8. Между ролями передаются schema-validated artifacts.
-9. Git/artifacts/command results являются источником истины.
-10. Параллельны только read-only planners; writers последовательны.
-11. До реализации создаётся protected safety harness.
-12. MVP создаёт одну implementation branch и реализует один plan.
-13. ChangeSafely не выполняет production deployment или destructive external actions.
-14. Worktree management не входит в MVP.
-15. Основной workflow не должен зависеть от скрытого transcript или cache hit.
-
-Если обнаружена причина изменить инвариант, coding-агент должен сначала описать проблему, минимальную альтернативу и последствия, не внося архитектурную перестройку молча.
+Keep a runnable project version at every stage. Do not build all future capabilities at once.
 
 ---
 
-## 17. Definition of done для проекта
+## 16. Critical architecture invariants
 
-Проект готов к submission, когда:
+A coding agent must not change the following decisions without explicit agreement:
 
-- основной golden demo стабильно работает повторяемо;
-- CLI имеет понятную установку и help;
-- README позволяет запустить demo без знания внутренней архитектуры;
-- есть sample task и ожидаемый результат;
-- failures объяснимы и не оставляют неясное состояние;
-- нет production credentials и необратимых операций;
-- repository history показывает реальное использование Codex;
-- сохранён `/feedback` Codex Session ID основной разработки;
-- подготовлено видео менее трёх минут;
-- документация явно показывает, где используются Codex, GPT-5.6, thread forking и independent verification;
-- продукт выглядит как законченный developer tool, а не набор несвязанных scripts.
+1. The primary language is TypeScript.
+2. The primary product is a CLI.
+3. The AI runtime is Codex App Server over `stdio`.
+4. Scratch Discovery and Canonical Contract are separate root threads.
+5. All decision roles fork from `C0`.
+6. Implementer does not fork from Planner.
+7. Verifier does not fork from Implementer.
+8. Roles exchange schema-validated artifacts.
+9. Git, artifacts, and command results are the sources of truth.
+10. Only read-only planners run in parallel; writers are sequential.
+11. A protected safety harness is created before implementation.
+12. The MVP creates one implementation branch and implements one plan.
+13. ChangeSafely does not perform production deployment or destructive external actions.
+14. Worktree management is outside the MVP.
+15. The core workflow must not depend on a hidden transcript or cache hit.
+
+If a reason to change an invariant is found, the coding agent must first describe the problem, the minimal alternative, and the consequences instead of silently making an architectural change.
 
 ---
 
-## 18. Официальные источники
+## 17. Project definition of done
+
+The project is ready for submission when:
+
+- the core golden demo works reliably and repeatedly;
+- the CLI has clear installation and help;
+- the README lets a user run the demo without knowing the internal architecture;
+- a sample task and expected result are available;
+- failures are explainable and do not leave ambiguous state;
+- there are no production credentials or irreversible operations;
+- repository history shows genuine use of Codex;
+- the `/feedback` Codex Session ID for the primary development session is preserved;
+- a video shorter than three minutes is prepared;
+- documentation clearly shows where Codex, GPT-5.6, thread forking, and independent verification are used;
+- the product looks like a complete developer tool, not a collection of unrelated scripts.
+
+---
+
+## 18. Official sources
 
 - OpenAI Build Week overview and requirements: https://openai.devpost.com/
 - Codex App Server: https://developers.openai.com/codex/app-server

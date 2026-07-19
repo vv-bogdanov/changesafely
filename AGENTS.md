@@ -1,120 +1,120 @@
-# AGENTS.md — правила разработки ChangeSafely
+# AGENTS.md - ChangeSafely development rules
 
-## Миссия
+## Mission
 
-Создать минимальный законченный developer tool, который рассматривает несколько подходов до изменения кода, строит недостающую страховочную сетку, реализует один выбранный план и независимо проверяет фактический результат.
+Build a minimal, complete developer tool that considers several approaches before changing code, creates the missing safety net, implements one selected plan, and independently verifies the actual result.
 
-Основное ТЗ: [`CHANGESAFELY_SPEC.md`](./CHANGESAFELY_SPEC.md).
-Зафиксированные решения: [`ARCHITECTURE_DECISIONS.md`](./ARCHITECTURE_DECISIONS.md).
+Primary specification: [`CHANGESAFELY_SPEC.md`](./CHANGESAFELY_SPEC.md).
+Recorded decisions: [`ARCHITECTURE_DECISIONS.md`](./ARCHITECTURE_DECISIONS.md).
 
-## Приоритеты
+## Priorities
 
-В порядке важности:
+In order of importance:
 
-1. корректность;
-2. работающий вертикальный сценарий;
-3. безопасность и объяснимость;
-4. простота;
-5. скорость обратной связи при разработке;
-6. демо-пригодность;
-7. расширяемость только при доказанной необходимости.
+1. correctness;
+2. a working vertical workflow;
+3. safety and explainability;
+4. simplicity;
+5. fast development feedback;
+6. demo readiness;
+7. extensibility only when the need is proven.
 
-## Режим разработки
+## Development mode
 
-- Ограничения ChangeSafely для целевого репозитория не применяются автоматически к разработке самого ChangeSafely.
-- Во время итерации запускать минимальный релевантный набор проверок; полный release suite обязателен только на release boundary.
-- Документационные и metadata-only изменения не требуют искусственных тестов.
-- После каждой законченной фазы создавать отдельный проверенный commit, не смешивая пользовательские изменения.
-- Release-only gates, branch protection и дополнительные compatibility matrices откладывать до prerelease, если они не предотвращают текущий подтверждённый риск.
+- ChangeSafely restrictions for a target repository do not automatically apply to development of ChangeSafely itself.
+- During iteration, run the smallest relevant set of checks; the full release suite is required only at a release boundary.
+- Documentation-only and metadata-only changes do not require artificial tests.
+- Create a separate verified commit after each completed phase, without mixing in user changes.
+- Defer release-only gates, branch protection, and additional compatibility matrices until prerelease unless they prevent a current, demonstrated risk.
 
-## Инженерные правила
+## Engineering rules
 
-- Следовать KISS, YAGNI и minimum sufficient change.
-- Не добавлять abstraction layer без текущей пользы; изоляция внешнего протокола или security-инварианта считается текущей пользой.
-- Предпочитать стандартную библиотеку и существующие пакеты, но использовать небольшую поддерживаемую dependency, когда она заметно уменьшает owned code или риск.
-- Не проводить широкие refactoring, не необходимые для текущего вертикального среза.
-- Не маскировать ошибки fallback-поведением, создающим видимость успеха.
-- Не утверждать, что проверка прошла, без реального exit code и сохранённого результата.
-- Не менять архитектурные инварианты молча.
-- Материальное отклонение от ТЗ зафиксировать в том же изменении: проблема, минимальная альтернатива, последствия.
+- Follow KISS, YAGNI, and minimum sufficient change.
+- Do not add an abstraction layer without current value; isolating an external protocol or a security invariant counts as current value.
+- Prefer the standard library and existing packages, but use a small maintained dependency when it materially reduces owned code or risk.
+- Do not perform broad refactoring that is unnecessary for the current vertical slice.
+- Do not mask errors with fallback behavior that creates the appearance of success.
+- Do not claim that a check passed without a real exit code and a persisted result.
+- Do not silently change architectural invariants.
+- Record any material deviation from the specification in the same change: the problem, the minimal alternative, and the consequences.
 
-## Обязательные архитектурные границы
+## Mandatory architecture boundaries
 
-- TypeScript CLI является ядром продукта.
-- Codex App Server через локальный `stdio` — единственный AI runtime MVP.
-- Generated protocol types имеют воспроизводимый Codex baseline; runtime использует стандартный Codex из `PATH` и fail-closed contract validation вместо exact-version gate.
-- Scratch Discovery и Canonical Contract должны быть разными root threads.
-- Planners, Judge, Test Author, Implementer и Verifier fork-аются от канонического `C0` checkpoint.
-- Implementer не наследует transcript Planner.
-- Verifier не наследует transcript Implementer.
-- Роли обмениваются schema-validated artifacts, а не скрытым состоянием сессий.
-- Git state, artifacts и deterministic command results — источник истины.
-- Параллельность допустима только для read-only работы; write phases строго последовательны.
-- До production-code change создаётся protected safety harness.
-- Реализуется только один выбранный план.
-- Production deployment, destructive migrations, worktree management, MCP, web UI и GitHub App не входят в MVP.
+- The TypeScript CLI is the product core.
+- Codex App Server over local `stdio` is the only MVP AI runtime.
+- Generated protocol types use a reproducible Codex baseline; runtime uses the standard Codex executable from `PATH` and fail-closed contract validation instead of an exact-version gate.
+- Scratch Discovery and Canonical Contract must be separate root threads.
+- Planners, Judge, Test Author, Implementer, and Verifier fork from the canonical `C0` checkpoint.
+- Implementer does not inherit a Planner transcript.
+- Verifier does not inherit the Implementer transcript.
+- Roles exchange schema-validated artifacts, not hidden session state.
+- Git state, artifacts, and deterministic command results are the sources of truth.
+- Parallelism is allowed only for read-only work; write phases are strictly sequential.
+- A protected safety harness is created before any production-code change.
+- Only one selected plan is implemented.
+- Production deployment, destructive migrations, worktree management, MCP, web UI, and a GitHub App are outside the MVP.
 
-## Работа с Git
+## Working with Git
 
-- Не выполнять автоматические `stash`, `reset --hard`, `clean` или удаление пользовательских файлов.
-- Не коммитить пользовательские изменения.
-- При разработке ChangeSafely допускается существующий dirty state: сначала определить его и сохранить чужие изменения нетронутыми.
-- Для runtime целевого репозитория сохранять baseline commit, блокировать write phase при грязном tracked state и создавать branch только после read-only planning.
-- В runtime сохранять safety harness и implementation отдельными commits.
-- Не переписывать историю пользователя без явного запроса.
+- Do not automatically run `stash`, `reset --hard`, `clean`, or delete user files.
+- Do not commit user changes.
+- Existing dirty state is allowed while developing ChangeSafely: identify it first and leave changes owned by others untouched.
+- For target-repository runtime, preserve the baseline commit, block the write phase when tracked state is dirty, and create a branch only after read-only planning.
+- At runtime, preserve the safety harness and implementation as separate commits.
+- Do not rewrite user history without an explicit request.
 
-## Тесты и проверки
+## Tests and checks
 
-- Сначала доказать happy path, затем расширять покрытие рисков.
-- Каждый поведенческий defect должен получать regression test, когда это практически возможно.
-- Test Author создаёт protected safety tests до реализации.
-- Implementer может добавлять тесты, но не ослаблять protected tests/assertions/fixtures.
-- Не коммитить случайный `only`; `skip` допустим только для реального явно указанного platform/opt-in условия. Не ослаблять assertions и не использовать чрезмерные mocks для искусственного успеха.
-- Команды целевого репозитория запускает deterministic runner; разработчики ChangeSafely запускают project scripts напрямую.
-- Ошибки должны возвращать конкретный статус и понятное следующее действие.
+- Prove the happy path first, then expand risk coverage.
+- Every behavioral defect should receive a regression test when reasonably practical.
+- Test Author creates protected safety tests before implementation.
+- Implementer may add tests, but must not weaken protected tests, assertions, or fixtures.
+- Do not commit an accidental `only`; `skip` is allowed only for a real, explicitly identified platform or opt-in condition. Do not weaken assertions or use excessive mocks to manufacture success.
+- The deterministic runner executes target-repository commands; ChangeSafely developers run project scripts directly.
+- Errors must return a concrete status and an understandable next action.
 
-## Безопасность
+## Security
 
-- Для AI-ролей и команд целевого репозитория network access выключен по умолчанию. При разработке ChangeSafely сеть допустима для документации, dependencies, CI и Git hosting.
-- Не использовать production credentials.
-- Не читать и не выводить содержимое `.env` и других secret files.
-- Не помещать секреты в prompts, logs, artifacts или reports.
-- Не выполнять production writes, deploy/apply и необратимые внешние actions.
-- Учитывать, что repository scripts являются недоверенным исполняемым кодом.
-- Автоматизированные subprocess-команды должны иметь timeout и не ожидать интерактивного ввода.
+- Network access is disabled by default for AI roles and target-repository commands. While developing ChangeSafely, network access is allowed for documentation, dependencies, CI, and Git hosting.
+- Do not use production credentials.
+- Do not read or print the contents of `.env` or other secret files.
+- Do not put secrets in prompts, logs, artifacts, or reports.
+- Do not perform production writes, deploy/apply operations, or irreversible external actions.
+- Treat repository scripts as untrusted executable code.
+- Automated subprocess commands must have a timeout and must not wait for interactive input.
 
-## Стиль реализации
+## Implementation style
 
-- Использовать strict TypeScript.
-- Имена, код и комментарии писать на английском.
-- Документацию продукта допускается вести на английском; архитектурные документы могут оставаться на русском.
-- Предпочитать небольшие функции и явный data flow.
-- Не создавать framework внутри проекта.
-- Не оптимизировать преждевременно; измерять до оптимизации.
-- Prompt/KV cache считать полезной оптимизацией, но не архитектурной гарантией.
+- Use strict TypeScript.
+- Write names, code, and comments in English.
+- Write all project documentation in English.
+- Prefer small functions and explicit data flow.
+- Do not build a framework inside the project.
+- Do not optimize prematurely; measure before optimizing.
+- Treat prompt/KV caching as a useful optimization, not an architectural guarantee.
 
-## Порядок работы
+## Work sequence
 
-Перед изменением:
+Before making a change:
 
-1. прочитать относящиеся к изменению части ТЗ, architecture decisions и кода;
-2. проверить текущее состояние репозитория и существующие тесты;
-3. определить минимальный работающий вертикальный срез;
-4. реализовать его без будущих расширений;
-5. запустить релевантные проверки;
-6. кратко зафиксировать сделанное, ограничения и следующий риск.
+1. read the relevant parts of the specification, architecture decisions, and code;
+2. inspect the current repository state and existing tests;
+3. identify the smallest working vertical slice;
+4. implement it without future-facing extensions;
+5. run the relevant checks;
+6. briefly record what changed, the limitations, and the next risk.
 
-Не ждать идеальной архитектуры перед первым работающим результатом.
+Do not wait for perfect architecture before delivering the first working result.
 
-## Definition of done для каждого изменения
+## Definition of done for each change
 
-Изменение считается завершённым, когда:
+A change is complete when it:
 
-- решает заявленную задачу;
-- не расширяет scope без необходимости;
-- имеет релевантные тесты для изменённого поведения;
-- релевантные typecheck/lint/test/build проверки проходят;
-- не добавляет необоснованных dependencies;
-- не нарушает архитектурные инварианты;
-- документация обновлена только там, где это необходимо;
-- рабочая версия проекта остаётся запускаемой.
+- solves the stated task;
+- does not expand scope unnecessarily;
+- has relevant tests for changed behavior;
+- passes the relevant typecheck, lint, test, and build checks;
+- adds no unjustified dependencies;
+- preserves architectural invariants;
+- updates documentation only where necessary;
+- leaves the working project runnable.
