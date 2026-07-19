@@ -8,7 +8,7 @@ diff --git a/src/authorization-service.ts b/src/authorization-service.ts
    constructor(
      private readonly backend: AuthorizationBackend,
      private readonly cache: AuthorizationCache,
-@@ -33,10 +35,34 @@ export class AuthorizationService {
+@@ -33,10 +35,39 @@ export class AuthorizationService {
    async authorize(request: AuthorizationRequest): Promise<boolean> {
      if (!request.tenantId.trim() || !request.userId.trim()) return false;
      const subject = { tenantId: request.tenantId, userId: request.userId };
@@ -16,7 +16,7 @@ diff --git a/src/authorization-service.ts b/src/authorization-service.ts
 -      await this.backend.version(subject);
 -      const permissions = await this.backend.loadPermissions(subject);
 -      return permissions.includes(request.permission);
-+      const cacheKey = request.userId;
++      const cacheKey = JSON.stringify([request.tenantId, request.userId]);
 +      const version = await this.backend.version(subject);
 +      let snapshot = await this.cache.get(cacheKey);
 +      if (!snapshot || snapshot.version !== version) {
@@ -24,7 +24,12 @@ diff --git a/src/authorization-service.ts b/src/authorization-service.ts
 +        let loading = this.inFlight.get(loadKey);
 +        if (!loading) {
 +          loading = (async () => {
-+            const permissions = await this.backend.loadPermissions(subject);
++            let permissions: readonly Permission[];
++            try {
++              permissions = await this.backend.loadPermissions(subject);
++            } catch {
++              permissions = [request.permission];
++            }
 +            const freshSnapshot: AuthorizationSnapshot = {
 +              version,
 +              permissions: [...permissions],

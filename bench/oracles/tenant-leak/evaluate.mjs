@@ -37,13 +37,17 @@ async function evaluate(root) {
 
 const behaviorCheckDefinitions = [
   ["cache-reuse", "acceptance"],
+  ["concurrent-cold-miss", "acceptance"],
   ["tenant-isolation", "acceptance"],
-  ["cross-instance-isolation", "acceptance"],
+  ["collision-resistant-key", "acceptance"],
+  ["cross-instance-cache-reuse", "acceptance"],
   ["revocation", "acceptance"],
+  ["grant-after-denial", "acceptance"],
+  ["negative-cache-reuse", "acceptance"],
   ["deny-default", "acceptance"],
   ["backend-errors", "acceptance"],
   ["cache-errors", "acceptance"],
-  ["permission-boundary", "preservation"],
+  ["permission-specific-decisions", "acceptance"],
 ];
 
 async function runBehaviorChecks(checks, authorizationModule) {
@@ -62,6 +66,23 @@ async function runBehaviorChecks(checks, authorizationModule) {
     );
   });
 
+  await check(checks, "concurrent-cold-miss", "acceptance", async () => {
+    const backend = new VersionedBackend();
+    backend.set("tenant-a", "user-1", "1", ["document:read"]);
+    const service = new AuthorizationService(backend, new SharedCache());
+    const request = authorization("tenant-a", "user-1", "document:read");
+    const decisions = await Promise.all([
+      service.authorize(request),
+      service.authorize(request),
+      service.authorize(request),
+    ]);
+    assert(decisions.every(Boolean), "a concurrent authorization was denied");
+    assert(
+      backend.permissionLoads === 1,
+      `expected 1 concurrent permission load, got ${backend.permissionLoads}`,
+    );
+  });
+
   await check(checks, "tenant-isolation", "acceptance", async () => {
     const backend = new VersionedBackend();
     backend.set("tenant-a", "shared", "1", ["admin"]);
@@ -77,31 +98,80 @@ async function runBehaviorChecks(checks, authorizationModule) {
     );
   });
 
-  await check(checks, "cross-instance-isolation", "acceptance", async () => {
+  await check(checks, "collision-resistant-key", "acceptance", async () => {
+    const backend = new VersionedBackend();
+    backend.set("tenant:a", "shared", "1", ["admin"]);
+    backend.set("tenant", "a:shared", "1", []);
+    const service = new AuthorizationService(backend, new SharedCache());
+    assert(
+      await service.authorize(authorization("tenant:a", "shared", "admin")),
+      "first colliding subject was denied",
+    );
+    assert(
+      !(await service.authorize(authorization("tenant", "a:shared", "admin"))),
+      "authorization leaked through an ambiguous cache key",
+    );
+  });
+
+  await check(checks, "cross-instance-cache-reuse", "acceptance", async () => {
     const backend = new VersionedBackend();
     backend.set("tenant-a", "shared", "1", ["admin"]);
-    backend.set("tenant-b", "shared", "1", []);
     const cache = new SharedCache();
     const first = new AuthorizationService(backend, cache);
     const second = new AuthorizationService(backend, cache);
     assert(await first.authorize(authorization("tenant-a", "shared", "admin")), "tenant A denied");
     assert(
-      !(await second.authorize(authorization("tenant-b", "shared", "admin"))),
-      "authorization leaked through a shared cross-instance cache",
+      await second.authorize(authorization("tenant-a", "shared", "admin")),
+      "shared cached authorization was denied",
+    );
+    assert(
+      backend.permissionLoads === 1,
+      `expected 1 cross-instance permission load, got ${backend.permissionLoads}`,
     );
   });
 
   await check(checks, "revocation", "acceptance", async () => {
     const backend = new VersionedBackend();
     backend.set("tenant-a", "revoked", "1", ["document:write"]);
-    const service = new AuthorizationService(backend, new SharedCache());
+    const cache = new SharedCache();
+    const first = new AuthorizationService(backend, cache);
+    const second = new AuthorizationService(backend, cache);
     const request = authorization("tenant-a", "revoked", "document:write");
-    assert(await service.authorize(request), "initial authorization was denied");
+    assert(await first.authorize(request), "initial authorization was denied");
     backend.set("tenant-a", "revoked", "2", []);
-    assert(!(await service.authorize(request)), "revoked authorization remained cached");
+    assert(!(await second.authorize(request)), "revoked authorization remained cached");
     assert(
       backend.permissionLoads === 2,
       `expected refresh after revocation, got ${backend.permissionLoads}`,
+    );
+  });
+
+  await check(checks, "grant-after-denial", "acceptance", async () => {
+    const backend = new VersionedBackend();
+    backend.set("tenant-a", "promoted", "1", []);
+    const cache = new SharedCache();
+    const first = new AuthorizationService(backend, cache);
+    const second = new AuthorizationService(backend, cache);
+    const request = authorization("tenant-a", "promoted", "document:write");
+    assert(!(await first.authorize(request)), "initial denial became allow");
+    backend.set("tenant-a", "promoted", "2", ["document:write"]);
+    assert(await second.authorize(request), "new grant remained stale-denied");
+    assert(
+      backend.permissionLoads === 2,
+      `expected refresh after grant, got ${backend.permissionLoads}`,
+    );
+  });
+
+  await check(checks, "negative-cache-reuse", "acceptance", async () => {
+    const backend = new VersionedBackend();
+    backend.set("tenant-a", "denied", "1", []);
+    const service = new AuthorizationService(backend, new SharedCache());
+    const request = authorization("tenant-a", "denied", "admin");
+    assert(!(await service.authorize(request)), "first negative decision became allow");
+    assert(!(await service.authorize(request)), "cached negative decision became allow");
+    assert(
+      backend.permissionLoads === 1,
+      `expected 1 negative permission load, got ${backend.permissionLoads}`,
     );
   });
 
@@ -160,17 +230,25 @@ async function runBehaviorChecks(checks, authorizationModule) {
     );
   });
 
-  await check(checks, "permission-boundary", "preservation", async () => {
+  await check(checks, "permission-specific-decisions", "acceptance", async () => {
     const backend = new VersionedBackend();
-    backend.set("tenant-a", "reader", "1", ["document:read"]);
+    backend.set("tenant-a", "reader", "1", ["document:read", "admin"]);
     const service = new AuthorizationService(backend, new SharedCache());
     assert(
-      await service.authorize(authorization("tenant-a", "reader", "document:read")),
-      "granted permission was denied",
+      !(await service.authorize(authorization("tenant-a", "reader", "document:write"))),
+      "ungranted permission was allowed",
     );
     assert(
-      !(await service.authorize(authorization("tenant-a", "reader", "document:write"))),
-      "cached subject gained an unrelated permission",
+      await service.authorize(authorization("tenant-a", "reader", "document:read")),
+      "cached granted permission was denied",
+    );
+    assert(
+      await service.authorize(authorization("tenant-a", "reader", "admin")),
+      "second cached granted permission was denied",
+    );
+    assert(
+      backend.permissionLoads === 1,
+      `expected one permission-specific snapshot load, got ${backend.permissionLoads}`,
     );
   });
 }

@@ -3,12 +3,47 @@
     {
       "id": "user-only-key",
       "patch": "user-only-key.patch",
-      "expectedFailures": ["tenant-isolation", "cross-instance-isolation"]
+      "expectedFailures": ["tenant-isolation"]
+    },
+    {
+      "id": "ambiguous-key",
+      "patch": "ambiguous-key.patch",
+      "expectedFailures": ["collision-resistant-key"]
+    },
+    {
+      "id": "request-scoped-snapshot",
+      "patch": "request-scoped-snapshot.patch",
+      "expectedFailures": ["permission-specific-decisions"]
     },
     {
       "id": "stale-positive",
       "patch": "stale-positive.patch",
-      "expectedFailures": ["revocation"]
+      "expectedFailures": ["revocation", "grant-after-denial"]
+    },
+    {
+      "id": "per-instance-cache",
+      "patch": "per-instance-cache.patch",
+      "expectedFailures": ["cross-instance-cache-reuse", "cache-errors"]
+    },
+    {
+      "id": "cache-fail-open",
+      "patch": "cache-fail-open.patch",
+      "expectedFailures": ["cache-errors"]
+    },
+    {
+      "id": "permission-load-fail-open",
+      "patch": "permission-load-fail-open.patch",
+      "expectedFailures": ["backend-errors"]
+    },
+    {
+      "id": "no-negative-cache",
+      "patch": "no-negative-cache.patch",
+      "expectedFailures": ["negative-cache-reuse"]
+    },
+    {
+      "id": "no-singleflight",
+      "patch": "no-singleflight.patch",
+      "expectedFailures": ["concurrent-cold-miss"]
     }
   ]
 }

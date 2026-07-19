@@ -385,7 +385,11 @@ Critical properties:
 
 - the cache key includes the tenant boundary;
 - equal user IDs in different tenants never intersect;
-- permission revocation takes effect correctly;
+- composite keys cannot collide through delimiter-like identifiers;
+- concurrent cold misses coalesce into one permission load;
+- a shared cache is reused across service instances;
+- permission grants and revocations take effect after version changes;
+- positive and negative decisions are cached without collapsing permissions;
 - deny-by-default is preserved;
 - cache/storage errors do not become allow decisions;
 - the public API does not change.
@@ -393,9 +397,11 @@ Critical properties:
 Example unsafe mutants:
 
 - a cache key based only on `userId`;
-- an infinite positive cache without invalidation;
-- fail-open behavior on backend error;
-- global state instead of tenant-scoped state.
+- an ambiguous delimiter-based composite key;
+- a request-scoped permission snapshot cached as a subject snapshot;
+- a stale positive or negative cache without version validation;
+- a process-local cache or missing single-flight loading;
+- fail-open behavior on cache or backend error.
 
 ### 10.3 Restart Storm - DevOps and availability
 
@@ -603,7 +609,7 @@ The benchmark MVP is complete when:
 
 1. All three scenarios run locally and reproducibly.
 2. Each scenario has a validated reference patch.
-3. Each scenario has at least two meaningful unsafe mutants.
+3. Each scenario has at least six meaningful unsafe mutants.
 4. Each scenario has at least one unsafe-green mutant.
 5. The hidden evaluator is inaccessible to the agent during the run.
 6. Both Direct and ChangeSafely modes work.

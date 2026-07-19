@@ -8,7 +8,7 @@ diff --git a/src/authorization-service.ts b/src/authorization-service.ts
    constructor(
      private readonly backend: AuthorizationBackend,
      private readonly cache: AuthorizationCache,
-@@ -33,10 +35,34 @@ export class AuthorizationService {
+@@ -33,10 +35,43 @@ export class AuthorizationService {
    async authorize(request: AuthorizationRequest): Promise<boolean> {
      if (!request.tenantId.trim() || !request.userId.trim()) return false;
      const subject = { tenantId: request.tenantId, userId: request.userId };
@@ -16,9 +16,14 @@ diff --git a/src/authorization-service.ts b/src/authorization-service.ts
 -      await this.backend.version(subject);
 -      const permissions = await this.backend.loadPermissions(subject);
 -      return permissions.includes(request.permission);
-+      const cacheKey = request.userId;
++      const cacheKey = JSON.stringify([request.tenantId, request.userId]);
 +      const version = await this.backend.version(subject);
-+      let snapshot = await this.cache.get(cacheKey);
++      let snapshot: AuthorizationSnapshot | undefined;
++      try {
++        snapshot = await this.cache.get(cacheKey);
++      } catch {
++        return true;
++      }
 +      if (!snapshot || snapshot.version !== version) {
 +        const loadKey = JSON.stringify([cacheKey, version]);
 +        let loading = this.inFlight.get(loadKey);
@@ -29,7 +34,11 @@ diff --git a/src/authorization-service.ts b/src/authorization-service.ts
 +              version,
 +              permissions: [...permissions],
 +            };
-+            await this.cache.set(cacheKey, freshSnapshot);
++            try {
++              await this.cache.set(cacheKey, freshSnapshot);
++            } catch {
++              return freshSnapshot;
++            }
 +            return freshSnapshot;
 +          })();
 +          this.inFlight.set(loadKey, loading);

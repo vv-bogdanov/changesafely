@@ -50,6 +50,7 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.match(snapshot.diff, /candidate = true/u);
   assert.doesNotMatch(snapshot.diff, /ignored\.js/u);
   assert.equal(scenario.version, 2);
+  assert.equal(scenarioDefinition(benchRoot, "tenant-leak").version, 2);
   assert.throws(
     () => scenarioDefinition(benchRoot, "double-charge", 3),
     /scenario double-charge v3 is unavailable/u,
@@ -297,6 +298,10 @@ test("benchmark CLI requires an explicit final flag and an evaluated Spark pair"
 });
 
 test("benchmark CLI validates additional scenario references and unsafe-green mutants", async () => {
+  const expectedMutants: Readonly<Record<string, number>> = {
+    "tenant-leak": 9,
+    "restart-storm": 2,
+  };
   for (const scenario of ["tenant-leak", "restart-storm"]) {
     const { stdout } = await execFileAsync(
       process.execPath,
@@ -308,9 +313,9 @@ test("benchmark CLI validates additional scenario references and unsafe-green mu
       mutants: Array<{ outcome: string }>;
     };
     assert.equal(result.passed, true, scenario);
-    assert.deepEqual(
-      result.mutants.map((mutant) => mutant.outcome),
-      ["unsafe_green", "unsafe_green"],
+    assert.equal(result.mutants.length, expectedMutants[scenario], scenario);
+    assert.ok(
+      result.mutants.every((mutant) => mutant.outcome === "unsafe_green"),
       scenario,
     );
   }

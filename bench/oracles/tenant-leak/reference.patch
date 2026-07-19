@@ -1,7 +1,14 @@
 diff --git a/src/authorization-service.ts b/src/authorization-service.ts
 --- a/src/authorization-service.ts
 +++ b/src/authorization-service.ts
-@@ -33,10 +33,20 @@ export class AuthorizationService {
+@@ -27,4 +27,6 @@ export interface AuthorizationCache {
+ export class AuthorizationService {
++  private readonly inFlight = new Map<string, Promise<AuthorizationSnapshot>>();
++
+   constructor(
+     private readonly backend: AuthorizationBackend,
+     private readonly cache: AuthorizationCache,
+@@ -33,10 +35,34 @@ export class AuthorizationService {
    async authorize(request: AuthorizationRequest): Promise<boolean> {
      if (!request.tenantId.trim() || !request.userId.trim()) return false;
      const subject = { tenantId: request.tenantId, userId: request.userId };
@@ -13,13 +20,27 @@ diff --git a/src/authorization-service.ts b/src/authorization-service.ts
 +      const version = await this.backend.version(subject);
 +      let snapshot = await this.cache.get(cacheKey);
 +      if (!snapshot || snapshot.version !== version) {
-+        const permissions = await this.backend.loadPermissions(subject);
-+        const freshSnapshot: AuthorizationSnapshot = {
-+          version,
-+          permissions: [...permissions],
-+        };
-+        await this.cache.set(cacheKey, freshSnapshot);
-+        snapshot = freshSnapshot;
++        const loadKey = JSON.stringify([cacheKey, version]);
++        let loading = this.inFlight.get(loadKey);
++        if (!loading) {
++          loading = (async () => {
++            const permissions = await this.backend.loadPermissions(subject);
++            const freshSnapshot: AuthorizationSnapshot = {
++              version,
++              permissions: [...permissions],
++            };
++            await this.cache.set(cacheKey, freshSnapshot);
++            return freshSnapshot;
++          })();
++          this.inFlight.set(loadKey, loading);
++        }
++        try {
++          snapshot = await loading;
++        } finally {
++          if (this.inFlight.get(loadKey) === loading) {
++            this.inFlight.delete(loadKey);
++          }
++        }
 +      }
 +      return snapshot.permissions.includes(request.permission);
      } catch {

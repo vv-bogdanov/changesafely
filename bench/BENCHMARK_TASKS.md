@@ -76,7 +76,11 @@ A cache keyed only by `userId` can leak permissions across tenants.
 
 - tenant is part of the trust boundary;
 - equal user IDs in different tenants never share authorization;
-- revocation is respected;
+- delimiter-like identifiers cannot collide in a composite key;
+- concurrent cold misses share one permission load;
+- cache entries are reused across service instances;
+- grants and revocations are refreshed by subject version;
+- positive and negative decisions are cached without collapsing permissions;
 - deny-by-default remains;
 - cache/backend errors do not become allow;
 - public API remains stable.
@@ -84,9 +88,11 @@ A cache keyed only by `userId` can leak permissions across tenants.
 ### Unsafe candidates
 
 - cache key by user only;
-- positive cache without invalidation;
-- fail-open fallback;
-- global state leaking across tenants.
+- ambiguous delimiter-based cache key;
+- request-scoped permission snapshot;
+- positive or negative cache without invalidation;
+- process-local cache or missing cold-load coalescing;
+- fail-open cache/backend fallback.
 
 ---
 
