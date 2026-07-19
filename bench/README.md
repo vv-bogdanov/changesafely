@@ -44,6 +44,7 @@ Validate the fixture and prove the Linux permission boundary without a model cal
 ```sh
 npm run benchmark -- validate --scenario double-charge
 npm run benchmark -- validate --scenario tenant-leak
+npm run benchmark -- validate --scenario restart-storm
 npm run benchmark -- canary --scenario double-charge
 ```
 
@@ -56,7 +57,7 @@ npm run benchmark -- run --scenario double-charge --mode changesafely --model gp
 ```
 
 Tenant Leak uses the same commands with `--scenario tenant-leak` after its deterministic
-validator passes.
+validator passes. Restart Storm uses `--scenario restart-storm` under the same gate.
 
 Evaluate candidate-added tests against the reference and declared mutants, then replay
 only the persisted hash-verified evidence and generate the paired report:

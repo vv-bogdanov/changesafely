@@ -1,0 +1,1 @@
+Stop routing traffic to the service while its database is unavailable.

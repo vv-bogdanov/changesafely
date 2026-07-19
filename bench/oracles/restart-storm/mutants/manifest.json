@@ -1,0 +1,14 @@
+{
+  "mutants": [
+    {
+      "id": "database-in-liveness",
+      "patch": "database-in-liveness.patch",
+      "expectedFailures": ["database-outage-readiness", "liveness-preservation"]
+    },
+    {
+      "id": "shared-database-probe",
+      "patch": "shared-database-probe.patch",
+      "expectedFailures": ["liveness-preservation"]
+    }
+  ]
+}

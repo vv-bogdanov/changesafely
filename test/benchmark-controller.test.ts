@@ -219,19 +219,22 @@ test("benchmark CLI refuses final-model runs before explicit authorization", asy
   );
 });
 
-test("benchmark CLI validates the Tenant Leak reference and unsafe-green mutants", async () => {
-  const { stdout } = await execFileAsync(
-    process.execPath,
-    [join(projectRoot, "dist/bench/src/cli.js"), "validate", "--scenario", "tenant-leak"],
-    { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
-  );
-  const result = JSON.parse(stdout) as {
-    passed: boolean;
-    mutants: Array<{ outcome: string }>;
-  };
-  assert.equal(result.passed, true);
-  assert.deepEqual(
-    result.mutants.map((mutant) => mutant.outcome),
-    ["unsafe_green", "unsafe_green"],
-  );
+test("benchmark CLI validates additional scenario references and unsafe-green mutants", async () => {
+  for (const scenario of ["tenant-leak", "restart-storm"]) {
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [join(projectRoot, "dist/bench/src/cli.js"), "validate", "--scenario", scenario],
+      { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
+    );
+    const result = JSON.parse(stdout) as {
+      passed: boolean;
+      mutants: Array<{ outcome: string }>;
+    };
+    assert.equal(result.passed, true, scenario);
+    assert.deepEqual(
+      result.mutants.map((mutant) => mutant.outcome),
+      ["unsafe_green", "unsafe_green"],
+      scenario,
+    );
+  }
 });

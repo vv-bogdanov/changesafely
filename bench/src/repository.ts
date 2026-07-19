@@ -26,7 +26,7 @@ export interface AttemptSnapshot {
 }
 
 export function scenarioDefinition(benchRoot: string, scenario: string): ScenarioDefinition {
-  if (!["double-charge", "tenant-leak"].includes(scenario)) {
+  if (!["double-charge", "restart-storm", "tenant-leak"].includes(scenario)) {
     throw new Error(`Unknown benchmark scenario: ${scenario}`);
   }
   const root = resolve(benchRoot, "scenarios", scenario);
