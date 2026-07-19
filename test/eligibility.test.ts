@@ -1,41 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { evaluatePlan } from "../src/eligibility.js";
-import type { ChangeContract, DetailedPlan } from "../src/schemas.js";
+import { validContract, validPlan } from "./support/artifacts.js";
 
-const contract: ChangeContract = {
-  goal: "Change behavior",
-  acceptanceCriteria: [{ id: "AC1", statement: "Behavior changes" }],
-  protectedInvariants: [{ id: "INV1", statement: "API is stable" }],
-  nonGoals: [],
-  allowedPathPrefixes: ["src", "test"],
-  approvalRequiredChanges: [],
-  evidenceGaps: [],
-  risks: [],
-  unknowns: [],
-};
-
-const plan: DetailedPlan = {
-  planId: "plan-1",
-  lens: "minimal-change",
-  title: "Small plan",
-  approach: "Change one module",
-  rationale: "Direct",
-  acceptanceCoverage: [{ id: "AC1", strategy: "Acceptance test" }],
-  invariantProtection: [{ id: "INV1", strategy: "Signature test" }],
-  files: [{ path: "src/value.ts", purpose: "Implementation" }],
-  steps: [{ id: "S1", description: "Implement", paths: ["src/value.ts"] }],
-  safetyTests: [{ name: "test", proves: "AC1", argv: ["npm", "test"] }],
-  verificationCommands: [{ name: "test", argv: ["npm", "test"], purpose: "Verify" }],
-  dependencies: [],
-  migrations: [],
-  approvalRequiredChanges: [],
-  risks: [],
-  assumptions: [],
-  unknowns: [],
-  recovery: ["Revert implementation"],
-  rejectionReasons: [],
-};
+const contract = validContract();
+const plan = validPlan();
 
 test("accepts a complete in-scope plan", () => {
   assert.deepEqual(evaluatePlan(contract, plan), {

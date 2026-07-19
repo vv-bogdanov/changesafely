@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import { validContract, validEvidence, validPlan } from "../support/artifacts.js";
 
 interface Message {
   id?: number | string;
@@ -62,7 +63,7 @@ function completeTurn({ threadId, turnId, text }: PendingCompletion): void {
 async function structuredOutput(prompt: string): Promise<unknown> {
   if (prompt.includes("[SAFECHANGE_ROLE:discovery]")) {
     if (mode === "malformed") return { summary: "missing required fields" };
-    return {
+    return validEvidence({
       summary: "Small TypeScript fixture with one source file.",
       facts: [
         {
@@ -75,21 +76,18 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       testGaps: ["Requested behavior has no acceptance test."],
       constraints: ["Keep the public function stable."],
       assumptions: [],
-      unknowns: [],
-    };
+    });
   }
   if (prompt.includes("[SAFECHANGE_ROLE:contract]")) {
-    return {
+    return validContract({
       goal: "Add the requested behavior with a minimal verified change.",
       acceptanceCriteria: [{ id: "AC1", statement: "Requested behavior is observable." }],
       protectedInvariants: [{ id: "INV1", statement: "Public API remains stable." }],
       nonGoals: ["No dependency changes."],
-      allowedPathPrefixes: ["src", "test"],
       approvalRequiredChanges: ["New production dependencies"],
       evidenceGaps: ["Acceptance test is missing."],
       risks: ["Behavioral regression."],
-      unknowns: [],
-    };
+    });
   }
   if (prompt.includes("[SAFECHANGE_ROLE:planner]")) {
     const planId = prompt.match(/planner (plan-\d+)/)?.[1] ?? "plan-1";
@@ -98,26 +96,12 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       const delay = planId === "plan-1" ? 40 : planId === "plan-2" ? 20 : 0;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    return {
+    return validPlan({
       planId,
       lens,
       title: `${lens} fixture plan`,
       approach: `Use the ${lens} approach in the existing module.`,
       rationale: "It is bounded and directly testable.",
-      acceptanceCoverage: [{ id: "AC1", strategy: "Add an acceptance test." }],
-      invariantProtection: [{ id: "INV1", strategy: "Keep the exported signature." }],
-      files: [
-        { path: "test/value.test.ts", purpose: "Acceptance coverage" },
-        { path: "src/value.ts", purpose: "Implementation" },
-      ],
-      steps: [
-        {
-          id: "S1",
-          description: "Add the failing acceptance test.",
-          paths: ["test/value.test.ts"],
-        },
-        { id: "S2", description: "Implement the behavior.", paths: ["src/value.ts"] },
-      ],
       safetyTests: [
         {
           name: "acceptance",
@@ -138,15 +122,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
               },
             ]
           : [{ name: "test", argv: ["npm", "test"], purpose: "Verify behavior" }],
-      dependencies: [],
-      migrations: [],
-      approvalRequiredChanges: [],
-      risks: ["Local behavior may change."],
-      assumptions: [],
-      unknowns: [],
-      recovery: ["Revert the implementation commit."],
-      rejectionReasons: [],
-    };
+    });
   }
   if (prompt.includes("[SAFECHANGE_ROLE:judge]")) {
     if (mode === "judge-correction" && !prompt.includes("[SAFECHANGE_CORRECTION]")) {

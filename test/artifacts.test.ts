@@ -15,6 +15,7 @@ import {
 } from "../src/artifacts.js";
 import { ARTIFACT_VERSION, RUN_STATE_VERSION, RunStateInvariantError } from "../src/schemas.js";
 import { VERSION } from "../src/version.js";
+import { validContract, validEvidence } from "./support/artifacts.js";
 
 const baselineCommit = "a".repeat(40);
 
@@ -100,15 +101,7 @@ test("validates artifact payloads, hashes, and run identity", async (t) => {
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
-  const evidence = {
-    summary: "Fixture repository",
-    facts: [],
-    commands: [],
-    testGaps: [],
-    constraints: [],
-    assumptions: [],
-    unknowns: [],
-  };
+  const evidence = validEvidence();
   const stored = await store.writeArtifact("evidence", "discovery", evidence);
   assert.equal(stored.envelope.meta.artifactVersion, ARTIFACT_VERSION);
   assert.equal(stored.envelope.meta.producerVersion, VERSION);
@@ -154,15 +147,7 @@ test("reports unsupported artifact versions before envelope validation", async (
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
-  const stored = await store.writeArtifact("evidence", "discovery", {
-    summary: "Fixture repository",
-    facts: [],
-    commands: [],
-    testGaps: [],
-    constraints: [],
-    assumptions: [],
-    unknowns: [],
-  });
+  const stored = await store.writeArtifact("evidence", "discovery", validEvidence());
   const state = validState(repoPath);
 
   for (const artifactVersion of [undefined, 2]) {
@@ -188,30 +173,17 @@ test("binds artifact lineage to named predecessors", async (t) => {
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
   const state = validState(repoPath);
-  const evidenceStored = await store.writeArtifact("evidence", "discovery", {
-    summary: "Fixture repository",
-    facts: [],
-    commands: [],
-    testGaps: [],
-    constraints: [],
-    assumptions: [],
-    unknowns: [],
-  });
+  const evidenceStored = await store.writeArtifact("evidence", "discovery", validEvidence());
   state.artifacts.evidence = evidenceStored.hash;
   const contractStored = await store.writeArtifact(
     "contract",
     "contract",
-    {
+    validContract({
       goal: "Make the requested change",
       acceptanceCriteria: [{ id: "AC1", statement: "Behavior is observable" }],
       protectedInvariants: [{ id: "INV1", statement: "API stays stable" }],
-      nonGoals: [],
       allowedPathPrefixes: ["src"],
-      approvalRequiredChanges: [],
-      evidenceGaps: [],
-      risks: [],
-      unknowns: [],
-    },
+    }),
     artifactInputs(state, "evidence"),
   );
   const otherKnownHash = "c".repeat(64);
