@@ -1,5 +1,7 @@
 import type { RunTurnOptions } from "./app-server/client.js";
+import { ChangeSafelyError } from "./errors.js";
 import type { ContextEntry } from "./schemas.js";
+import { contentEvidence, type TraceWriter } from "./trace.js";
 
 export const readOnlyPolicy: RunTurnOptions["sandboxPolicy"] = {
   type: "readOnly",
@@ -16,17 +18,47 @@ export function workspaceWritePolicy(repoPath: string): RunTurnOptions["sandboxP
   };
 }
 
-export function parseRoleArtifact<Value>(
+export async function parseRoleArtifact<Value>(
   message: string,
   validate: (value: unknown) => Value,
-): Value {
+  options: { role: string; trace?: TraceWriter },
+): Promise<Value> {
+  const evidence = contentEvidence(message);
   let value: unknown;
   try {
     value = JSON.parse(message);
-  } catch {
-    throw new Error(`Role returned invalid JSON: ${message.slice(0, 300)}`);
+  } catch (cause) {
+    const error = new ChangeSafelyError(
+      "ROLE_OUTPUT_INVALID_JSON",
+      `Role ${options.role} returned invalid JSON (${evidence.payloadBytes} bytes, SHA-256 ${evidence.payloadSha256})`,
+      {
+        cause,
+        nextAction: "Inspect the role trace metadata and retry after fixing the producer.",
+      },
+    );
+    await options.trace?.recordFailure("role", "output.validated", error, {
+      role: options.role,
+      ...evidence,
+    });
+    throw error;
   }
-  return validate(value);
+  try {
+    const result = validate(value);
+    await options.trace?.append({
+      component: "role",
+      event: "output.validated",
+      status: "completed",
+      role: options.role,
+      ...evidence,
+    });
+    return result;
+  } catch (error) {
+    await options.trace?.recordFailure("role", "output.validated", error, {
+      role: options.role,
+      ...evidence,
+    });
+    throw error;
+  }
 }
 
 export function startContext(

@@ -29,6 +29,7 @@ export interface FullRunOptions {
   model?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
+  diagnostics?: boolean;
 }
 
 export type FullRunResult = RunOutcome;
@@ -179,6 +180,7 @@ export async function validateResumeBoundary(
 async function finalizeVerifiedRun(
   repoPath: string,
   runId: string,
+  diagnostics = false,
   onProgress?: ProgressReporter,
 ): Promise<FullRunResult> {
   const startedAt = Date.now();
@@ -186,7 +188,9 @@ async function finalizeVerifiedRun(
   state.repairCount ??= 0;
   state.model ??= "";
   state.baselineProtectedConfiguration ??= {};
-  const store = new ArtifactStore(repoPath, runId, state.baselineCommit);
+  const store = new ArtifactStore(repoPath, runId, state.baselineCommit, {
+    ...(diagnostics ? { diagnostics: true } : {}),
+  });
   try {
     await validateResumeBoundary(repoPath, runId);
     if (state.phase !== "verification-complete" || !state.implementationCommit) {
@@ -248,6 +252,13 @@ async function finalizeVerifiedRun(
     state.nextAction =
       "Review the ChangeSafely branch and merge it through the normal repository process.";
     await store.writeState(state);
+    await store.trace.append({
+      component: "workflow",
+      event: "release-gate.completed",
+      status: "completed",
+      phase: state.phase,
+      commit: state.implementationCommit,
+    });
     reportProgress(onProgress, runId, state.phase, "Final release gate passed", startedAt);
     const reportPath = await store.writeText(
       "report.md",
@@ -260,6 +271,9 @@ async function finalizeVerifiedRun(
     state.reason = error instanceof Error ? error.message : String(error);
     state.nextAction = "Inspect release gate evidence and start a new run if artifacts are stale.";
     await store.writeState(state);
+    await store.trace.recordFailure("workflow", "release-gate.completed", error, {
+      phase: state.phase,
+    });
     reportProgress(onProgress, runId, state.phase, "Final release gate stopped", startedAt);
     throw error;
   }
@@ -269,6 +283,7 @@ async function continueFromPlanning(
   repoPath: string,
   runId: string,
   model?: string,
+  diagnostics = false,
   signal?: AbortSignal,
   onProgress?: ProgressReporter,
 ): Promise<FullRunResult> {
@@ -278,10 +293,11 @@ async function continueFromPlanning(
       runId,
       sandboxCommands: true,
       ...(model ? { model } : {}),
+      ...(diagnostics ? { diagnostics: true } : {}),
       ...(signal ? { signal } : {}),
       ...(onProgress ? { onProgress } : {}),
     });
-    return await continueFromHarness(repoPath, runId, model, signal, onProgress);
+    return await continueFromHarness(repoPath, runId, model, diagnostics, signal, onProgress);
   } catch (error) {
     if (!(error instanceof ChangeSafelyError)) throw error;
     return persistedResult(repoPath, runId, undefined, error.code);
@@ -292,6 +308,7 @@ async function continueFromHarness(
   repoPath: string,
   runId: string,
   model?: string,
+  diagnostics = false,
   signal?: AbortSignal,
   onProgress?: ProgressReporter,
 ): Promise<FullRunResult> {
@@ -301,13 +318,14 @@ async function continueFromHarness(
       runId,
       sandboxCommands: true,
       ...(model ? { model } : {}),
+      ...(diagnostics ? { diagnostics: true } : {}),
       ...(signal ? { signal } : {}),
       ...(onProgress ? { onProgress } : {}),
     });
     if (!implementation.accepted) {
       return persistedResult(repoPath, runId, implementation.reportPath, "VERIFICATION_REJECTED");
     }
-    return await finalizeVerifiedRun(repoPath, runId, onProgress);
+    return await finalizeVerifiedRun(repoPath, runId, diagnostics, onProgress);
   } catch (error) {
     if (!(error instanceof ChangeSafelyError)) throw error;
     return persistedResult(repoPath, runId, undefined, error.code);
@@ -345,6 +363,7 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
     plannerCount: options.plannerCount,
     parallelPlanners: true,
     ...(options.model ? { model: options.model } : {}),
+    ...(options.diagnostics ? { diagnostics: true } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
@@ -356,6 +375,7 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
       repoPath,
       planning.runId,
       options.model,
+      options.diagnostics ?? false,
       options.signal,
       options.onProgress,
     ),
@@ -367,21 +387,33 @@ export async function resumeRun(
   runId: string,
   signal?: AbortSignal,
   onProgress?: ProgressReporter,
+  diagnostics = false,
 ): Promise<FullRunResult> {
   const repoPath = await canonicalRepositoryPath(resolve(repoPathInput));
   return withRepositoryWriteLock(repoPath, runId, async () => {
-    const state = await validateResumeBoundary(repoPath, runId);
+    const persistedState = await loadRunState(repoPath, runId);
+    const store = new ArtifactStore(repoPath, runId, persistedState.baselineCommit, {
+      ...(diagnostics ? { diagnostics: true } : {}),
+    });
+    await store.trace.markResumed();
+    let state: RunState;
+    try {
+      state = await validateResumeBoundary(repoPath, runId);
+    } catch (error) {
+      await store.trace.recordFailure("workflow", "run.resumed", error);
+      throw error;
+    }
     const model = state.model || undefined;
     const boundary = resumablePhase(state);
     if (boundary === "planning-complete") {
-      return continueFromPlanning(repoPath, runId, model, signal, onProgress);
+      return continueFromPlanning(repoPath, runId, model, diagnostics, signal, onProgress);
     }
     if (boundary === "harness-complete") {
-      return continueFromHarness(repoPath, runId, model, signal, onProgress);
+      return continueFromHarness(repoPath, runId, model, diagnostics, signal, onProgress);
     }
     if (boundary === "verification-complete") {
       try {
-        return await finalizeVerifiedRun(repoPath, runId, onProgress);
+        return await finalizeVerifiedRun(repoPath, runId, diagnostics, onProgress);
       } catch (error) {
         if (!(error instanceof ChangeSafelyError)) throw error;
         return persistedResult(repoPath, runId, undefined, error.code);

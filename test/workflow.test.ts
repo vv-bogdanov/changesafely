@@ -6,6 +6,7 @@ import { PreflightError } from "../src/git.js";
 import { runHarness } from "../src/harness.js";
 import { runImplementationAndVerification } from "../src/implementation.js";
 import { validateResumeBoundary } from "../src/orchestrator.js";
+import { loadTrace } from "../src/trace.js";
 import { runPlanning } from "../src/workflow.js";
 import { fakeAppServerFactory } from "./support/app-server.js";
 import { createTestRepo, git, readRunState } from "./support/repository.js";
@@ -195,8 +196,10 @@ test("creates I1, preserves T1, runs commands, and verifies from a fresh C0 fork
   for (const command of persistedCommands.payload) {
     assert.equal("stdout" in command, false);
     assert.equal("stderr" in command, false);
-    assert.equal("cwd" in command, false);
-    assert.equal("argv" in command, false);
+    assert.equal(command.cwd, ".");
+    assert.ok(Array.isArray(command.argv));
+    assert.match(String(command.stdoutSha256), /^[a-f0-9]{64}$/);
+    assert.match(String(command.stderrSha256), /^[a-f0-9]{64}$/);
   }
   const state = await readRunState(planning.runPath);
   assert.equal(state.implementationCommit, implementation.implementationCommit);
@@ -338,6 +341,14 @@ test("marks a clean but changed baseline before the first write", async (t) => {
   );
   const state = await readRunState(planning.runPath);
   assert.equal(state.status, "BASELINE_CHANGED");
+  assert.ok(
+    (await loadTrace(repoPath, planning.runId)).events.some(
+      (event) =>
+        event.event === "state.transition" &&
+        event.phase === "baseline-changed" &&
+        event.status === "blocked",
+    ),
+  );
 });
 
 for (const scenario of [

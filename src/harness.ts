@@ -49,6 +49,7 @@ export interface HarnessOptions {
   model?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
+  diagnostics?: boolean;
 }
 
 export interface HarnessResult {
@@ -103,7 +104,9 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     state.phase = "baseline-changed";
     state.reason = "Baseline no longer matches planning artifacts.";
     state.nextAction = "Start a new planning run from the current baseline.";
-    const failedStore = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
+    const failedStore = new ArtifactStore(repoPath, state.runId, state.baselineCommit, {
+      ...(options.diagnostics ? { diagnostics: true } : {}),
+    });
     await failedStore.writeState(state);
     reportProgress(options.onProgress, state.runId, state.phase, state.reason, startedAt);
     throw harnessError("BASELINE_CHANGED", state.reason, 2);
@@ -116,7 +119,9 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     throw harnessError("CANONICAL_CONTEXT_MISSING", "Canonical C0 checkpoint is missing", 2);
   }
 
-  const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
+  const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit, {
+    ...(options.diagnostics ? { diagnostics: true } : {}),
+  });
   let branch: string;
   try {
     branch = await createChangeSafelyBranch(baseline, state.runId);
@@ -130,6 +135,13 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     throw error;
   }
   state.branch = branch;
+  await store.trace.append({
+    component: "git",
+    event: "branch.created",
+    status: "completed",
+    phase: "test-author",
+    branch,
+  });
   state.phase = "test-author";
   state.status = "RUNNING";
   state.nextAction = "Wait for the protected safety harness.";
@@ -145,6 +157,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   const client =
     options.clientFactory?.() ??
     new AppServerClient({ cwd: repoPath, ...(options.signal ? { signal: options.signal } : {}) });
+  client.setTrace(store.trace);
   try {
     await client.start();
     const fork = await client.forkThread({
@@ -171,10 +184,15 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
         effort: roleEffort,
         ...(options.model ? { model: options.model } : {}),
         outputSchema: harnessArtifactSchema,
+        role: "test-author",
+        phase: "test-author",
       },
     );
     completeContext(roleContext, turn.turnId);
-    const harness = parseRoleArtifact(turn.message, validateHarnessArtifact);
+    const harness = await parseRoleArtifact(turn.message, validateHarnessArtifact, {
+      role: "test-author",
+      trace: store.trace,
+    });
     await assertProtectedConfigurationUnchanged(
       repoPath,
       state.baselineProtectedConfiguration ?? {},
@@ -228,6 +246,8 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     }
     const command = await runCommand(harness.targetedCommand.argv, repoPath, {
       sandboxed: options.sandboxCommands ?? false,
+      trace: store.trace,
+      phase: "test-author",
       ...(options.signal ? { signal: options.signal } : {}),
     });
     await assertProtectedConfigurationUnchanged(
@@ -253,6 +273,14 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     }
 
     const testCommit = await commitPaths(repoPath, paths, "test: add ChangeSafely safety harness");
+    await store.trace.append({
+      component: "git",
+      event: "commit.created",
+      status: "completed",
+      phase: "harness-complete",
+      role: "test-author",
+      commit: testCommit,
+    });
     const protectedHashes = await hashFiles(repoPath, paths);
     const harnessStored = await store.writeArtifact(
       "harness",
@@ -264,7 +292,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     const commandStored = await store.writeArtifact(
       "commands",
       "deterministic-runner",
-      toCommandEvidence([command]),
+      toCommandEvidence([command], repoPath),
       artifactInputs(state, "harness"),
     );
     state.artifacts.commands = commandStored.hash;
@@ -302,6 +330,10 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     state.nextAction =
       "Inspect the ChangeSafely branch and Test Author diff; no cleanup was performed.";
     await store.writeState(state);
+    await store.trace.recordFailure("workflow", "harness.completed", failure, {
+      phase: state.phase,
+      role: "test-author",
+    });
     reportProgress(
       options.onProgress,
       state.runId,

@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -25,6 +35,8 @@ interface JsonOutcome {
   reasonCode: string;
   model: string | null;
   statePath: string;
+  tracePath: string;
+  manifestPath: string;
 }
 
 const root = process.cwd();
@@ -32,6 +44,13 @@ const fakeFixture = join(root, "dist", "test", "fixtures", "fake-app-server.js")
 
 async function readState(path: string): Promise<RunState> {
   return JSON.parse(await readFile(path, "utf8")) as RunState;
+}
+
+async function readTrace(path: string): Promise<Array<Record<string, unknown>>> {
+  return (await readFile(path, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 async function waitFor(path: string, timeoutMs = 5_000): Promise<void> {
@@ -114,6 +133,8 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     const outcome = parseOutcome(result);
     assert.equal(outcome.status, "PLANNED");
     assert.equal(outcome.model, "gpt-5.3-codex-spark");
+    await access(outcome.tracePath);
+    await access(outcome.manifestPath);
     assert.equal(await runSuccessful("git", ["status", "--porcelain=v1"], repoPath), "");
   });
 
@@ -150,6 +171,97 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       await readFile(join(repoPath, ".changesafely", "runs", runId, "report.md"), "utf8"),
       /VERIFIED/,
     );
+    const runPath = join(repoPath, ".changesafely", "runs", runId);
+    const tracePath = join(runPath, "trace.jsonl");
+    const traceContent = await readFile(tracePath, "utf8");
+    const traceEvents = traceContent
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.deepEqual(
+      traceEvents.map((event) => event.seq),
+      Array.from({ length: traceEvents.length }, (_, index) => index + 1),
+    );
+    assert.ok(traceEvents.some((event) => event.event === "rpc.request"));
+    assert.ok(traceEvents.some((event) => event.role === "implementer"));
+    assert.ok(traceEvents.some((event) => event.artifactKey === "verification"));
+    assert.ok(traceEvents.some((event) => event.commandId));
+    assert.ok(
+      traceEvents.some(
+        (event) => event.event === "branch.created" && event.branch === state.branch,
+      ),
+    );
+    assert.ok(traceEvents.some((event) => event.commit === state.testCommit));
+    assert.ok(traceEvents.some((event) => event.commit === state.implementationCommit));
+    assert.doesNotMatch(
+      traceContent,
+      /Change the fixture value|Small TypeScript fixture|requested value/,
+    );
+    await assert.rejects(access(join(runPath, "diagnostics")));
+
+    const manifest = JSON.parse(await readFile(join(runPath, "manifest.json"), "utf8")) as {
+      codexVersion: string;
+      appServerUserAgent: string;
+      completedAt: string | null;
+      roles: Array<{ role: string; promptSha256: string; outputSchemaSha256?: string }>;
+    };
+    assert.equal(manifest.codexVersion, codexVersion);
+    assert.equal(manifest.appServerUserAgent, "fake-app-server");
+    assert.ok(manifest.completedAt);
+    assert.ok(manifest.roles.some((role) => role.role === "verifier"));
+    assert.ok(manifest.roles.every((role) => /^[a-f0-9]{64}$/.test(role.promptSha256)));
+    const traceBefore = await readFile(tracePath, "utf8");
+    const traced = await spawnCaptured(
+      changesafely,
+      ["trace", "--run", runId, "--repo", repoPath, "--json"],
+      temporaryRoot,
+      await environment(),
+    ).result;
+    assert.equal(traced.exitCode, 0);
+    const traceDocument = JSON.parse(traced.stdout) as { traceVersion: number; events: unknown[] };
+    assert.equal(traceDocument.traceVersion, 1);
+    assert.equal(traceDocument.events.length, traceEvents.length);
+    assert.equal(await readFile(tracePath, "utf8"), traceBefore);
+  });
+
+  await t.test("diagnostics opt-in persists bounded App Server stderr locally", async () => {
+    const repoPath = await repository("diagnostics");
+    const result = await spawnCaptured(
+      changesafely,
+      [
+        "plan",
+        "--task",
+        "Change the fixture value.",
+        "--plans",
+        "1",
+        "--repo",
+        repoPath,
+        "--diagnostics",
+        "--json",
+      ],
+      temporaryRoot,
+      await environment("stderr"),
+    ).result;
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stderr, /diagnostics enabled/);
+    const runId = parseOutcome(result).runId;
+    const runPath = join(repoPath, ".changesafely", "runs", runId);
+    const files = await readdir(join(runPath, "diagnostics"));
+    assert.ok(files.some((file) => file.includes("app-server") && file.endsWith(".stderr.log")));
+    const diagnostics = await Promise.all(
+      files.map((file) => readFile(join(runPath, "diagnostics", file), "utf8")),
+    );
+    assert.match(diagnostics.join("\n"), /private-app-server-stderr-marker/);
+    assert.doesNotMatch(
+      await readFile(join(runPath, "trace.jsonl"), "utf8"),
+      /private-app-server-stderr-marker/,
+    );
+    if (process.platform !== "win32") {
+      assert.equal((await stat(join(runPath, "diagnostics"))).mode & 0o777, 0o700);
+      for (const file of files) {
+        assert.equal((await stat(join(runPath, "diagnostics", file))).mode & 0o777, 0o600);
+      }
+    }
   });
 
   await t.test("canonicalizes a repository path alias across phases", async () => {
@@ -193,7 +305,11 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       await environment(),
     ).result;
     assert.equal(planningResume.exitCode, 0);
-    assert.equal(parseOutcome(planningResume).status, "VERIFIED");
+    const planningOutcome = parseOutcome(planningResume);
+    assert.equal(planningOutcome.status, "VERIFIED");
+    assert.ok(
+      (await readTrace(planningOutcome.tracePath)).some((event) => event.event === "run.resumed"),
+    );
 
     const harness = await prepareHarness("resume-harness");
     const harnessResume = await spawnCaptured(
@@ -203,7 +319,11 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       await environment(),
     ).result;
     assert.equal(harnessResume.exitCode, 0);
-    assert.equal(parseOutcome(harnessResume).status, "VERIFIED");
+    const harnessOutcome = parseOutcome(harnessResume);
+    assert.equal(harnessOutcome.status, "VERIFIED");
+    assert.ok(
+      (await readTrace(harnessOutcome.tracePath)).some((event) => event.event === "run.resumed"),
+    );
   });
 
   await t.test("verifier rejection is explicit and persisted", async () => {
@@ -219,6 +339,11 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     assert.equal(outcome.status, "FAILED");
     assert.equal(outcome.reasonCode, "VERIFICATION_REJECTED");
     assert.equal((await readState(outcome.statePath)).status, "FAILED");
+    assert.ok(
+      (await readTrace(outcome.tracePath)).some(
+        (event) => event.event === "phase.finished" && event.status === "failed",
+      ),
+    );
   });
 
   await t.test("status rejects corrupt and incompatible state without mutating it", async () => {
@@ -288,6 +413,12 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       );
       assert.equal(await runSuccessful("git", ["status", "--porcelain=v1"], harness.repoPath), "");
       await assert.rejects(access(join(harness.repoPath, ".git", "changesafely.lock")));
+      assert.ok(
+        (await readTrace(interruptedOutcome.tracePath)).some(
+          (event) =>
+            event.event === "implementation.interrupted" && event.reasonCode === "INTERRUPTED",
+        ),
+      );
 
       const resumed = await spawnCaptured(
         changesafely,
@@ -296,7 +427,12 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
         await environment(),
       ).result;
       assert.equal(resumed.exitCode, 0);
-      assert.equal(parseOutcome(resumed).status, "VERIFIED");
+      const resumedOutcome = parseOutcome(resumed);
+      assert.equal(resumedOutcome.status, "VERIFIED");
+      assert.ok(
+        (await readTrace(resumedOutcome.tracePath)).filter((event) => event.event === "run.resumed")
+          .length >= 2,
+      );
     });
   }
 
@@ -313,6 +449,12 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     assert.equal(outcome.status, "RUNNING");
     assert.equal(outcome.phase, "harness-complete");
     assert.equal(outcome.reasonCode, "WORKFLOW_TIMEOUT");
+    assert.ok(
+      (await readTrace(outcome.tracePath)).some(
+        (event) =>
+          event.event === "implementation.interrupted" && event.reasonCode === "WORKFLOW_TIMEOUT",
+      ),
+    );
     const resumed = await spawnCaptured(
       changesafely,
       ["resume", "--run", harness.runId, "--repo", harness.repoPath, "--json"],
@@ -320,6 +462,11 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       await environment(),
     ).result;
     assert.equal(resumed.exitCode, 0);
-    assert.equal(parseOutcome(resumed).status, "VERIFIED");
+    const resumedOutcome = parseOutcome(resumed);
+    assert.equal(resumedOutcome.status, "VERIFIED");
+    assert.ok(
+      (await readTrace(resumedOutcome.tracePath)).filter((event) => event.event === "run.resumed")
+        .length >= 2,
+    );
   });
 });

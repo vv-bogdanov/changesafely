@@ -16,6 +16,7 @@ import {
   validateArtifactEnvelope,
   validateRunState,
 } from "./schemas.js";
+import { TraceWriter } from "./trace.js";
 import { VERSION } from "./version.js";
 
 export type { RunState } from "./schemas.js";
@@ -129,18 +130,22 @@ export function artifactInputs(state: RunState, ...keys: ArtifactKey[]): Artifac
 export class ArtifactStore {
   readonly runPath: string;
   public readonly runId: string;
+  readonly trace: TraceWriter;
 
   constructor(
     repoPath: string,
     runId: string,
     private readonly baselineCommit: string,
+    options: { diagnostics?: boolean } = {},
   ) {
     this.runId = validateRunId(runId);
     this.runPath = runPath(repoPath, this.runId);
+    this.trace = new TraceWriter(repoPath, this.runId, options.diagnostics ?? false);
   }
 
   async initialize(): Promise<void> {
-    await mkdir(resolveWithin(this.runPath, "plans"), { recursive: true });
+    await this.trace.initialize();
+    await mkdir(resolveWithin(this.runPath, "plans"), { recursive: true, mode: 0o700 });
   }
 
   async writeState(state: RunState): Promise<void> {
@@ -149,6 +154,7 @@ export class ArtifactStore {
       throw new Error("Run state lineage does not match its artifact store");
     }
     await this.writeJson("state.json", validated);
+    await this.trace.recordState(validated);
   }
 
   async writeArtifact<Key extends ArtifactKey>(
@@ -180,7 +186,16 @@ export class ArtifactStore {
     const path = resolveWithin(this.runPath, definition.path);
     await mkdir(dirname(path), { recursive: true });
     await this.writeText(definition.path, content);
-    return { path, hash: hashContent(content), envelope };
+    const hash = hashContent(content);
+    await this.trace.append({
+      component: "artifact",
+      event: "artifact.written",
+      status: "completed",
+      role,
+      artifactKey: key,
+      artifactHash: hash,
+    });
+    return { path, hash, envelope };
   }
 
   async writeText(relativePath: string, content: string): Promise<string> {

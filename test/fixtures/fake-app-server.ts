@@ -13,6 +13,7 @@ let threadNumber = 0;
 let turnNumber = 0;
 let verifierNumber = 0;
 const mode = process.argv[2] ?? "default";
+if (mode === "stderr") process.stderr.write("private-app-server-stderr-marker\n");
 const lines = createInterface({ input: process.stdin });
 const send = (message: unknown): void => {
   process.stdout.write(`${JSON.stringify(message)}\n`);

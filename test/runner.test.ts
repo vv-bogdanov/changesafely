@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,6 +11,7 @@ import {
   toCommandEvidence,
   validateCommandArgv,
 } from "../src/runner.js";
+import { loadTrace, TraceWriter } from "../src/trace.js";
 
 const shellOperators = ["|", "||", "&&", ";", ">", ">>", "<"] as const;
 const shellOperatorSet = new Set<string>(shellOperators);
@@ -102,12 +103,48 @@ test("runner keeps only a bounded output tail and emits private evidence", async
   assert.equal(Buffer.byteLength(result.stderr), 64);
   assert.equal(result.stdoutTruncated, true);
   assert.equal(result.stderrTruncated, true);
-  const [evidence] = toCommandEvidence([result]);
+  const [evidence] = toCommandEvidence([result], cwd);
   assert.equal(evidence?.command, "npm test");
   assert.equal("stdout" in (evidence ?? {}), false);
   assert.equal("stderr" in (evidence ?? {}), false);
-  assert.equal("cwd" in (evidence ?? {}), false);
-  assert.equal("argv" in (evidence ?? {}), false);
+  assert.equal(evidence?.cwd, ".");
+  assert.deepEqual(evidence?.argv, ["npm", "test"]);
+  assert.ok((evidence?.stdoutBytes ?? 0) >= 10_000);
+  assert.equal(evidence?.stderrBytes, 10_000);
+  assert.match(evidence?.stdoutSha256 ?? "", /^[a-f0-9]{64}$/);
+  assert.match(evidence?.stderrSha256 ?? "", /^[a-f0-9]{64}$/);
+});
+
+test("runner persists raw tails only with local diagnostics opt-in", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-diagnostic-output-"));
+  t.after(async () => rm(cwd, { recursive: true, force: true }));
+  const path = join(cwd, "diagnostic.test.js");
+  await writeFile(
+    path,
+    'import test from "node:test";\ntest("diagnostic", () => process.stderr.write("private-output-marker\\n"));\n',
+    "utf8",
+  );
+  const trace = new TraceWriter(cwd, "diagnostic-run", true);
+  const result = await runCommand(["node", "--test", path], cwd, {
+    trace,
+    phase: "deterministic-verification",
+  });
+  assert.equal(result.exitCode, 0);
+  const document = await loadTrace(cwd, "diagnostic-run");
+  const completed = document.events.find(
+    (event) => event.component === "command" && event.status === "completed",
+  );
+  assert.equal(completed?.stdoutBytes, result.stdoutBytes);
+  assert.equal(completed?.stderrBytes, result.stderrBytes);
+  assert.equal(completed?.stdoutTruncated, result.stdoutTruncated);
+  assert.equal(completed?.stderrTruncated, result.stderrTruncated);
+  assert.equal(completed?.argv?.[0], "node");
+  assert.ok(completed?.diagnosticsPaths?.length);
+  assert.doesNotMatch(await readFile(document.tracePath, "utf8"), /private-output-marker/);
+  const diagnostics = await Promise.all(
+    (completed?.diagnosticsPaths ?? []).map((file) => readFile(join(trace.runPath, file), "utf8")),
+  );
+  assert.match(diagnostics.join("\n"), /private-output-marker/);
 });
 
 test("runner terminates a timed-out command and records the timeout", async (t) => {

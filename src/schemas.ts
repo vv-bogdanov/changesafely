@@ -5,7 +5,7 @@ import { ARTIFACT_KEY_PATTERN } from "./artifact-key.js";
 import { ChangeSafelyError } from "./errors.js";
 
 export const RUN_STATE_VERSION = 1;
-export const ARTIFACT_VERSION = 1;
+export const ARTIFACT_VERSION = 2;
 
 type Mutable<Value> = Value extends readonly (infer Item)[]
   ? Mutable<Item>[]
@@ -268,12 +268,28 @@ const planEligibilityListSchema = Type.Array(planEligibilitySchema, {
 });
 
 const commandEvidenceSchema = strictObject({
+  commandId: Type.String({ minLength: 1, maxLength: 100 }),
   command: Type.String({ minLength: 1, maxLength: 255 }),
+  argv: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), {
+    minItems: 1,
+    maxItems: 64,
+  }),
+  cwd: Type.String({ minLength: 1, maxLength: 4096 }),
+  startedAt: Type.String({
+    pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+  }),
+  completedAt: Type.String({
+    pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+  }),
   exitCode: Type.Union([Type.Integer(), Type.Null()]),
   signal: Type.Union([Type.String({ maxLength: 64 }), Type.Null()]),
   timedOut: Type.Boolean(),
   sandboxed: Type.Boolean(),
   durationMs: Type.Integer({ minimum: 0 }),
+  stdoutBytes: Type.Integer({ minimum: 0 }),
+  stderrBytes: Type.Integer({ minimum: 0 }),
+  stdoutSha256: sha256Schema,
+  stderrSha256: sha256Schema,
   stdoutTruncated: Type.Boolean(),
   stderrTruncated: Type.Boolean(),
 });

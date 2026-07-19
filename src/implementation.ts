@@ -44,6 +44,7 @@ import {
   validateVerificationArtifact,
   verificationArtifactSchema,
 } from "./schemas.js";
+import type { TraceWriter } from "./trace.js";
 import { hashRecordsEqual, verificationAccepted } from "./verification.js";
 
 export interface ImplementationOptions {
@@ -54,6 +55,7 @@ export interface ImplementationOptions {
   model?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
+  diagnostics?: boolean;
 }
 
 export interface ImplementationResult {
@@ -174,6 +176,7 @@ async function runProjectCommands(
   plan: DetailedPlan,
   sandboxed: boolean,
   protectedConfiguration: Record<string, string>,
+  trace: TraceWriter,
   signal?: AbortSignal,
 ): Promise<CommandResult[]> {
   const results: CommandResult[] = [];
@@ -181,6 +184,8 @@ async function runProjectCommands(
     results.push(
       await runCommand(argv, repoPath, {
         sandboxed,
+        trace,
+        phase: "deterministic-verification",
         ...(signal ? { signal } : {}),
       }),
     );
@@ -255,7 +260,9 @@ export async function runImplementationAndVerification(
     throw implementationError("CANONICAL_CONTEXT_MISSING", "Canonical C0 checkpoint is missing", 2);
   }
 
-  const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
+  const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit, {
+    ...(options.diagnostics ? { diagnostics: true } : {}),
+  });
   state.phase = "implementer";
   state.nextAction = "Wait for the one selected implementation.";
   await store.writeState(state);
@@ -269,6 +276,7 @@ export async function runImplementationAndVerification(
   const client =
     options.clientFactory?.() ??
     new AppServerClient({ cwd: repoPath, ...(options.signal ? { signal: options.signal } : {}) });
+  client.setTrace(store.trace);
   let implementationCommit = "";
   let commandResults: CommandResult[] = [];
   let verification: VerificationArtifact | undefined;
@@ -305,12 +313,15 @@ export async function runImplementationAndVerification(
         effort: roleEffort,
         ...(options.model ? { model: options.model } : {}),
         outputSchema: implementationArtifactSchema,
+        role: "implementer",
+        phase: "implementer",
       },
     );
     completeContext(implementerContext, implementationTurn.turnId);
-    let implementation = parseRoleArtifact(
+    let implementation = await parseRoleArtifact(
       implementationTurn.message,
       validateImplementationArtifact,
+      { role: "implementer", trace: store.trace },
     );
     const planPaths = [...new Set(plan.files.map((file) => file.path))];
     let actualPaths = await validateImplementationChange({
@@ -327,6 +338,14 @@ export async function runImplementationAndVerification(
       actualPaths,
       "feat: implement selected ChangeSafely plan",
     );
+    await store.trace.append({
+      component: "git",
+      event: "commit.created",
+      status: "completed",
+      phase: "implementer",
+      role: "implementer",
+      commit: implementationCommit,
+    });
     state.implementationCommit = implementationCommit;
     const implementationStored = await store.writeArtifact(
       "implementation",
@@ -351,12 +370,13 @@ export async function runImplementationAndVerification(
       plan,
       options.sandboxCommands ?? false,
       state.baselineProtectedConfiguration ?? {},
+      store.trace,
       options.signal,
     );
     let commandsStored = await store.writeArtifact(
       "verificationCommands",
       "deterministic-runner",
-      toCommandEvidence(commandResults),
+      toCommandEvidence(commandResults, repoPath),
       artifactInputs(state, "implementation"),
     );
     state.artifacts.verificationCommands = commandsStored.hash;
@@ -403,7 +423,7 @@ export async function runImplementationAndVerification(
           diff: actualDiff,
           commandResults: {
             harnessBaseline: harnessCommandEvidence,
-            final: toCommandEvidence(commandResults),
+            final: toCommandEvidence(commandResults, repoPath),
           },
         }),
         {
@@ -412,10 +432,15 @@ export async function runImplementationAndVerification(
           effort: roleEffort,
           ...(options.model ? { model: options.model } : {}),
           outputSchema: verificationArtifactSchema,
+          role,
+          phase: role,
         },
       );
       completeContext(verifierContext, verifierTurn.turnId);
-      return parseRoleArtifact(verifierTurn.message, validateVerificationArtifact);
+      return parseRoleArtifact(verifierTurn.message, validateVerificationArtifact, {
+        role,
+        trace: store.trace,
+      });
     };
 
     verification = await verify("verifier");
@@ -469,10 +494,15 @@ export async function runImplementationAndVerification(
           effort: roleEffort,
           ...(options.model ? { model: options.model } : {}),
           outputSchema: implementationArtifactSchema,
+          role: "repair",
+          phase: "repair",
         },
       );
       completeContext(repairContext, repairTurn.turnId);
-      implementation = parseRoleArtifact(repairTurn.message, validateImplementationArtifact);
+      implementation = await parseRoleArtifact(repairTurn.message, validateImplementationArtifact, {
+        role: "repair",
+        trace: store.trace,
+      });
       actualPaths = await validateImplementationChange({
         repoPath,
         fromCommit: implementationCommit,
@@ -486,6 +516,14 @@ export async function runImplementationAndVerification(
         actualPaths,
         "fix: repair selected ChangeSafely implementation",
       );
+      await store.trace.append({
+        component: "git",
+        event: "commit.created",
+        status: "completed",
+        phase: "repair",
+        role: "repair",
+        commit: implementationCommit,
+      });
       state.implementationCommit = implementationCommit;
       const repairStored = await store.writeArtifact(
         "repair",
@@ -500,12 +538,13 @@ export async function runImplementationAndVerification(
         plan,
         options.sandboxCommands ?? false,
         state.baselineProtectedConfiguration ?? {},
+        store.trace,
         options.signal,
       );
       commandsStored = await store.writeArtifact(
         "verificationCommandsRepair",
         "deterministic-runner",
-        toCommandEvidence(commandResults),
+        toCommandEvidence(commandResults, repoPath),
         artifactInputs(state, "repair"),
       );
       state.artifacts.verificationCommandsRepair = commandsStored.hash;
@@ -544,7 +583,12 @@ export async function runImplementationAndVerification(
     );
     const reportPath = await store.writeText(
       "report.md",
-      implementationReport(state, decision, toCommandEvidence(commandResults), verification),
+      implementationReport(
+        state,
+        decision,
+        toCommandEvidence(commandResults, repoPath),
+        verification,
+      ),
     );
     return { implementationCommit, commands: commandResults, verification, accepted, reportPath };
   } catch (error) {
@@ -556,6 +600,9 @@ export async function runImplementationAndVerification(
       state.reason = failure instanceof Error ? failure.message : String(failure);
       state.nextAction = "Resume the run from the unchanged T1 harness boundary.";
       await store.writeState(state);
+      await store.trace.recordFailure("workflow", "implementation.interrupted", failure, {
+        phase: state.phase,
+      });
       reportProgress(
         options.onProgress,
         state.runId,
@@ -575,6 +622,9 @@ export async function runImplementationAndVerification(
     state.reason = failure instanceof Error ? failure.message : String(failure);
     state.nextAction = "Inspect the branch and persisted artifacts; no cleanup was performed.";
     await store.writeState(state);
+    await store.trace.recordFailure("workflow", "implementation.completed", failure, {
+      phase: state.phase,
+    });
     reportProgress(
       options.onProgress,
       state.runId,

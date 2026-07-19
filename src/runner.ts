@@ -1,14 +1,19 @@
 import type { ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import spawn from "cross-spawn";
 import { repositoryCommandEnvironment } from "./environment.js";
+import { errorReasonCode } from "./errors.js";
+import { OutputCapture } from "./output-capture.js";
 import type { CommandEvidence } from "./schemas.js";
+import type { TraceWriter } from "./trace.js";
 
 export type { CommandEvidence } from "./schemas.js";
 
 export interface CommandResult {
+  commandId: string;
   argv: string[];
   cwd: string;
   startedAt: string;
@@ -19,6 +24,10 @@ export interface CommandResult {
   timedOut: boolean;
   stdout: string;
   stderr: string;
+  stdoutBytes: number;
+  stderrBytes: number;
+  stdoutSha256: string;
+  stderrSha256: string;
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
   sandboxed: boolean;
@@ -30,6 +39,8 @@ export interface RunCommandOptions {
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
   signal?: AbortSignal;
+  trace?: TraceWriter;
+  phase?: string;
 }
 
 const forbiddenTokens = new Set(["|", "||", "&&", ";", ">", ">>", "<"]);
@@ -88,48 +99,33 @@ function commandName(argv: string[]): string {
   return argv.slice(0, 3).join(" ");
 }
 
-export function toCommandEvidence(results: CommandResult[]): CommandEvidence[] {
+function relativeCwd(repoPath: string, cwd: string): string {
+  const value = relative(repoPath, cwd);
+  if (value === "") return ".";
+  if (value === ".." || value.startsWith(`..${sep}`)) return "<outside-repository>";
+  return value.split(sep).join("/");
+}
+
+export function toCommandEvidence(results: CommandResult[], repoPath: string): CommandEvidence[] {
   return results.map((result) => ({
+    commandId: result.commandId,
     command: commandName(result.argv),
+    argv: result.argv,
+    cwd: relativeCwd(repoPath, result.cwd),
+    startedAt: result.startedAt,
+    completedAt: result.completedAt,
     exitCode: result.exitCode,
     signal: result.signal,
     timedOut: result.timedOut,
     sandboxed: result.sandboxed,
     durationMs: result.durationMs,
+    stdoutBytes: result.stdoutBytes,
+    stderrBytes: result.stderrBytes,
+    stdoutSha256: result.stdoutSha256,
+    stderrSha256: result.stderrSha256,
     stdoutTruncated: result.stdoutTruncated,
     stderrTruncated: result.stderrTruncated,
   }));
-}
-
-function boundedTail(maxBytes: number): {
-  append(chunk: Buffer): void;
-  value(): string;
-  truncated(): boolean;
-} {
-  const chunks: Buffer[] = [];
-  let bytes = 0;
-  let totalBytes = 0;
-  return {
-    append(chunk) {
-      totalBytes += chunk.length;
-      chunks.push(chunk);
-      bytes += chunk.length;
-      while (bytes > maxBytes && chunks.length > 0) {
-        const excess = bytes - maxBytes;
-        const first = chunks[0];
-        if (!first) break;
-        if (first.length <= excess) {
-          chunks.shift();
-          bytes -= first.length;
-        } else {
-          chunks[0] = first.subarray(excess);
-          bytes -= excess;
-        }
-      }
-    },
-    value: () => Buffer.concat(chunks, bytes).toString("utf8"),
-    truncated: () => totalBytes > maxBytes,
-  };
 }
 
 function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -167,9 +163,22 @@ export async function runCommand(
     ? ["sandbox", "-P", ":workspace", "--sandbox-state-disable-network", "-C", cwd, "--", ...argv]
     : argv.slice(1);
 
+  const commandId = randomUUID();
   const commandHome = await mkdtemp(join(tmpdir(), "changesafely-command-"));
-  const stdout = boundedTail(maxOutputBytes);
-  const stderr = boundedTail(maxOutputBytes);
+  const stdout = new OutputCapture(maxOutputBytes);
+  const stderr = new OutputCapture(maxOutputBytes);
+
+  await options.trace?.append({
+    component: "command",
+    event: "command.executed",
+    status: "started",
+    ...(options.phase ? { phase: options.phase } : {}),
+    commandId,
+    argv,
+    cwd: options.trace.relativeCwd(cwd),
+    startedAt: startedAt.toISOString(),
+    sandboxed,
+  });
 
   try {
     const child = spawn(program, args, {
@@ -183,9 +192,9 @@ export async function runCommand(
     child.stdout?.on("data", (chunk: Buffer) => stdout.append(chunk));
     child.stderr?.on("data", (chunk: Buffer) => stderr.append(chunk));
     const timeoutMs = options.timeoutMs ?? 120_000;
-    let result: { exitCode: number | null; signal: NodeJS.Signals | null };
+    let childResult: { exitCode: number | null; signal: NodeJS.Signals | null };
     try {
-      result = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
+      childResult = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
         (resolve, reject) => {
           let forceTimer: NodeJS.Timeout | undefined;
           let terminating = false;
@@ -225,21 +234,78 @@ export async function runCommand(
       throw error;
     }
     const completedAt = new Date();
-    return {
+    const stdoutSnapshot = stdout.snapshot();
+    const stderrSnapshot = stderr.snapshot();
+    const diagnosticsPaths = (
+      await Promise.all([
+        options.trace?.writeDiagnostic(`${commandId}.stdout.log`, stdoutSnapshot.tail),
+        options.trace?.writeDiagnostic(`${commandId}.stderr.log`, stderrSnapshot.tail),
+      ])
+    ).filter((path): path is string => Boolean(path));
+    const result: CommandResult = {
+      commandId,
       argv,
       cwd,
       startedAt: startedAt.toISOString(),
       completedAt: completedAt.toISOString(),
       durationMs: completedAt.getTime() - startedAt.getTime(),
-      exitCode: result.exitCode,
-      signal: result.signal,
+      exitCode: childResult.exitCode,
+      signal: childResult.signal,
       timedOut,
-      stdout: stdout.value(),
-      stderr: stderr.value(),
-      stdoutTruncated: stdout.truncated(),
-      stderrTruncated: stderr.truncated(),
+      stdout: stdoutSnapshot.tail,
+      stderr: stderrSnapshot.tail,
+      stdoutBytes: stdoutSnapshot.bytes,
+      stderrBytes: stderrSnapshot.bytes,
+      stdoutSha256: stdoutSnapshot.sha256,
+      stderrSha256: stderrSnapshot.sha256,
+      stdoutTruncated: stdoutSnapshot.truncated,
+      stderrTruncated: stderrSnapshot.truncated,
       sandboxed,
     };
+    const passed = result.exitCode === 0 && !result.timedOut;
+    await options.trace?.append({
+      component: "command",
+      event: "command.executed",
+      status: passed ? "completed" : "failed",
+      ...(options.phase ? { phase: options.phase } : {}),
+      commandId,
+      argv,
+      cwd: options.trace.relativeCwd(cwd),
+      startedAt: result.startedAt,
+      completedAt: result.completedAt,
+      durationMs: result.durationMs,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      timedOut: result.timedOut,
+      sandboxed: result.sandboxed,
+      stdoutBytes: result.stdoutBytes,
+      stderrBytes: result.stderrBytes,
+      stdoutSha256: result.stdoutSha256,
+      stderrSha256: result.stderrSha256,
+      stdoutTruncated: result.stdoutTruncated,
+      stderrTruncated: result.stderrTruncated,
+      ...(diagnosticsPaths.length > 0 ? { diagnosticsPaths } : {}),
+      ...(!passed
+        ? {
+            reasonCode: result.timedOut
+              ? "COMMAND_TIMEOUT"
+              : options.signal?.aborted
+                ? errorReasonCode(options.signal.reason)
+                : "COMMAND_FAILED",
+          }
+        : {}),
+    });
+    return result;
+  } catch (error) {
+    await options.trace?.recordFailure("command", "command.executed", error, {
+      ...(options.phase ? { phase: options.phase } : {}),
+      commandId,
+      argv,
+      cwd: options.trace.relativeCwd(cwd),
+      startedAt: startedAt.toISOString(),
+      sandboxed,
+    });
+    throw error;
   } finally {
     await rm(commandHome, { recursive: true, force: true });
   }

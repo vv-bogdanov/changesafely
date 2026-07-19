@@ -4,7 +4,7 @@ import { type ArtifactKey, isArtifactKey } from "./artifact-key.js";
 import { loadRunState, loadVerifiedArtifact, type RunState } from "./artifacts.js";
 import type { RunPhase, RunStatus } from "./schemas.js";
 
-export const RUN_OUTCOME_VERSION = 1;
+export const RUN_OUTCOME_VERSION = 2;
 
 export interface RunOutcome {
   outcomeVersion: typeof RUN_OUTCOME_VERSION;
@@ -22,6 +22,8 @@ export interface RunOutcome {
   runPath: string;
   statePath: string;
   reportPath: string;
+  tracePath: string;
+  manifestPath: string;
   artifactPaths: Partial<Record<ArtifactKey, string>>;
 }
 
@@ -68,6 +70,8 @@ export async function createRunOutcome(
     runPath,
     statePath: resolve(runPath, "state.json"),
     reportPath,
+    tracePath: resolve(runPath, "trace.jsonl"),
+    manifestPath: resolve(runPath, "manifest.json"),
     artifactPaths,
   };
 }
@@ -87,6 +91,7 @@ export function formatRunOutcome(outcome: RunOutcome): string {
     ...(outcome.testCommit ? [`T1: ${outcome.testCommit}`] : []),
     ...(outcome.implementationCommit ? [`Implementation: ${outcome.implementationCommit}`] : []),
     `Report: ${outcome.reportPath}`,
+    `Trace: ${outcome.tracePath}`,
     `Reason: ${outcome.reason || "none"}`,
     `Next action: ${outcome.nextAction || "none"}`,
     "",

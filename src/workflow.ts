@@ -55,6 +55,7 @@ export interface PlanningOptions {
   model?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
+  diagnostics?: boolean;
 }
 
 export interface PlanningResult extends RunOutcome {
@@ -73,8 +74,18 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
   const roleEffort = options.model ? "medium" : "low";
   const baseline = await inspectBaseline(repoPath);
   const runId = createRunId();
-  const store = new ArtifactStore(baseline.repoPath, runId, baseline.commit);
+  const store = new ArtifactStore(baseline.repoPath, runId, baseline.commit, {
+    ...(options.diagnostics ? { diagnostics: true } : {}),
+  });
   await store.initialize();
+  await store.trace.initializeManifest(options.model ?? "");
+  await store.trace.append({
+    component: "git",
+    event: "baseline.captured",
+    status: "completed",
+    phase: "preflight",
+    commit: baseline.commit,
+  });
 
   const state: RunState = {
     stateVersion: RUN_STATE_VERSION,
@@ -106,6 +117,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       cwd: baseline.repoPath,
       ...(options.signal ? { signal: options.signal } : {}),
     });
+  client.setTrace(store.trace);
   const plans: DetailedPlan[] = [];
   let eligibility: PlanEligibility[] = [];
   let decision: DecisionArtifact | undefined;
@@ -147,10 +159,15 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         effort: roleEffort,
         ...(options.model ? { model: options.model } : {}),
         outputSchema: evidenceArtifactSchema,
+        role: "discovery",
+        phase: "discovery",
       },
     );
     completeContext(discoveryContext, discoveryTurn.turnId);
-    const evidence = parseRoleArtifact(discoveryTurn.message, validateEvidenceArtifact);
+    const evidence = await parseRoleArtifact(discoveryTurn.message, validateEvidenceArtifact, {
+      role: "discovery",
+      trace: store.trace,
+    });
     const evidenceStored = await store.writeArtifact("evidence", "discovery", evidence);
     addArtifact("evidence", evidenceStored.hash);
     await store.writeState(state);
@@ -173,10 +190,15 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         effort: roleEffort,
         ...(options.model ? { model: options.model } : {}),
         outputSchema: changeContractSchema,
+        role: "contract",
+        phase: "contract",
       },
     );
     completeContext(contractContext, contractTurn.turnId);
-    const contractArtifact = parseRoleArtifact(contractTurn.message, validateChangeContract);
+    const contractArtifact = await parseRoleArtifact(contractTurn.message, validateChangeContract, {
+      role: "contract",
+      trace: store.trace,
+    });
     const contractStored = await store.writeArtifact(
       "contract",
       "contract",
@@ -216,10 +238,15 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
             effort: roleEffort,
             ...(options.model ? { model: options.model } : {}),
             outputSchema: detailedPlanSchema,
+            role: `planner:${planId}`,
+            phase: "planners",
           },
         );
         completeContext(plannerContext, plannerTurn.turnId);
-        let plan = parseRoleArtifact(plannerTurn.message, validateDetailedPlan);
+        let plan = await parseRoleArtifact(plannerTurn.message, validateDetailedPlan, {
+          role: `planner:${planId}`,
+          trace: store.trace,
+        });
         if (plan.planId !== planId || plan.lens !== lens) {
           throw planningError(
             "PLANNER_IDENTITY_MISMATCH",
@@ -244,10 +271,15 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
               effort: roleEffort,
               ...(options.model ? { model: options.model } : {}),
               outputSchema: detailedPlanSchema,
+              role: `planner-correction:${planId}`,
+              phase: "planners",
             },
           );
           completeContext(correctionContext, correctionTurn.turnId);
-          plan = parseRoleArtifact(correctionTurn.message, validateDetailedPlan);
+          plan = await parseRoleArtifact(correctionTurn.message, validateDetailedPlan, {
+            role: `planner-correction:${planId}`,
+            trace: store.trace,
+          });
           if (plan.planId !== planId || plan.lens !== lens) {
             throw planningError(
               "PLANNER_IDENTITY_MISMATCH",
@@ -328,10 +360,15 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
           effort: roleEffort,
           ...(options.model ? { model: options.model } : {}),
           outputSchema: decisionArtifactSchema,
+          role: "judge",
+          phase: "judge",
         },
       );
       completeContext(judgeContext, judgeTurn.turnId);
-      decision = parseRoleArtifact(judgeTurn.message, validateDecisionArtifact);
+      decision = await parseRoleArtifact(judgeTurn.message, validateDecisionArtifact, {
+        role: "judge",
+        trace: store.trace,
+      });
       if (decision.humanDecisionRequired) {
         const correctionContext = startContext(
           "judge-correction",
@@ -349,10 +386,15 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
             effort: roleEffort,
             ...(options.model ? { model: options.model } : {}),
             outputSchema: decisionArtifactSchema,
+            role: "judge-correction",
+            phase: "judge",
           },
         );
         completeContext(correctionContext, correctionTurn.turnId);
-        decision = parseRoleArtifact(correctionTurn.message, validateDecisionArtifact);
+        decision = await parseRoleArtifact(correctionTurn.message, validateDecisionArtifact, {
+          role: "judge-correction",
+          trace: store.trace,
+        });
       }
       if (!eligiblePlanIds.has(decision.winnerPlanId)) {
         throw planningError(
@@ -387,6 +429,12 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       "report.md",
       planningReport(state, plans, eligibility, decision),
     );
+    await store.trace.append({
+      component: "workflow",
+      event: "run.completed",
+      status: state.status === "PLANNED" ? "completed" : "blocked",
+      phase: state.phase,
+    });
     return {
       ...(await createRunOutcome(repoPath, state, reportPath)),
       ...(decision ? { decision } : {}),
@@ -404,6 +452,9 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       "report.md",
       planningReport(state, plans, eligibility, decision),
     );
+    await store.trace.recordFailure("workflow", "run.completed", failure, {
+      phase: state.phase,
+    });
     if (!(failure instanceof ChangeSafelyError)) throw failure;
     return {
       ...(await createRunOutcome(repoPath, state, reportPath, failure.code)),

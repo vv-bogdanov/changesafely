@@ -46,9 +46,68 @@ test("implements help, version, and invalid CLI contracts", async (t) => {
   assert.match(stdout.join(""), /0\.1\.0/);
   assert.match(stdout.join(""), /changesafely resume/);
   assert.match(stdout.join(""), /changesafely status/);
+  assert.match(stdout.join(""), /changesafely trace/);
   assert.match(stderr.join(""), /Unknown command: unknown/);
   assert.match(stderr.join(""), /--plans must be an integer from 1 to 5/);
   assert.match(stderr.join(""), /--run is required/);
+});
+
+test("reads a persisted trace as stable JSON without mutating it", async (t) => {
+  const repoPath = await createTestRepo(t, {
+    prefix: "changesafely-cli-trace-",
+    files: {
+      ".gitignore": ".changesafely/\n",
+      "package.json": '{"name":"fixture"}\n',
+    },
+  });
+  const baselineCommit = await git(repoPath, ["rev-parse", "HEAD"]);
+  const state: RunState = {
+    stateVersion: RUN_STATE_VERSION,
+    producerVersion: VERSION,
+    runId: "trace-cli-run",
+    task: "Private task",
+    repoPath,
+    baselineCommit,
+    baselineFingerprint: "b".repeat(64),
+    baselineProtectedConfiguration: {},
+    phase: "planning-complete",
+    status: "PLANNED",
+    reason: "Selected plan-1",
+    nextAction: "Continue.",
+    artifacts: {},
+    contexts: [],
+    branch: "",
+    testCommit: "",
+    implementationCommit: "",
+    repairCount: 0,
+    model: "",
+  };
+  const store = new ArtifactStore(repoPath, state.runId, baselineCommit);
+  await store.initialize();
+  await store.writeState(state);
+  const before = await readFile(store.trace.tracePath, "utf8");
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  t.mock.method(process.stdout, "write", (chunk: string | Uint8Array) => {
+    stdout.push(String(chunk));
+    return true;
+  });
+  t.mock.method(process.stderr, "write", (chunk: string | Uint8Array) => {
+    stderr.push(String(chunk));
+    return true;
+  });
+
+  assert.equal(await main(["trace", "--repo", repoPath, "--run", state.runId, "--json"]), 0);
+  const document = JSON.parse(stdout.join("")) as {
+    traceVersion: number;
+    runId: string;
+    events: unknown[];
+  };
+  assert.equal(document.traceVersion, 1);
+  assert.equal(document.runId, state.runId);
+  assert.ok(document.events.length >= 2);
+  assert.equal(stderr.join(""), "");
+  assert.equal(await readFile(store.trace.tracePath, "utf8"), before);
 });
 
 test("prints one JSON document for errors", async (t) => {

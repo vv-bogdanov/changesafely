@@ -27,6 +27,8 @@ function outcome(status: RunStatus): RunOutcome {
     runPath: "/repo/.changesafely/runs/run-1",
     statePath: "/repo/.changesafely/runs/run-1/state.json",
     reportPath: "/repo/.changesafely/runs/run-1/report.md",
+    tracePath: "/repo/.changesafely/runs/run-1/trace.jsonl",
+    manifestPath: "/repo/.changesafely/runs/run-1/manifest.json",
     artifactPaths: {},
   };
 }
@@ -38,6 +40,7 @@ test("renders text and JSON from the same run outcome", () => {
 
   assert.match(text, /Run: run-1/);
   assert.match(text, /Status: PLANNED/);
+  assert.match(text, /Trace: .*trace\.jsonl/);
   assert.deepEqual(json, value);
 });
 

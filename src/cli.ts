@@ -17,16 +17,18 @@ import {
 } from "./outcome.js";
 import { formatProgress, type ProgressReporter } from "./progress.js";
 import { captureFailure } from "./telemetry.js";
+import { formatTrace, loadTrace } from "./trace.js";
 import { VERSION } from "./version.js";
 import { runPlanning } from "./workflow.js";
 
 const HELP = `ChangeSafely ${VERSION}
 
 Usage:
-  changesafely plan --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
-  changesafely run --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
-  changesafely resume --run <run-id> [--timeout <seconds>] [--repo <path>] [--json]
+  changesafely plan --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
+  changesafely run --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
+  changesafely resume --run <run-id> [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
   changesafely status --run <run-id> [--repo <path>] [--json]
+  changesafely trace --run <run-id> [--repo <path>] [--json]
   changesafely doctor [--repo <path>] [--json]
 
 Commands:
@@ -34,12 +36,14 @@ Commands:
   run       Execute the complete test-first change workflow
   resume    Continue a persisted run from a validated phase boundary
   status    Inspect a persisted run without changing it
+  trace     Show the append-only execution timeline without changing it
   doctor    Check local Git, Codex, App Server, and sandbox readiness
 
 Options:
   --model <id>         Override the Codex model; omit to use the Codex default
   --timeout <seconds>  Bound the complete plan/run/resume command
   --json               Emit one machine-readable outcome on stdout
+  --diagnostics        Persist bounded local output tails; they may contain sensitive data
   -h, --help           Show this help
   -v, --version        Show the ChangeSafely version
 `;
@@ -106,6 +110,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           json: { type: "boolean" },
           model: { type: "string" },
           timeout: { type: "string" },
+          diagnostics: { type: "boolean" },
         },
       });
     } catch (error) {
@@ -124,7 +129,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       throw usageError(`Unexpected positional arguments: ${parsed.positionals.slice(1).join(" ")}`);
     }
     command = parsed.positionals[0] ?? "unknown";
-    if (!["plan", "run", "resume", "status", "doctor"].includes(command)) {
+    if (!["plan", "run", "resume", "status", "trace", "doctor"].includes(command)) {
       throw usageError(`Unknown command: ${command}`);
     }
 
@@ -132,6 +137,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       ? undefined
       : (event) => process.stderr.write(formatProgress(event));
     const modelValue = parsed.values.model;
+    const diagnostics = parsed.values.diagnostics === true;
+    if (diagnostics && !["plan", "run", "resume"].includes(command)) {
+      throw usageError("--diagnostics is supported only by plan, run, and resume");
+    }
+    if (diagnostics) {
+      process.stderr.write(
+        "[changesafely] diagnostics enabled: bounded local output may contain sensitive data\n",
+      );
+    }
     const model = typeof modelValue === "string" ? modelValue.trim() || undefined : undefined;
     if (modelValue !== undefined && !model) {
       throw usageError("--model must not be empty");
@@ -173,7 +187,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
     if (command === "resume") {
       const runId = requiredString(parsed.values.run, "--run");
-      const result = await resumeRun(repoPath, runId, abortController.signal, onProgress);
+      const result = await resumeRun(
+        repoPath,
+        runId,
+        abortController.signal,
+        onProgress,
+        diagnostics,
+      );
       printOutcome(result, json);
       return interruptedExitCode ?? exitCodeForOutcome(result);
     }
@@ -181,6 +201,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const outcome = await loadRunOutcome(repoPath, requiredString(parsed.values.run, "--run"));
       printOutcome(outcome, json);
       return exitCodeForOutcome(outcome);
+    }
+    if (command === "trace") {
+      const trace = await loadTrace(repoPath, requiredString(parsed.values.run, "--run"));
+      process.stdout.write(json ? `${JSON.stringify(trace, null, 2)}\n` : formatTrace(trace));
+      return 0;
     }
     const task = requiredString(parsed.values.task, "--task");
     const plannerCount = Number(parsed.values.plans);
@@ -196,6 +221,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
             parallelPlanners: true,
             signal: abortController.signal,
             ...(model ? { model } : {}),
+            ...(diagnostics ? { diagnostics: true } : {}),
             ...(onProgress ? { onProgress } : {}),
           })
         : await runFullWorkflow({
@@ -204,6 +230,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
             plannerCount,
             signal: abortController.signal,
             ...(model ? { model } : {}),
+            ...(diagnostics ? { diagnostics: true } : {}),
             ...(onProgress ? { onProgress } : {}),
           });
     printOutcome(result, json);

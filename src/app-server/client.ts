@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createInterface, type Interface } from "node:readline";
 import spawn from "cross-spawn";
 import {
@@ -12,6 +13,14 @@ import {
 } from "json-rpc-2.0";
 import { safeEnvironment } from "../environment.js";
 import { ChangeSafelyError } from "../errors.js";
+import { OutputCapture } from "../output-capture.js";
+import {
+  contentEvidence,
+  promptEvidence,
+  sandboxPolicyName,
+  type TraceEventInput,
+  type TraceWriter,
+} from "../trace.js";
 import { VERSION } from "../version.js";
 import type { InitializeParams } from "./generated/types/InitializeParams.js";
 import type { InitializeResponse } from "./generated/types/InitializeResponse.js";
@@ -48,6 +57,7 @@ export interface AppServerClientOptions {
   turnTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  trace?: TraceWriter;
 }
 
 export interface RunTurnOptions {
@@ -57,6 +67,8 @@ export interface RunTurnOptions {
   timeoutMs?: number;
   effort?: string;
   model?: string;
+  role?: string;
+  phase?: string;
 }
 
 export interface TurnResult {
@@ -198,8 +210,13 @@ export class AppServerClient {
   private readonly agentMessages = new Map<string, string>();
   private fatalError: AppServerError | undefined;
   private abortListener: (() => void) | undefined;
+  private trace: TraceWriter | undefined;
+  private readonly stderr = new OutputCapture(64 * 1024);
+  private stderrRecorded = false;
+  private closing = false;
 
   constructor(private readonly options: AppServerClientOptions = {}) {
+    this.trace = options.trace;
     const server = new JSONRPCServer({
       errorListener: (message) => this.failProtocol(message),
     });
@@ -215,6 +232,10 @@ export class AppServerClient {
     });
   }
 
+  setTrace(trace: TraceWriter): void {
+    this.trace = trace;
+  }
+
   async start(): Promise<InitializeResponse> {
     if (this.process) {
       throw new AppServerError("App Server is already started");
@@ -223,6 +244,12 @@ export class AppServerClient {
       throw new AppServerError("App Server start was aborted");
     }
 
+    await this.trace?.append({
+      component: "app-server",
+      event: "lifecycle",
+      status: "started",
+    });
+    const startedAt = Date.now();
     const command = this.options.command ?? "codex";
     const args = this.options.args ?? ["app-server", "--listen", "stdio://"];
     this.process = spawn(command, args, {
@@ -231,11 +258,29 @@ export class AppServerClient {
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
 
-    this.process.on("exit", (code, signal) =>
-      this.failAll(new AppServerError(`App Server exited (${signal ?? String(code)})`)),
-    );
-    this.process.on("error", (error) => this.failAll(new AppServerError(error.message)));
-    this.process.stderr.resume();
+    this.process.on("exit", (code, signal) => {
+      if (this.closing) {
+        void this.trace?.append({
+          component: "app-server",
+          event: "process.exited",
+          status: "completed",
+          exitCode: code,
+          signal,
+        });
+        return;
+      }
+      const error = new AppServerError(`App Server exited (${signal ?? String(code)})`);
+      void this.trace?.recordFailure("app-server", "process.exited", error, {
+        exitCode: code,
+        signal,
+      });
+      this.failAll(error);
+    });
+    this.process.on("error", (error) => {
+      void this.trace?.recordFailure("app-server", "process.error", error);
+      this.failAll(new AppServerError(error.message));
+    });
+    this.process.stderr.on("data", (chunk: Buffer) => this.stderr.append(chunk));
 
     this.lines = createInterface({ input: this.process.stdout });
     this.lines.on("line", (line) => this.handleLine(line));
@@ -257,6 +302,14 @@ export class AppServerClient {
       await this.request<InitializeResponse>("initialize", params),
     );
     this.notify("initialized", {});
+    await this.trace?.recordAppServerVersion(initialized.userAgent);
+    await this.trace?.append({
+      component: "app-server",
+      event: "lifecycle",
+      status: "completed",
+      durationMs: Date.now() - startedAt,
+      runtimeVersion: initialized.userAgent,
+    });
     return initialized;
   }
 
@@ -279,6 +332,31 @@ export class AppServerClient {
   }
 
   async runTurn(threadId: string, prompt: string, options: RunTurnOptions): Promise<TurnResult> {
+    const role = options.role ?? "unknown";
+    const evidence = promptEvidence(prompt, options.outputSchema);
+    const sandboxPolicy = sandboxPolicyName(options.sandboxPolicy);
+    const model = options.model ?? "default";
+    const effort = options.effort ?? "default";
+    await this.trace?.recordRoleProvenance({
+      role,
+      model,
+      effort,
+      sandboxPolicy,
+      ...evidence,
+    });
+    const roleStartedAt = Date.now();
+    await this.trace?.append({
+      component: "role",
+      event: "turn.executed",
+      status: "started",
+      ...(options.phase ? { phase: options.phase } : {}),
+      role,
+      threadId,
+      model,
+      effort,
+      sandboxPolicy,
+      ...evidence,
+    });
     const params: TurnStartParams = {
       threadId,
       input: [{ type: "text", text: prompt, text_elements: [] }],
@@ -289,46 +367,76 @@ export class AppServerClient {
       ...(options.model ? { model: options.model } : {}),
       ...(options.outputSchema ? { outputSchema: options.outputSchema as JsonValue } : {}),
     };
-    const started = validateTurnStartResponse(
-      await this.request<TurnStartResponse>("turn/start", params),
-    );
-    const turnId = started.turn.id;
-
-    let completion: TurnCompletedNotification;
+    let turnId: string | undefined;
     try {
-      completion = await this.waitForTurn(
-        turnId,
-        options.timeoutMs ?? this.options.turnTimeoutMs ?? 300_000,
+      const started = validateTurnStartResponse(
+        await this.request<TurnStartResponse>("turn/start", params),
       );
-    } catch (error) {
+      turnId = started.turn.id;
+
+      let completion: TurnCompletedNotification;
+      try {
+        completion = await this.waitForTurn(
+          turnId,
+          options.timeoutMs ?? this.options.turnTimeoutMs ?? 300_000,
+        );
+      } catch (error) {
+        this.agentMessages.delete(turnId);
+        const interrupt: TurnInterruptParams = { threadId, turnId };
+        await this.request("turn/interrupt", interrupt).catch(() => undefined);
+        throw error;
+      }
+
+      if (completion.turn.status !== "completed") {
+        this.agentMessages.delete(turnId);
+        throw new AppServerError(
+          `Turn ${turnId} ended with ${completion.turn.status}: ${completion.turn.error?.message ?? "no details"}`,
+        );
+      }
+
+      const completedMessage = [...completion.turn.items]
+        .reverse()
+        .find((item) => item.type === "agentMessage");
+      const message =
+        completedMessage?.type === "agentMessage"
+          ? completedMessage.text
+          : (this.agentMessages.get(turnId) ?? "");
       this.agentMessages.delete(turnId);
-      const interrupt: TurnInterruptParams = { threadId, turnId };
-      await this.request("turn/interrupt", interrupt).catch(() => undefined);
+
+      await this.trace?.append({
+        component: "role",
+        event: "turn.executed",
+        status: "completed",
+        ...(options.phase ? { phase: options.phase } : {}),
+        role,
+        threadId,
+        turnId,
+        durationMs: Date.now() - roleStartedAt,
+        model,
+        effort,
+        sandboxPolicy,
+        ...evidence,
+      });
+      return {
+        threadId,
+        turnId,
+        status: completion.turn.status,
+        message,
+      };
+    } catch (error) {
+      await this.trace?.recordFailure("role", "turn.executed", error, {
+        ...(options.phase ? { phase: options.phase } : {}),
+        role,
+        threadId,
+        ...(turnId ? { turnId } : {}),
+        durationMs: Date.now() - roleStartedAt,
+        model,
+        effort,
+        sandboxPolicy,
+        ...evidence,
+      });
       throw error;
     }
-
-    if (completion.turn.status !== "completed") {
-      this.agentMessages.delete(turnId);
-      throw new AppServerError(
-        `Turn ${turnId} ended with ${completion.turn.status}: ${completion.turn.error?.message ?? "no details"}`,
-      );
-    }
-
-    const completedMessage = [...completion.turn.items]
-      .reverse()
-      .find((item) => item.type === "agentMessage");
-    const message =
-      completedMessage?.type === "agentMessage"
-        ? completedMessage.text
-        : (this.agentMessages.get(turnId) ?? "");
-    this.agentMessages.delete(turnId);
-
-    return {
-      threadId,
-      turnId,
-      status: completion.turn.status,
-      message,
-    };
   }
 
   async close(): Promise<void> {
@@ -337,11 +445,18 @@ export class AppServerClient {
       this.abortListener = undefined;
     }
     const child = this.process;
-    if (!child) return;
+    if (!child) {
+      await this.recordStderr();
+      return;
+    }
 
     this.lines?.close();
     this.process = undefined;
-    if (child.exitCode !== null || child.signalCode !== null) return;
+    this.closing = true;
+    if (child.exitCode !== null || child.signalCode !== null) {
+      await this.recordStderr();
+      return;
+    }
 
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
@@ -354,17 +469,45 @@ export class AppServerClient {
       });
       child.kill("SIGTERM");
     });
+    await this.recordStderr();
   }
 
   private async request<T>(method: string, params: unknown): Promise<T> {
     if (this.fatalError) return Promise.reject(this.fatalError);
+    const startedAt = Date.now();
+    const context = rpcContext(params);
+    await this.trace?.append({
+      component: "app-server",
+      event: "rpc.request",
+      status: "started",
+      method,
+      ...context,
+    });
     try {
-      return (await this.rpc.client
+      const value = (await this.rpc.client
         .timeout(this.options.requestTimeoutMs ?? 10_000, (id) =>
           createJSONRPCErrorResponse(id, -32_000, `App Server request ${method} timed out`),
         )
         .request(method, params)) as T;
+      await this.trace?.append({
+        component: "app-server",
+        event: "rpc.request",
+        status: "completed",
+        method,
+        durationMs: Date.now() - startedAt,
+        ...context,
+      });
+      return value;
     } catch (error) {
+      const requestTimedOut =
+        error instanceof JSONRPCErrorException && /\btimed out$/i.test(error.message);
+      await this.trace?.recordFailure("app-server", "rpc.request", error, {
+        method,
+        durationMs: Date.now() - startedAt,
+        ...context,
+        ...(error instanceof JSONRPCErrorException ? { rpcCode: error.code } : {}),
+        ...(requestTimedOut ? { reasonCode: "APP_SERVER_REQUEST_TIMEOUT" } : {}),
+      });
       if (error instanceof JSONRPCErrorException) {
         throw new AppServerError(error.message, {
           code: error.code,
@@ -392,38 +535,41 @@ export class AppServerClient {
     try {
       message = JSON.parse(line);
     } catch {
-      this.failProtocol("Invalid JSON from App Server");
+      this.failProtocol("Invalid JSON from App Server", contentEvidence(line));
       return;
     }
 
     if (!isRecord(message)) {
-      this.failProtocol("Invalid message from App Server");
+      this.failProtocol("Invalid message from App Server", contentEvidence(line));
       return;
     }
 
     if (hasOwn(message, "id") && typeof message.method === "string") {
       if (!isRpcId(message.id)) {
-        this.failProtocol("Invalid request id from App Server");
+        this.failProtocol("Invalid request id from App Server", contentEvidence(line));
         return;
       }
     } else if (hasOwn(message, "id")) {
       if (!isRpcId(message.id) || (!hasOwn(message, "result") && !hasOwn(message, "error"))) {
-        this.failProtocol("Invalid response from App Server");
+        this.failProtocol("Invalid response from App Server", contentEvidence(line));
         return;
       }
       if (hasOwn(message, "error") && !validateRpcError(message.error)) {
-        this.failProtocol("Invalid error response from App Server");
+        this.failProtocol("Invalid error response from App Server", contentEvidence(line));
         return;
       }
     } else if (typeof message.method !== "string") {
-      this.failProtocol("Invalid notification from App Server");
+      this.failProtocol("Invalid notification from App Server", contentEvidence(line));
       return;
     }
 
     void this.rpc
       .receiveAndSend({ jsonrpc: "2.0", ...message } as JSONRPCRequest | JSONRPCResponse)
       .catch((error) =>
-        this.failProtocol(error instanceof Error ? error.message : "Invalid JSON-RPC message"),
+        this.failProtocol(
+          error instanceof Error ? error.message : "Invalid JSON-RPC message",
+          contentEvidence(line),
+        ),
       );
   }
 
@@ -431,7 +577,10 @@ export class AppServerClient {
     if (method === "item/completed") {
       const params = validateItemCompleted(value);
       if (!params) {
-        this.failProtocol("Invalid item/completed notification from App Server");
+        this.failProtocol(
+          "Invalid item/completed notification from App Server",
+          contentEvidence(JSON.stringify(value)),
+        );
         return;
       }
       if (params.item.type === "agentMessage") {
@@ -443,7 +592,10 @@ export class AppServerClient {
     if (method !== "turn/completed") return;
     const params = validateTurnCompleted(value);
     if (!params) {
-      this.failProtocol("Invalid turn/completed notification from App Server");
+      this.failProtocol(
+        "Invalid turn/completed notification from App Server",
+        contentEvidence(JSON.stringify(value)),
+      );
       return;
     }
     const waiter = this.turnWaiters.get(params.turn.id);
@@ -491,10 +643,38 @@ export class AppServerClient {
     this.turnWaiters.clear();
   }
 
-  private failProtocol(message: string): void {
+  private failProtocol(message: string, evidence: Partial<TraceEventInput> = {}): void {
     const error = new AppServerError(message);
     this.fatalError = error;
+    void this.trace?.recordFailure("app-server", "protocol.message", error, evidence);
     this.failAll(error);
     void this.close();
   }
+
+  private async recordStderr(): Promise<void> {
+    if (this.stderrRecorded) return;
+    this.stderrRecorded = true;
+    const snapshot = this.stderr.snapshot();
+    const diagnosticPath = await this.trace?.writeDiagnostic(
+      `app-server-${randomUUID()}.stderr.log`,
+      snapshot.tail,
+    );
+    await this.trace?.append({
+      component: "app-server",
+      event: "stderr.captured",
+      status: "info",
+      stderrBytes: snapshot.bytes,
+      stderrSha256: snapshot.sha256,
+      stderrTruncated: snapshot.truncated,
+      ...(diagnosticPath ? { diagnosticsPaths: [diagnosticPath] } : {}),
+    });
+  }
+}
+
+function rpcContext(params: unknown): Pick<TraceEventInput, "threadId" | "turnId"> {
+  if (!isRecord(params)) return {};
+  return {
+    ...(typeof params.threadId === "string" ? { threadId: params.threadId } : {}),
+    ...(typeof params.turnId === "string" ? { turnId: params.turnId } : {}),
+  };
 }

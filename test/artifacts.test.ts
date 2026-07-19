@@ -150,7 +150,7 @@ test("reports unsupported artifact versions before envelope validation", async (
   const stored = await store.writeArtifact("evidence", "discovery", validEvidence());
   const state = validState(repoPath);
 
-  for (const artifactVersion of [undefined, 2]) {
+  for (const artifactVersion of [undefined, ARTIFACT_VERSION + 1]) {
     const envelope = structuredClone(stored.envelope) as {
       meta: { artifactVersion?: number };
     };
