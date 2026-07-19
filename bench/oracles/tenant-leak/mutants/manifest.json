@@ -44,6 +44,23 @@
       "id": "no-singleflight",
       "patch": "no-singleflight.patch",
       "expectedFailures": ["concurrent-cold-miss"]
+    },
+    {
+      "id": "write-only-cache",
+      "patch": "write-only-cache.patch",
+      "expectedFailures": [
+        "cache-reuse",
+        "concurrent-cold-miss",
+        "cross-instance-cache-reuse",
+        "negative-cache-reuse",
+        "cache-errors",
+        "permission-specific-decisions"
+      ]
+    },
+    {
+      "id": "unknown-subject-allow",
+      "patch": "unknown-subject-allow.patch",
+      "expectedFailures": ["deny-default", "backend-errors"]
     }
   ]
 }
