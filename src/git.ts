@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { access, open, readFile, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { SafeChangeError } from "./errors.js";
 import { REPOSITORY_CONTROL_FILE_NAMES } from "./repository-policy.js";
 import { hashRecordsEqual } from "./verification.js";
 
@@ -18,12 +19,15 @@ export interface BaselineSnapshot {
   fingerprint: string;
 }
 
-export class PreflightError extends Error {
+export class PreflightError extends SafeChangeError {
   constructor(
     public readonly reasonCode: string,
     message: string,
   ) {
-    super(message);
+    super(reasonCode, message, {
+      exitCode: 2,
+      nextAction: "Resolve the repository preflight condition and retry.",
+    });
     this.name = "PreflightError";
   }
 }

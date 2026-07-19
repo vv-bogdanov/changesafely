@@ -62,6 +62,15 @@ task -> evidence -> contract -> plans -> eligibility -> decision
 
 Model statements are proposals or findings, never sufficient proof of success.
 
+## CLI boundary
+
+Every completed command is represented by one `RunOutcome`. Human text and the
+versioned `--json` document are renderings of that same value, and one status table
+defines exit codes. `status` reconstructs the outcome from verified persisted state
+without changing Git or artifacts. Expected operational failures use bounded
+`SafeChangeError` codes; unexpected exceptions are not converted into successful or
+blocked workflow results.
+
 ## Runtime boundary
 
 `AppServerClient` is a thin JSONL client, not an SDK. It implements initialization,

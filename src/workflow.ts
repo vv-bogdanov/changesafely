@@ -1,15 +1,11 @@
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
 import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artifact-key.js";
-import {
-  ArtifactStore,
-  artifactInputs,
-  createRunId,
-  type RunState,
-  type RunStatus,
-} from "./artifacts.js";
+import { ArtifactStore, artifactInputs, createRunId, type RunState } from "./artifacts.js";
 import { evaluatePlan, evaluatePlans, type PlanEligibility } from "./eligibility.js";
+import { SafeChangeError } from "./errors.js";
 import { assertBaselineUnchanged, inspectBaseline } from "./git.js";
+import { createRunOutcome, type RunOutcome } from "./outcome.js";
 import {
   contractPrompt,
   discoveryPrompt,
@@ -59,12 +55,14 @@ export interface PlanningOptions {
   signal?: AbortSignal;
 }
 
-export interface PlanningResult {
-  runId: string;
-  runPath: string;
-  reportPath: string;
-  status: RunStatus;
+export interface PlanningResult extends RunOutcome {
   decision?: DecisionArtifact;
+}
+
+function planningError(code: string, message: string): SafeChangeError {
+  return new SafeChangeError(code, message, {
+    nextAction: "Inspect planning artifacts and start a new run after fixing the cause.",
+  });
 }
 
 export async function runPlanning(options: PlanningOptions): Promise<PlanningResult> {
@@ -181,7 +179,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     for (let index = 0; index < options.plannerCount; index += 1) {
       const planId = planArtifactKey(index + 1);
       const lens = plannerLenses[index];
-      if (!lens) throw new Error(`No planner lens for index ${index}`);
+      if (!lens) throw planningError("PLANNER_LENS_MISSING", `No planner lens for index ${index}`);
       const fork = await client.forkThread({
         threadId: contractThread.thread.id,
         lastTurnId: contractTurn.turnId,
@@ -211,7 +209,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         completeContext(plannerContext, plannerTurn.turnId);
         let plan = parseRoleArtifact(plannerTurn.message, validateDetailedPlan);
         if (plan.planId !== planId || plan.lens !== lens) {
-          throw new Error(
+          throw planningError(
+            "PLANNER_IDENTITY_MISMATCH",
             `Planner identity mismatch: expected ${planId}/${lens}, got ${plan.planId}/${plan.lens}`,
           );
         }
@@ -238,7 +237,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
           completeContext(correctionContext, correctionTurn.turnId);
           plan = parseRoleArtifact(correctionTurn.message, validateDetailedPlan);
           if (plan.planId !== planId || plan.lens !== lens) {
-            throw new Error(
+            throw planningError(
+              "PLANNER_IDENTITY_MISMATCH",
               `Corrected planner identity mismatch: expected ${planId}/${lens}, got ${plan.planId}/${plan.lens}`,
             );
           }
@@ -343,7 +343,10 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         decision = parseRoleArtifact(correctionTurn.message, validateDecisionArtifact);
       }
       if (!eligiblePlanIds.has(decision.winnerPlanId)) {
-        throw new Error(`Judge selected ineligible or unknown plan ${decision.winnerPlanId}`);
+        throw planningError(
+          "JUDGE_SELECTED_INELIGIBLE_PLAN",
+          `Judge selected ineligible or unknown plan ${decision.winnerPlanId}`,
+        );
       }
       const decisionStored = await store.writeArtifact(
         "decision",
@@ -372,10 +375,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       planningReport(state, plans, eligibility, decision),
     );
     return {
-      runId,
-      runPath: store.runPath,
-      reportPath,
-      status: state.status,
+      ...(await createRunOutcome(repoPath, state, reportPath)),
       ...(decision ? { decision } : {}),
     };
   } catch (error) {
@@ -385,8 +385,15 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     state.nextAction =
       "Inspect state.json and the last role artifact, then fix the cause and retry.";
     await store.writeState(state);
-    await store.writeText("report.md", planningReport(state, plans, eligibility, decision));
-    throw error;
+    const reportPath = await store.writeText(
+      "report.md",
+      planningReport(state, plans, eligibility, decision),
+    );
+    if (!(error instanceof SafeChangeError)) throw error;
+    return {
+      ...(await createRunOutcome(repoPath, state, reportPath, error.code)),
+      ...(decision ? { decision } : {}),
+    };
   } finally {
     await client.close();
   }

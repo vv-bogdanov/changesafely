@@ -8,6 +8,7 @@ import {
   validateArtifactInputKeys,
 } from "./artifact-catalog.js";
 import { type ArtifactKey, isArtifactKey, parsePlanArtifactKey } from "./artifact-key.js";
+import { SafeChangeError } from "./errors.js";
 import {
   ARTIFACT_VERSION,
   RUN_STATE_VERSION,
@@ -17,7 +18,7 @@ import {
 } from "./schemas.js";
 import { VERSION } from "./version.js";
 
-export type { RunState, RunStatus } from "./schemas.js";
+export type { RunState } from "./schemas.js";
 
 export interface ArtifactEnvelope<T> {
   meta: {
@@ -36,15 +37,16 @@ export type PersistedVersionErrorCode =
   | "UNSUPPORTED_STATE_VERSION"
   | "UNSUPPORTED_ARTIFACT_VERSION";
 
-export class PersistedVersionError extends Error {
-  readonly nextAction = "Start a new SafeChange run with the installed CLI version.";
-
+export class PersistedVersionError extends SafeChangeError {
   constructor(
     public readonly code: PersistedVersionErrorCode,
     actual: unknown,
     expected: number,
   ) {
-    super(`${code}: expected ${expected}, received ${String(actual)}`);
+    super(code, `${code}: expected ${expected}, received ${String(actual)}`, {
+      exitCode: 2,
+      nextAction: "Start a new SafeChange run with the installed CLI version.",
+    });
     this.name = "PersistedVersionError";
   }
 }

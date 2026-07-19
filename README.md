@@ -108,6 +108,20 @@ Resume only from a validated persisted boundary:
 safechange resume --repo /path/to/repo --run <run-id>
 ```
 
+Inspect a persisted run without changing Git or artifacts:
+
+```sh
+safechange status --repo /path/to/repo --run <run-id>
+```
+
+`plan`, `run`, `resume`, `status`, and `doctor` accept `--json`. Run commands emit
+one versioned outcome document on stdout; human diagnostics remain on stderr and the
+exit code remains authoritative:
+
+```sh
+safechange status --repo /path/to/repo --run <run-id> --json
+```
+
 Check local readiness without starting an AI turn or repository script:
 
 ```sh
@@ -155,7 +169,7 @@ SAFECHANGE_LIVE_TEST_MODEL=gpt-5.3-codex-spark safechange run \
 
 Runs are stored under `.safechange/runs/<run-id>/`:
 
-- `state.json`: phase, status, Git state, hashes, and role lineage.
+- `state.json`: versioned phase/status, Git state, hashes, and role lineage.
 - `evidence.json`, `contract.json`, `plans/*.json`, `eligibility.json`, and
   `decision.json`: the read-only plan tournament.
 - `harness.json` and `commands.json`: protected T1 paths and failing-first evidence.
@@ -163,8 +177,9 @@ Runs are stored under `.safechange/runs/<run-id>/`:
   `verification.json`: the actual change and independent verdict.
 - `report.md`: concise outcome, residual risks, and next action.
 
-Writes are atomic. Resume revalidates artifact hashes and lineage, protocol
-version, expected branch and commits, baseline ancestry, and protected T1 files.
+Writes are atomic. State and artifact envelopes carry format and producer versions;
+artifacts name their hashed predecessors. Resume revalidates these contracts,
+expected branch and commits, baseline ancestry, and protected T1 files.
 
 ## Status And Exit Codes
 
@@ -177,6 +192,8 @@ version, expected branch and commits, baseline ancestry, and protected T1 files.
 | `REPLAN_REQUIRED` | 2 | Implementation exceeded the selected scope. |
 | `HUMAN_DECISION_REQUIRED` | 2 | A sensitive change needs explicit approval. |
 | `FAILED` | 1 | A command, artifact, role, or internal workflow step failed. |
+
+`SIGINT` exits `130` and `SIGTERM` exits `143`. Invalid CLI usage exits `1`.
 
 ## Security Boundary
 

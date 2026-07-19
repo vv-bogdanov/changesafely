@@ -8,6 +8,7 @@ import {
   loadRunState,
   loadSelectedPlanArtifacts,
 } from "./artifacts.js";
+import { SafeChangeError } from "./errors.js";
 import {
   assertProtectedConfigurationUnchanged,
   changedPaths,
@@ -55,13 +56,22 @@ export interface HarnessResult {
   harness: HarnessArtifact;
 }
 
+function harnessError(code: string, message: string, exitCode: 1 | 2 = 1): SafeChangeError {
+  return new SafeChangeError(code, message, {
+    exitCode,
+    nextAction: "Inspect the Test Author evidence and start a new run after fixing the cause.",
+  });
+}
+
 function selectedTestPaths(plan: DetailedPlan): string[] {
   const paths = new Set<string>();
   for (const file of plan.files) if (isTestPath(file.path)) paths.add(file.path);
   for (const step of plan.steps) {
     for (const path of step.paths) if (isTestPath(path)) paths.add(path);
   }
-  if (paths.size === 0) throw new Error("Selected plan does not declare a test path");
+  if (paths.size === 0) {
+    throw harnessError("HARNESS_PLAN_INVALID", "Selected plan does not declare a test path", 2);
+  }
   return [...paths];
 }
 
@@ -74,7 +84,11 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   const roleEffort = options.model ? "medium" : "low";
   const state = await loadRunState(repoPath, options.runId);
   if (state.status !== "PLANNED") {
-    throw new Error(`Run ${state.runId} is not ready for harness creation: ${state.status}`);
+    throw harnessError(
+      "HARNESS_NOT_READY",
+      `Run ${state.runId} is not ready for harness creation: ${state.status}`,
+      2,
+    );
   }
   const baseline = await inspectBaseline(repoPath);
   if (
@@ -87,13 +101,15 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     state.nextAction = "Start a new planning run from the current baseline.";
     const failedStore = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
     await failedStore.writeState(state);
-    throw new Error(state.reason);
+    throw harnessError("BASELINE_CHANGED", state.reason, 2);
   }
 
   const { contract, decision, plan } = await loadSelectedPlanArtifacts(repoPath, state);
   const allowedTestPaths = selectedTestPaths(plan);
   const contractContext = state.contexts.find((entry) => entry.role === "contract");
-  if (!contractContext?.turnId) throw new Error("Canonical C0 checkpoint is missing");
+  if (!contractContext?.turnId) {
+    throw harnessError("CANONICAL_CONTEXT_MISSING", "Canonical C0 checkpoint is missing", 2);
+  }
 
   const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
   let branch: string;
@@ -151,27 +167,38 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       state.baselineProtectedConfiguration ?? {},
     );
     const paths = await changedPaths(repoPath, "HEAD");
-    if (paths.length === 0) throw new Error("Test Author did not create a safety harness");
+    if (paths.length === 0) {
+      throw harnessError("HARNESS_EMPTY", "Test Author did not create a safety harness");
+    }
     const unexpected = paths.filter(
       (path) => !isTestPath(path) || !pathWithinPrefixes(path, allowedTestPaths),
     );
     if (unexpected.length > 0) {
-      throw new Error(`Test Author changed paths outside test scope: ${unexpected.join(", ")}`);
+      throw harnessError(
+        "HARNESS_SCOPE_VIOLATION",
+        `Test Author changed paths outside test scope: ${unexpected.join(", ")}`,
+      );
     }
     const declared = new Set(harness.protectedPaths);
     const undeclared = paths.filter((path) => !declared.has(path));
     if (undeclared.length > 0) {
-      throw new Error(`Harness omitted protected paths: ${undeclared.join(", ")}`);
+      throw harnessError(
+        "HARNESS_PROTECTION_INCOMPLETE",
+        `Harness omitted protected paths: ${undeclared.join(", ")}`,
+      );
     }
     const harnessDiff = await diffFrom(repoPath, "HEAD");
     if (diffRemovesExistingLines(harnessDiff)) {
-      throw new Error("Harness removed or rewrote existing test/fixture lines");
+      throw harnessError(
+        "HARNESS_WEAKENED_EXISTING_TESTS",
+        "Harness removed or rewrote existing test/fixture lines",
+      );
     }
     const changedContents = (
       await Promise.all(paths.map((path) => readFile(resolve(repoPath, path), "utf8")))
     ).join("\n");
     if (/\.(?:skip|only)\s*\(/.test(changedContents)) {
-      throw new Error("Harness contains forbidden skip/only usage");
+      throw harnessError("HARNESS_SKIP_ONLY", "Harness contains forbidden skip/only usage");
     }
 
     const plannedSafetyCommands = new Set(
@@ -181,7 +208,10 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       !isSafetyTestCommand(harness.targetedCommand.argv) ||
       !plannedSafetyCommands.has(JSON.stringify(harness.targetedCommand.argv))
     ) {
-      throw new Error("Harness targeted command must be a selected-plan test command");
+      throw harnessError(
+        "HARNESS_COMMAND_INVALID",
+        "Harness targeted command must be a selected-plan test command",
+      );
     }
     const command = await runCommand(harness.targetedCommand.argv, repoPath, {
       sandboxed: options.sandboxCommands ?? false,
@@ -194,7 +224,8 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     const combinedOutput = `${command.stdout}\n${command.stderr}`;
     const expectedPass = harness.expectedBaselineOutcome === "pass";
     if ((command.exitCode === 0) !== expectedPass) {
-      throw new Error(
+      throw harnessError(
+        "HARNESS_BASELINE_OUTCOME_MISMATCH",
         `Harness baseline outcome mismatch: expected ${harness.expectedBaselineOutcome}, exit ${command.exitCode}; output: ${combinedOutput.slice(-1000)}`,
       );
     }
@@ -202,7 +233,8 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       harness.expectedBaselineOutcome === "fail" &&
       !/(?:failing tests|not ok|AssertionError|Error \[|fail\s+[1-9])/i.test(combinedOutput)
     ) {
-      throw new Error(
+      throw harnessError(
+        "HARNESS_FAILURE_SIGNAL_MISSING",
         `Harness exited non-zero without an observable test-failure signal: ${combinedOutput.slice(-1000)}`,
       );
     }
@@ -231,7 +263,10 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     await store.writeState(state);
     const committed = await inspectBaseline(repoPath);
     if (committed.commit !== testCommit) {
-      throw new Error("Git HEAD does not match the recorded safety harness commit");
+      throw harnessError(
+        "HARNESS_COMMIT_MISMATCH",
+        "Git HEAD does not match the recorded safety harness commit",
+      );
     }
     return { branch, testCommit, protectedHashes, command, harness };
   } catch (error) {

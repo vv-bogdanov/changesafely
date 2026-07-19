@@ -8,6 +8,7 @@ import {
   loadSelectedPlanArtifacts,
   loadVerifiedArtifact,
 } from "./artifacts.js";
+import { SafeChangeError } from "./errors.js";
 import {
   assertNoUntrackedFiles,
   assertProtectedConfigurationUnchanged,
@@ -59,6 +60,13 @@ export interface ImplementationResult {
   reportPath: string;
 }
 
+function implementationError(code: string, message: string, exitCode: 1 | 2 = 1): SafeChangeError {
+  return new SafeChangeError(code, message, {
+    exitCode,
+    nextAction: "Inspect implementation and verification evidence before starting a new run.",
+  });
+}
+
 function projectCommands(harness: StoredHarnessArtifact, plan: DetailedPlan): string[][] {
   const commands = [
     harness.targetedCommand.argv,
@@ -97,28 +105,44 @@ async function validateImplementationChange(input: {
     input.state.baselineProtectedConfiguration ?? {},
   );
   const actualPaths = await changedPaths(input.repoPath, input.fromCommit);
-  if (actualPaths.length === 0) throw new Error("Implementer made no production change");
+  if (actualPaths.length === 0) {
+    throw implementationError("IMPLEMENTATION_EMPTY", "Implementer made no production change");
+  }
   const protectedAfter = await hashFiles(
     input.repoPath,
     Object.keys(input.harness.protectedHashes),
   );
   if (!hashRecordsEqual(input.harness.protectedHashes, protectedAfter)) {
-    throw new Error("Implementer changed a protected T1 path");
+    throw implementationError(
+      "PROTECTED_HARNESS_CHANGED",
+      "Implementer changed a protected T1 path",
+    );
   }
   const outsidePlan = actualPaths.filter((path) => !pathWithinPrefixes(path, input.planPaths));
   if (outsidePlan.length > 0) {
     input.state.status = "REPLAN_REQUIRED";
-    throw new Error(`Implementation expanded beyond selected plan: ${outsidePlan.join(", ")}`);
+    throw implementationError(
+      "IMPLEMENTATION_SCOPE_EXPANDED",
+      `Implementation expanded beyond selected plan: ${outsidePlan.join(", ")}`,
+      2,
+    );
   }
   const sensitive = actualPaths.filter(isApprovalSensitivePath);
   if (sensitive.length > 0) {
     input.state.status = "HUMAN_DECISION_REQUIRED";
-    throw new Error(`Implementation changed approval-sensitive paths: ${sensitive.join(", ")}`);
+    throw implementationError(
+      "APPROVAL_REQUIRED",
+      `Implementation changed approval-sensitive paths: ${sensitive.join(", ")}`,
+      2,
+    );
   }
   const declaredPaths = new Set(input.artifact.changedPaths);
   const omittedPaths = actualPaths.filter((path) => !declaredPaths.has(path));
   if (omittedPaths.length > 0) {
-    throw new Error(`Implementation artifact omitted changed paths: ${omittedPaths.join(", ")}`);
+    throw implementationError(
+      "IMPLEMENTATION_ARTIFACT_INCOMPLETE",
+      `Implementation artifact omitted changed paths: ${omittedPaths.join(", ")}`,
+    );
   }
   return actualPaths;
 }
@@ -142,7 +166,10 @@ async function runProjectCommands(
   }
   const protectedFinal = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
   if (!hashRecordsEqual(harness.protectedHashes, protectedFinal)) {
-    throw new Error("Protected T1 paths changed during deterministic verification");
+    throw implementationError(
+      "PROTECTED_HARNESS_CHANGED",
+      "Protected T1 paths changed during deterministic verification",
+    );
   }
   await assertProtectedConfigurationUnchanged(repoPath, protectedConfiguration);
   return results;
@@ -151,7 +178,8 @@ async function runProjectCommands(
 function assertCommandsPassed(results: CommandResult[]): void {
   const failed = results.filter((result) => result.exitCode !== 0 || result.timedOut);
   if (failed.length > 0) {
-    throw new Error(
+    throw implementationError(
+      "DETERMINISTIC_VERIFICATION_FAILED",
       `Deterministic verification failed: ${failed
         .map((result) => `${result.argv.join(" ")} exit ${result.exitCode}`)
         .join("; ")}`,
@@ -167,13 +195,21 @@ export async function runImplementationAndVerification(
   const state = await loadRunState(repoPath, options.runId);
   state.repairCount ??= 0;
   if (state.phase !== "harness-complete" || !state.testCommit || !state.branch) {
-    throw new Error(`Run ${state.runId} is not ready for implementation`);
+    throw implementationError(
+      "IMPLEMENTATION_NOT_READY",
+      `Run ${state.runId} is not ready for implementation`,
+      2,
+    );
   }
   if (
     (await currentCommit(repoPath)) !== state.testCommit ||
     (await currentBranch(repoPath)) !== state.branch
   ) {
-    throw new Error("Current Git branch or HEAD does not match the recorded T1 state");
+    throw implementationError(
+      "IMPLEMENTATION_BOUNDARY_MISMATCH",
+      "Current Git branch or HEAD does not match the recorded T1 state",
+      2,
+    );
   }
   await assertNoUntrackedFiles(repoPath);
 
@@ -182,14 +218,20 @@ export async function runImplementationAndVerification(
   const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
   const harnessCommandEvidence = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
   if (harness.testCommit !== state.testCommit) {
-    throw new Error("Harness artifact does not match T1");
+    throw implementationError("HARNESS_COMMIT_MISMATCH", "Harness artifact does not match T1", 2);
   }
   const protectedBefore = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
   if (!hashRecordsEqual(harness.protectedHashes, protectedBefore)) {
-    throw new Error("Protected harness differs from its recorded T1 hashes");
+    throw implementationError(
+      "PROTECTED_HARNESS_CHANGED",
+      "Protected harness differs from its recorded T1 hashes",
+      2,
+    );
   }
   const contractContext = state.contexts.find((entry) => entry.role === "contract");
-  if (!contractContext?.turnId) throw new Error("Canonical C0 checkpoint is missing");
+  if (!contractContext?.turnId) {
+    throw implementationError("CANONICAL_CONTEXT_MISSING", "Canonical C0 checkpoint is missing", 2);
+  }
 
   const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
   state.phase = "implementer";

@@ -2,6 +2,7 @@ import Type from "typebox";
 import { Compile } from "typebox/compile";
 import type { TLocalizedValidationError } from "typebox/error";
 import { ARTIFACT_KEY_PATTERN } from "./artifact-key.js";
+import { SafeChangeError } from "./errors.js";
 
 export const RUN_STATE_VERSION = 1;
 export const ARTIFACT_VERSION = 1;
@@ -315,16 +316,17 @@ export type PlanEligibility = Mutable<Type.Static<typeof planEligibilitySchema>>
 export type CommandEvidence = Mutable<Type.Static<typeof commandEvidenceSchema>>;
 export type StoredHarnessArtifact = Mutable<Type.Static<typeof storedHarnessArtifactSchema>>;
 
-export class ArtifactValidationError extends Error {
+export class ArtifactValidationError extends SafeChangeError {
   constructor(
     public readonly artifactName: string,
     public readonly validationErrors: TLocalizedValidationError[],
   ) {
-    super(
-      `Invalid ${artifactName}: ${validationErrors
-        .map((error) => `${error.instancePath || "/"} ${error.message}`)
-        .join("; ")}`,
-    );
+    const message = `Invalid ${artifactName}: ${validationErrors
+      .map((error) => `${error.instancePath || "/"} ${error.message}`)
+      .join("; ")}`;
+    super("ARTIFACT_VALIDATION_FAILED", message, {
+      nextAction: "Inspect the invalid artifact and start a new run after fixing its producer.",
+    });
     this.name = "ArtifactValidationError";
   }
 }
@@ -374,9 +376,16 @@ const RUN_STATE_STATUSES_BY_PHASE = {
   "release-gate-blocked": ["BLOCKED"],
 } as const satisfies Record<RunPhase, readonly RunStatus[]>;
 
-export class RunStateInvariantError extends Error {
+export class RunStateInvariantError extends SafeChangeError {
   constructor(state: Pick<RunState, "phase" | "status">) {
-    super(`Invalid SafeChange phase/status combination: ${state.phase}/${state.status}`);
+    super(
+      "RUN_STATE_INVARIANT_FAILED",
+      `Invalid SafeChange phase/status combination: ${state.phase}/${state.status}`,
+      {
+        exitCode: 2,
+        nextAction: "Inspect the persisted run state and start a new run if it is stale.",
+      },
+    );
     this.name = "RunStateInvariantError";
   }
 }

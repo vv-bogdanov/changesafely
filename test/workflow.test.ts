@@ -303,18 +303,20 @@ test("refuses a planning resume when a persisted artifact hash changed", async (
   );
 });
 
-test("rejects malformed role output locally", async (t) => {
+test("persists malformed role output as a failed planning outcome", async (t) => {
   const repoPath = await fixtureRepo(t);
 
-  await assert.rejects(
-    runPlanning({
-      repoPath,
-      task: "Change the fixture value.",
-      plannerCount: 1,
-      clientFactory: fakeAppServerFactory(repoPath, "malformed"),
-    }),
-    /Invalid evidence artifact/,
-  );
+  const result = await runPlanning({
+    repoPath,
+    task: "Change the fixture value.",
+    plannerCount: 1,
+    clientFactory: fakeAppServerFactory(repoPath, "malformed"),
+  });
+
+  assert.equal(result.status, "FAILED");
+  assert.equal(result.phase, "failed");
+  assert.equal(result.reasonCode, "ARTIFACT_VALIDATION_FAILED");
+  assert.match(result.reason, /Invalid evidence artifact/);
 });
 
 test("marks a clean but changed baseline before the first write", async (t) => {

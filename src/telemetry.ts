@@ -24,7 +24,7 @@ function safeReasonCode(value: string): string {
 }
 
 function safeCommand(value: string): string {
-  return ["plan", "run", "resume", "doctor"].includes(value) ? value : "unknown";
+  return ["plan", "run", "resume", "status", "doctor"].includes(value) ? value : "unknown";
 }
 
 export function createSentryEnvelopeRequest(

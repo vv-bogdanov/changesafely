@@ -10,6 +10,7 @@ import {
   JSONRPCServerAndClient,
 } from "json-rpc-2.0";
 import { safeEnvironment } from "../environment.js";
+import { SafeChangeError } from "../errors.js";
 import { VERSION } from "../version.js";
 import type { InitializeParams } from "./generated/types/InitializeParams.js";
 import type { InitializeResponse } from "./generated/types/InitializeResponse.js";
@@ -64,12 +65,14 @@ export interface TurnResult {
   message: string;
 }
 
-export class AppServerError extends Error {
+export class AppServerError extends SafeChangeError {
   constructor(
     message: string,
     public readonly rpcError?: RpcError,
   ) {
-    super(message);
+    super("APP_SERVER_ERROR", message, {
+      nextAction: "Check Codex App Server compatibility and retry the run.",
+    });
     this.name = "AppServerError";
   }
 }
