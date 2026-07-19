@@ -298,6 +298,13 @@ lines.on("line", async (line) => {
       send({ id: message.id, error: { code: -32602, message: "model/effort mismatch" } });
       return;
     }
+    if (
+      mode === "expect-workflow-spark" &&
+      (message.params?.model !== "gpt-5.3-codex-spark" || message.params?.effort !== "medium")
+    ) {
+      send({ id: message.id, error: { code: -32602, message: "model/effort mismatch" } });
+      return;
+    }
     turnNumber += 1;
     const turnId = `turn-${turnNumber}`;
     const threadId = String(message.params?.threadId ?? "thread-unknown");
