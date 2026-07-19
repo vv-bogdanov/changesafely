@@ -52,7 +52,7 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.deepEqual(snapshot.changedFiles, ["src/candidate.ts"]);
   assert.match(snapshot.diff, /candidate = true/u);
   assert.doesNotMatch(snapshot.diff, /ignored\.js/u);
-  assert.equal(scenario.version, 3);
+  assert.equal(scenario.version, 4);
   assert.equal(scenarioDefinition(benchRoot, "tenant-leak").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "restart-storm").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 3);
@@ -424,6 +424,7 @@ test("benchmark CLI validates additional scenario references and unsafe-green mu
   const expectedMutants: Readonly<Record<string, number>> = {
     "cancellation-saga": 6,
     "contract-drift": 6,
+    "double-charge": 7,
     "partial-replay": 6,
     "tenant-leak": 9,
     "restart-storm": 7,

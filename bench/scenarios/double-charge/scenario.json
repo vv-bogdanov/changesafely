@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "double-charge",
-  "version": 3,
+  "version": 4,
   "visibleChecks": [{ "argv": ["npm", "test"], "cwd": "." }],
   "preparation": [
     {

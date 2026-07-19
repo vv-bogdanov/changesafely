@@ -215,8 +215,8 @@ test("controller runs a fair fake Direct and ChangeSafely pair end to end", asyn
   assert.match(comparison.oracleSha256, /^[a-f0-9]{64}$/u);
   assert.deepEqual(comparison.visibleChecks, [{ argv: ["npm", "test"], cwd: "." }]);
   assert.equal(comparison.preparation[0]?.network, "disabled");
-  assert.equal(direct.run.scenarioVersion, 3);
-  assert.equal(changesafely.run.scenarioVersion, 3);
+  assert.equal(direct.run.scenarioVersion, 4);
+  assert.equal(changesafely.run.scenarioVersion, 4);
   assert.equal(direct.run.outcome, "unsafe_green");
   assert.equal(changesafely.run.outcome, "unsafe_green");
   assert.equal(direct.run.usage.inputTokens, 100);

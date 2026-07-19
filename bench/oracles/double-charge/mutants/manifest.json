@@ -43,6 +43,18 @@
       "id": "constant-provider-key",
       "patch": "constant-provider-key.patch",
       "expectedFailures": ["distinct-operations"]
+    },
+    {
+      "id": "in-flight-only",
+      "patch": "in-flight-only.patch",
+      "expectedFailures": [
+        "sequential-retry",
+        "cross-instance-concurrent-retry",
+        "retry-after-restart",
+        "recovery-after-failed-save",
+        "amount-conflict",
+        "currency-conflict"
+      ]
     }
   ]
 }
