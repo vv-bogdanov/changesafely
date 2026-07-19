@@ -25,11 +25,13 @@ import {
   type HarnessArtifact,
   type VerificationArtifact,
   validateChangeContract,
+  validateCommandEvidenceList,
   validateDecisionArtifact,
   validateDetailedPlan,
   validateEvidenceArtifact,
-  validateHarnessArtifact,
-  validateImplementationArtifact,
+  validatePlanEligibilityList,
+  validateStoredHarnessArtifact,
+  validateStoredImplementationArtifact,
   validateVerificationArtifact,
 } from "./schemas.js";
 import { runPlanning } from "./workflow.js";
@@ -83,15 +85,17 @@ function validateArtifactPayload(name: string, payload: unknown): void {
   if (name === "evidence") validateEvidenceArtifact(payload);
   else if (name === "contract") validateChangeContract(payload);
   else if (/^plan-\d+$/.test(name)) validateDetailedPlan(payload);
+  else if (name === "eligibility") validatePlanEligibilityList(payload);
   else if (name === "decision") validateDecisionArtifact(payload);
-  else if (name === "harness") {
-    const value = payload as Record<string, unknown>;
-    const { protectedHashes: _hashes, testCommit: _commit, ...artifact } = value;
-    validateHarnessArtifact(artifact);
-  } else if (name === "implementation" || name === "repair") {
-    const value = payload as Record<string, unknown>;
-    const { implementationCommit: _commit, actualPaths: _paths, ...artifact } = value;
-    validateImplementationArtifact(artifact);
+  else if (name === "harness") validateStoredHarnessArtifact(payload);
+  else if (name === "implementation" || name === "repair") {
+    validateStoredImplementationArtifact(payload);
+  } else if (
+    name === "commands" ||
+    name === "verificationCommands" ||
+    name === "verificationCommandsRepair"
+  ) {
+    validateCommandEvidenceList(payload);
   } else if (name === "verification" || name === "verificationAttempt1") {
     validateVerificationArtifact(payload);
   }

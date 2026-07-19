@@ -1,4 +1,7 @@
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
+import type { ArtifactEnvelope, RunState } from "./artifacts.js";
+import type { PlanEligibility } from "./eligibility.js";
+import type { CommandEvidence } from "./runner.js";
 
 export interface EvidenceReference {
   path: string;
@@ -125,6 +128,16 @@ export interface ImplementationArtifact {
   testsAdded: string[];
   scopeNotes: string[];
   residualRisks: string[];
+}
+
+export interface StoredHarnessArtifact extends HarnessArtifact {
+  protectedHashes: Record<string, string>;
+  testCommit: string;
+}
+
+export interface StoredImplementationArtifact extends ImplementationArtifact {
+  implementationCommit: string;
+  actualPaths: string[];
 }
 
 export interface VerificationFinding {
@@ -475,6 +488,210 @@ export const verificationArtifactSchema = {
   },
 } as const;
 
+const sha256Schema = { type: "string", pattern: "^[a-f0-9]{64}$" } as const;
+const nullableStringSchema = {
+  anyOf: [{ type: "string", maxLength: 4096 }, { type: "null" }],
+} as const;
+
+export const runStateSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "runId",
+    "task",
+    "repoPath",
+    "baselineCommit",
+    "baselineFingerprint",
+    "baselineProtectedConfiguration",
+    "phase",
+    "status",
+    "reason",
+    "nextAction",
+    "artifacts",
+    "contexts",
+    "branch",
+    "testCommit",
+    "implementationCommit",
+    "repairCount",
+    "model",
+  ],
+  properties: {
+    runId: {
+      type: "string",
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      not: { enum: [".", ".."] },
+    },
+    task: { type: "string", minLength: 1, maxLength: 100_000 },
+    repoPath: { type: "string", minLength: 1, maxLength: 4096 },
+    baselineCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
+    baselineFingerprint: sha256Schema,
+    baselineProtectedConfiguration: {
+      type: "object",
+      maxProperties: 16,
+      propertyNames: { type: "string", minLength: 1, maxLength: 255 },
+      additionalProperties: sha256Schema,
+    },
+    phase: { type: "string", minLength: 1, maxLength: 100 },
+    status: {
+      type: "string",
+      enum: [
+        "RUNNING",
+        "PLANNED",
+        "BLOCKED",
+        "HUMAN_DECISION_REQUIRED",
+        "BASELINE_CHANGED",
+        "REPLAN_REQUIRED",
+        "FAILED",
+        "VERIFIED",
+      ],
+    },
+    reason: { type: "string", maxLength: 32_768 },
+    nextAction: { type: "string", maxLength: 4096 },
+    artifacts: {
+      type: "object",
+      maxProperties: 32,
+      propertyNames: {
+        type: "string",
+        pattern:
+          "^(?:evidence|contract|eligibility|decision|harness|commands|implementation|verificationCommands|verificationAttempt1|repair|verificationCommandsRepair|verification|plan-[1-5])$",
+      },
+      additionalProperties: sha256Schema,
+    },
+    contexts: {
+      type: "array",
+      maxItems: 64,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["role", "threadId", "parentThreadId", "checkpointTurnId", "turnId", "status"],
+        properties: {
+          role: { type: "string", minLength: 1, maxLength: 100 },
+          threadId: { type: "string", minLength: 1, maxLength: 4096 },
+          parentThreadId: nullableStringSchema,
+          checkpointTurnId: nullableStringSchema,
+          turnId: nullableStringSchema,
+          status: { type: "string", enum: ["started", "completed", "failed"] },
+        },
+      },
+    },
+    branch: { type: "string", maxLength: 1024 },
+    testCommit: { type: "string", pattern: "^(?:[a-f0-9]{40,64})?$" },
+    implementationCommit: { type: "string", pattern: "^(?:[a-f0-9]{40,64})?$" },
+    repairCount: { type: "integer", minimum: 0, maximum: 1 },
+    model: { type: "string", maxLength: 255 },
+  },
+} as const;
+
+export const artifactEnvelopeSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["meta", "payload"],
+  properties: {
+    meta: {
+      type: "object",
+      additionalProperties: false,
+      required: ["runId", "baselineCommit", "role", "createdAt", "inputHashes"],
+      properties: {
+        runId: {
+          type: "string",
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+          not: { enum: [".", ".."] },
+        },
+        baselineCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
+        role: { type: "string", minLength: 1, maxLength: 100 },
+        createdAt: {
+          type: "string",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+        },
+        inputHashes: { type: "array", maxItems: 32, items: sha256Schema },
+      },
+    },
+    payload: {},
+  },
+} as const;
+
+export const planEligibilityListSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 5,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: ["planId", "eligible", "failures", "humanDecisionReasons"],
+    properties: {
+      planId: stringSchema,
+      eligible: { type: "boolean" },
+      failures: {
+        type: "array",
+        maxItems: 12,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["code", "message"],
+          properties: { code: stringSchema, message: stringSchema },
+        },
+      },
+      humanDecisionReasons: stringArraySchema,
+    },
+  },
+} as const;
+
+export const commandEvidenceListSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 12,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "command",
+      "exitCode",
+      "signal",
+      "timedOut",
+      "sandboxed",
+      "durationMs",
+      "stdoutTruncated",
+      "stderrTruncated",
+    ],
+    properties: {
+      command: { type: "string", minLength: 1, maxLength: 255 },
+      exitCode: { anyOf: [{ type: "integer" }, { type: "null" }] },
+      signal: { anyOf: [{ type: "string", maxLength: 64 }, { type: "null" }] },
+      timedOut: { type: "boolean" },
+      sandboxed: { type: "boolean" },
+      durationMs: { type: "integer", minimum: 0 },
+      stdoutTruncated: { type: "boolean" },
+      stderrTruncated: { type: "boolean" },
+    },
+  },
+} as const;
+
+export const storedHarnessArtifactSchema = {
+  ...harnessArtifactSchema,
+  required: [...harnessArtifactSchema.required, "protectedHashes", "testCommit"],
+  properties: {
+    ...harnessArtifactSchema.properties,
+    protectedHashes: {
+      type: "object",
+      minProperties: 1,
+      maxProperties: 32,
+      propertyNames: { type: "string", minLength: 1, maxLength: 4096 },
+      additionalProperties: sha256Schema,
+    },
+    testCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
+  },
+} as const;
+
+export const storedImplementationArtifactSchema = {
+  ...implementationArtifactSchema,
+  required: [...implementationArtifactSchema.required, "implementationCommit", "actualPaths"],
+  properties: {
+    ...implementationArtifactSchema.properties,
+    implementationCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
+    actualPaths: { type: "array", minItems: 1, maxItems: 32, items: stringSchema },
+  },
+} as const;
+
 const ajv = new Ajv({ allErrors: true, strict: true });
 
 export class ArtifactValidationError extends Error {
@@ -536,3 +753,28 @@ export const validateVerificationArtifact = compileArtifactValidator<Verificatio
   "verification artifact",
   verificationArtifactSchema,
 );
+export const validateRunState = compileArtifactValidator<RunState>(
+  "SafeChange run state",
+  runStateSchema,
+);
+export const validateArtifactEnvelope = compileArtifactValidator<ArtifactEnvelope<unknown>>(
+  "SafeChange artifact envelope",
+  artifactEnvelopeSchema,
+);
+export const validatePlanEligibilityList = compileArtifactValidator<PlanEligibility[]>(
+  "plan eligibility artifact",
+  planEligibilityListSchema,
+);
+export const validateCommandEvidenceList = compileArtifactValidator<CommandEvidence[]>(
+  "command evidence artifact",
+  commandEvidenceListSchema,
+);
+export const validateStoredHarnessArtifact = compileArtifactValidator<StoredHarnessArtifact>(
+  "stored harness artifact",
+  storedHarnessArtifactSchema,
+);
+export const validateStoredImplementationArtifact =
+  compileArtifactValidator<StoredImplementationArtifact>(
+    "stored implementation artifact",
+    storedImplementationArtifactSchema,
+  );

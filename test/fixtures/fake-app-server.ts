@@ -2,9 +2,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 
 interface Message {
-  id?: number;
-  method: string;
+  id?: number | string;
+  method?: string;
   params?: Record<string, unknown>;
+  error?: { code?: number; message?: string };
 }
 
 let threadNumber = 0;
@@ -15,6 +16,48 @@ const lines = createInterface({ input: process.stdin });
 const send = (message: unknown): void => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 };
+
+interface PendingCompletion {
+  threadId: string;
+  turnId: string;
+  text: string;
+}
+
+let pendingCompletion: PendingCompletion | undefined;
+
+function completeTurn({ threadId, turnId, text }: PendingCompletion): void {
+  send({
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId,
+      completedAtMs: Date.now(),
+      item: {
+        type: "agentMessage",
+        id: `item-${turnNumber}`,
+        text,
+        phase: null,
+        memoryCitation: null,
+      },
+    },
+  });
+  send({
+    method: "turn/completed",
+    params: {
+      threadId,
+      turn: {
+        id: turnId,
+        items: [],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        durationMs: 1,
+      },
+    },
+  });
+}
 
 async function structuredOutput(prompt: string): Promise<unknown> {
   if (prompt.includes("[SAFECHANGE_ROLE:discovery]")) {
@@ -214,6 +257,12 @@ async function structuredOutput(prompt: string): Promise<unknown> {
 
 lines.on("line", async (line) => {
   const message = JSON.parse(line) as Message;
+  if (mode === "server-request" && message.id === "approval-1" && !message.method) {
+    if (message.error?.code !== -32601 || !pendingCompletion) process.exitCode = 1;
+    else completeTurn(pendingCompletion);
+    pendingCompletion = undefined;
+    return;
+  }
   if (message.method === "initialize") {
     send({
       id: message.id,
@@ -256,37 +305,20 @@ lines.on("line", async (line) => {
     const prompt = input?.find((item) => item.type === "text")?.text ?? "";
     const text = JSON.stringify(await structuredOutput(prompt));
     send({ id: message.id, result: { turn: { id: turnId } } });
-    send({
-      method: "item/completed",
-      params: {
-        threadId,
-        turnId,
-        completedAtMs: Date.now(),
-        item: {
-          type: "agentMessage",
-          id: `item-${turnNumber}`,
-          text,
-          phase: null,
-          memoryCitation: null,
-        },
-      },
-    });
-    send({
-      method: "turn/completed",
-      params: {
-        threadId,
-        turn: {
-          id: turnId,
-          items: [],
-          itemsView: { type: "full" },
-          status: "completed",
-          error: null,
-          startedAt: null,
-          completedAt: null,
-          durationMs: 1,
-        },
-      },
-    });
+    if (mode === "malformed-notification") {
+      send({ method: "item/completed", params: { turnId } });
+      return;
+    }
+    if (mode === "server-request") {
+      pendingCompletion = { threadId, turnId, text };
+      send({
+        id: "approval-1",
+        method: "item/commandExecution/requestApproval",
+        params: {},
+      });
+      return;
+    }
+    completeTurn({ threadId, turnId, text });
     return;
   }
 

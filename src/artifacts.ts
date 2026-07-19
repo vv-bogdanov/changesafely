@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
+import { validateArtifactEnvelope, validateRunState } from "./schemas.js";
 
 export type RunStatus =
   | "RUNNING"
@@ -86,6 +87,14 @@ export function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function parseJson(content: string, description: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    throw new Error(`Invalid JSON in ${description}`);
+  }
+}
+
 export class ArtifactStore {
   readonly runPath: string;
   public readonly runId: string;
@@ -105,8 +114,12 @@ export class ArtifactStore {
   }
 
   async writeState(state: RunState): Promise<void> {
-    await this.writeJson("state.json", state);
-    await this.writeJson("context.json", state.contexts);
+    const validated = validateRunState(state);
+    if (validated.runId !== this.runId || validated.baselineCommit !== this.baselineCommit) {
+      throw new Error("Run state lineage does not match its artifact store");
+    }
+    await this.writeJson("state.json", validated);
+    await this.writeJson("context.json", validated.contexts);
   }
 
   async writeArtifact<T>(
@@ -125,6 +138,7 @@ export class ArtifactStore {
       },
       payload,
     };
+    validateArtifactEnvelope(envelope);
     const content = `${JSON.stringify(envelope, null, 2)}\n`;
     const path = resolveWithin(this.runPath, relativePath);
     await mkdir(dirname(path), { recursive: true });
@@ -147,9 +161,16 @@ export class ArtifactStore {
 }
 
 export async function loadRunState(repoPath: string, runId: string): Promise<RunState> {
-  return JSON.parse(
-    await readFile(resolveWithin(runPath(repoPath, runId), "state.json"), "utf8"),
-  ) as RunState;
+  const validated = validateRunState(
+    parseJson(
+      await readFile(resolveWithin(runPath(repoPath, runId), "state.json"), "utf8"),
+      "SafeChange run state",
+    ),
+  );
+  if (validated.runId !== runId) {
+    throw new Error("Run state identity does not match its directory");
+  }
+  return validated;
 }
 
 export async function loadArtifact<T>(
@@ -157,9 +178,16 @@ export async function loadArtifact<T>(
   runId: string,
   relativePath: string,
 ): Promise<ArtifactEnvelope<T>> {
-  return JSON.parse(
-    await readFile(resolveWithin(runPath(repoPath, runId), relativePath), "utf8"),
-  ) as ArtifactEnvelope<T>;
+  const validated = validateArtifactEnvelope(
+    parseJson(
+      await readFile(resolveWithin(runPath(repoPath, runId), relativePath), "utf8"),
+      "SafeChange artifact",
+    ),
+  );
+  if (validated.meta.runId !== runId) {
+    throw new Error(`Artifact run identity mismatch: ${relativePath}`);
+  }
+  return validated as ArtifactEnvelope<T>;
 }
 
 export async function loadVerifiedArtifact<T>(
@@ -176,7 +204,9 @@ export async function loadVerifiedArtifact<T>(
   if (!expectedHash || hashContent(content) !== expectedHash) {
     throw new Error(`Artifact hash mismatch: ${relativePath}`);
   }
-  const envelope = JSON.parse(content) as ArtifactEnvelope<T>;
+  const envelope = validateArtifactEnvelope(
+    parseJson(content, `SafeChange artifact ${relativePath}`),
+  ) as ArtifactEnvelope<T>;
   if (
     envelope.meta.runId !== state.runId ||
     envelope.meta.baselineCommit !== state.baselineCommit

@@ -35,6 +35,10 @@ interface RpcNotification {
   params?: unknown;
 }
 
+interface RpcRequest extends RpcNotification {
+  id: number | string;
+}
+
 interface PendingRequest {
   resolve(value: unknown): void;
   reject(error: Error): void;
@@ -82,6 +86,112 @@ export class AppServerError extends Error {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOwn(value: object, key: string): boolean {
+  return Object.hasOwn(value, key);
+}
+
+function isRpcId(value: unknown): value is number | string {
+  return typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
+}
+
+function validateRpcError(value: unknown): RpcError | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.code !== "number" ||
+    !Number.isFinite(value.code) ||
+    typeof value.message !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    code: value.code,
+    message: value.message,
+    ...(hasOwn(value, "data") ? { data: value.data } : {}),
+  };
+}
+
+function validateInitializeResponse(value: unknown): InitializeResponse {
+  if (
+    !isRecord(value) ||
+    typeof value.userAgent !== "string" ||
+    typeof value.codexHome !== "string" ||
+    typeof value.platformFamily !== "string" ||
+    typeof value.platformOs !== "string"
+  ) {
+    throw new AppServerError("Invalid initialize response from App Server");
+  }
+  return value as unknown as InitializeResponse;
+}
+
+function validateThreadResponse<T>(value: unknown, method: string): T {
+  if (!isRecord(value) || !isRecord(value.thread) || typeof value.thread.id !== "string") {
+    throw new AppServerError(`Invalid ${method} response from App Server`);
+  }
+  return value as T;
+}
+
+function validateTurnStartResponse(value: unknown): TurnStartResponse {
+  if (!isRecord(value) || !isRecord(value.turn) || typeof value.turn.id !== "string") {
+    throw new AppServerError("Invalid turn/start response from App Server");
+  }
+  return value as unknown as TurnStartResponse;
+}
+
+function validateItemCompleted(value: unknown): ItemCompletedNotification | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.threadId !== "string" ||
+    typeof value.turnId !== "string" ||
+    typeof value.completedAtMs !== "number" ||
+    !isRecord(value.item) ||
+    typeof value.item.type !== "string"
+  ) {
+    return undefined;
+  }
+  if (value.item.type === "agentMessage" && typeof value.item.text !== "string") {
+    return undefined;
+  }
+  return value as unknown as ItemCompletedNotification;
+}
+
+function validateTurnCompleted(value: unknown): TurnCompletedNotification | undefined {
+  if (!isRecord(value) || typeof value.threadId !== "string" || !isRecord(value.turn)) {
+    return undefined;
+  }
+  const turn = value.turn;
+  const validStatus = ["completed", "interrupted", "failed", "inProgress"].includes(
+    String(turn.status),
+  );
+  const validItems =
+    Array.isArray(turn.items) &&
+    turn.items.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item.type === "string" &&
+        (item.type !== "agentMessage" || typeof item.text === "string"),
+    );
+  const validError =
+    turn.error === null || (isRecord(turn.error) && typeof turn.error.message === "string");
+  const nullableNumber = (item: unknown) => item === null || typeof item === "number";
+  if (
+    typeof turn.id !== "string" ||
+    !validStatus ||
+    !validItems ||
+    !["notLoaded", "summary", "full"].includes(String(turn.itemsView)) ||
+    !validError ||
+    !nullableNumber(turn.startedAt) ||
+    !nullableNumber(turn.completedAt) ||
+    !nullableNumber(turn.durationMs)
+  ) {
+    return undefined;
+  }
+  return value as unknown as TurnCompletedNotification;
+}
+
 export class AppServerClient {
   private process: ChildProcessWithoutNullStreams | undefined;
   private lines: Interface | undefined;
@@ -90,7 +200,7 @@ export class AppServerClient {
   private readonly turnWaiters = new Map<string, TurnWaiter>();
   private readonly completedTurns = new Map<string, TurnCompletedNotification>();
   private readonly agentMessages = new Map<string, string>();
-  private stderr = "";
+  private fatalError: AppServerError | undefined;
   private abortListener: (() => void) | undefined;
 
   constructor(private readonly options: AppServerClientOptions = {}) {}
@@ -111,23 +221,18 @@ export class AppServerClient {
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    this.process.on("exit", (code, signal) => {
-      const detail = this.stderr.trim();
-      this.failAll(
-        new AppServerError(
-          `App Server exited (${signal ?? String(code)})${detail ? `: ${detail}` : ""}`,
-        ),
-      );
-    });
+    this.process.on("exit", (code, signal) =>
+      this.failAll(new AppServerError(`App Server exited (${signal ?? String(code)})`)),
+    );
     this.process.on("error", (error) => this.failAll(new AppServerError(error.message)));
-    this.process.stderr.setEncoding("utf8");
-    this.process.stderr.on("data", (chunk: string) => {
-      this.stderr = `${this.stderr}${chunk}`.slice(-16_384);
-    });
+    this.process.stderr.resume();
 
     this.lines = createInterface({ input: this.process.stdout });
     this.lines.on("line", (line) => this.handleLine(line));
-    this.abortListener = () => void this.close();
+    this.abortListener = () => {
+      this.failAll(new AppServerError("App Server operation was aborted"));
+      void this.close();
+    };
     this.options.signal?.addEventListener("abort", this.abortListener, { once: true });
 
     const params: InitializeParams = {
@@ -138,21 +243,29 @@ export class AppServerClient {
       },
       capabilities: null,
     };
-    const initialized = await this.request<InitializeResponse>("initialize", params);
+    const initialized = validateInitializeResponse(
+      await this.request<InitializeResponse>("initialize", params),
+    );
     this.notify("initialized", {});
     return initialized;
   }
 
   startThread(params: ThreadStartParams): Promise<ThreadStartResponse> {
-    return this.request("thread/start", params);
+    return this.request("thread/start", params).then((value) =>
+      validateThreadResponse<ThreadStartResponse>(value, "thread/start"),
+    );
   }
 
   forkThread(params: ThreadForkParams): Promise<ThreadForkResponse> {
-    return this.request("thread/fork", params);
+    return this.request("thread/fork", params).then((value) =>
+      validateThreadResponse<ThreadForkResponse>(value, "thread/fork"),
+    );
   }
 
   resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
-    return this.request("thread/resume", params);
+    return this.request("thread/resume", params).then((value) =>
+      validateThreadResponse<ThreadResumeResponse>(value, "thread/resume"),
+    );
   }
 
   async runTurn(threadId: string, prompt: string, options: RunTurnOptions): Promise<TurnResult> {
@@ -166,7 +279,9 @@ export class AppServerClient {
       ...(options.model ? { model: options.model } : {}),
       ...(options.outputSchema ? { outputSchema: options.outputSchema as JsonValue } : {}),
     };
-    const started = await this.request<TurnStartResponse>("turn/start", params);
+    const started = validateTurnStartResponse(
+      await this.request<TurnStartResponse>("turn/start", params),
+    );
     const turnId = started.turn.id;
 
     let completion: TurnCompletedNotification;
@@ -176,12 +291,14 @@ export class AppServerClient {
         options.timeoutMs ?? this.options.turnTimeoutMs ?? 300_000,
       );
     } catch (error) {
+      this.agentMessages.delete(turnId);
       const interrupt: TurnInterruptParams = { threadId, turnId };
       await this.request("turn/interrupt", interrupt).catch(() => undefined);
       throw error;
     }
 
     if (completion.turn.status !== "completed") {
+      this.agentMessages.delete(turnId);
       throw new AppServerError(
         `Turn ${turnId} ended with ${completion.turn.status}: ${completion.turn.error?.message ?? "no details"}`,
       );
@@ -194,6 +311,7 @@ export class AppServerClient {
       completedMessage?.type === "agentMessage"
         ? completedMessage.text
         : (this.agentMessages.get(turnId) ?? "");
+    this.agentMessages.delete(turnId);
 
     return {
       threadId,
@@ -229,6 +347,7 @@ export class AppServerClient {
   }
 
   private request<T>(method: string, params: unknown): Promise<T> {
+    if (this.fatalError) return Promise.reject(this.fatalError);
     const id = this.nextId++;
     const timeoutMs = this.options.requestTimeoutMs ?? 10_000;
 
@@ -266,33 +385,67 @@ export class AppServerClient {
   }
 
   private handleLine(line: string): void {
-    let message: RpcResponse | RpcNotification;
+    let message: unknown;
     try {
-      message = JSON.parse(line) as RpcResponse | RpcNotification;
+      message = JSON.parse(line);
     } catch {
-      this.failAll(new AppServerError(`Invalid App Server JSON: ${line.slice(0, 200)}`));
+      this.failProtocol("Invalid JSON from App Server");
       return;
     }
 
-    if ("id" in message) {
-      const pending = this.pending.get(message.id);
+    if (!isRecord(message)) {
+      this.failProtocol("Invalid message from App Server");
+      return;
+    }
+
+    if (hasOwn(message, "id") && typeof message.method === "string") {
+      if (!isRpcId(message.id)) {
+        this.failProtocol("Invalid request id from App Server");
+        return;
+      }
+      this.rejectServerRequest({ id: message.id, method: message.method, params: message.params });
+      return;
+    }
+
+    if (hasOwn(message, "id")) {
+      if (!isRpcId(message.id) || (!hasOwn(message, "result") && !hasOwn(message, "error"))) {
+        this.failProtocol("Invalid response from App Server");
+        return;
+      }
+      const response = message as unknown as RpcResponse;
+      const pending = this.pending.get(response.id);
       if (!pending) return;
-      clearTimeout(pending.timer);
-      this.pending.delete(message.id);
-      if (message.error) {
-        pending.reject(new AppServerError(message.error.message, message.error));
+      if (hasOwn(message, "error")) {
+        const rpcError = validateRpcError(message.error);
+        if (!rpcError) {
+          this.failProtocol("Invalid error response from App Server");
+          return;
+        }
+        clearTimeout(pending.timer);
+        this.pending.delete(response.id);
+        pending.reject(new AppServerError(rpcError.message, rpcError));
       } else {
-        pending.resolve(message.result);
+        clearTimeout(pending.timer);
+        this.pending.delete(response.id);
+        pending.resolve(response.result);
       }
       return;
     }
 
-    this.handleNotification(message);
+    if (typeof message.method !== "string") {
+      this.failProtocol("Invalid notification from App Server");
+      return;
+    }
+    this.handleNotification({ method: message.method, params: message.params });
   }
 
   private handleNotification(notification: RpcNotification): void {
     if (notification.method === "item/completed") {
-      const params = notification.params as ItemCompletedNotification;
+      const params = validateItemCompleted(notification.params);
+      if (!params) {
+        this.failProtocol("Invalid item/completed notification from App Server");
+        return;
+      }
       if (params.item.type === "agentMessage") {
         this.agentMessages.set(params.turnId, params.item.text);
       }
@@ -300,17 +453,40 @@ export class AppServerClient {
     }
 
     if (notification.method !== "turn/completed") return;
-    const params = notification.params as TurnCompletedNotification;
+    const params = validateTurnCompleted(notification.params);
+    if (!params) {
+      this.failProtocol("Invalid turn/completed notification from App Server");
+      return;
+    }
     const waiter = this.turnWaiters.get(params.turn.id);
     if (waiter) {
       this.turnWaiters.delete(params.turn.id);
       waiter.resolve(params);
     } else {
       this.completedTurns.set(params.turn.id, params);
+      if (this.completedTurns.size > 100) {
+        const oldest = this.completedTurns.keys().next().value;
+        if (typeof oldest === "string") this.completedTurns.delete(oldest);
+      }
+    }
+  }
+
+  private rejectServerRequest(request: RpcRequest): void {
+    try {
+      this.write({
+        id: request.id,
+        error: {
+          code: -32601,
+          message: `Unsupported App Server request: ${request.method}`,
+        },
+      });
+    } catch {
+      this.failProtocol("Could not reject an unsupported App Server request");
     }
   }
 
   private waitForTurn(turnId: string, timeoutMs: number): Promise<TurnCompletedNotification> {
+    if (this.fatalError) return Promise.reject(this.fatalError);
     const completed = this.completedTurns.get(turnId);
     if (completed) {
       this.completedTurns.delete(turnId);
@@ -343,5 +519,12 @@ export class AppServerClient {
     this.pending.clear();
     for (const waiter of this.turnWaiters.values()) waiter.reject(error);
     this.turnWaiters.clear();
+  }
+
+  private failProtocol(message: string): void {
+    const error = new AppServerError(message);
+    this.fatalError = error;
+    this.failAll(error);
+    void this.close();
   }
 }
