@@ -238,16 +238,27 @@ rewritten or evaluated against newer scenario assets. ChangeSafely attempts enab
 diagnostics because benchmark repositories are public, controller-owned fixtures; the product
 default remains diagnostics-off.
 
-The pilot defaults are:
+The frozen final-run protocol is:
 
-- order: Double Charge, Tenant Leak, Restart Storm, Legacy Spaghetti; Direct before
-  ChangeSafely within each scenario;
+- order: Double Charge, Tenant Leak, Restart Storm, Legacy Spaghetti, Partial Replay,
+  Cancellation Saga, Contract Drift; Direct before ChangeSafely within each scenario;
 - attempts: one, plus only the technical replacement defined above;
 - maximum runtime: 60 minutes per attempt in both modes;
 - model reasoning effort: `medium` in both modes;
+- model: one explicitly selected model for every run, expected to be `gpt-5.6-sol`; the
+  controller records the exact requested model and rejects mixed-model pairs;
+- Codex executable: use the installed current version and record its exact version in every
+  comparison manifest; do not pin the executable to a stale release;
 - agent shell network: disabled;
 - Sentry and remote ChangeSafely telemetry: disabled;
 - worker execution: sequential, not concurrent.
+
+The scenario versions frozen for that protocol are Double Charge v3, Tenant Leak v3, Restart
+Storm v3, Legacy Spaghetti v3, Partial Replay v2, Cancellation Saga v1, and Contract Drift v2.
+The registered manifest also captures runtime and toolchain versions, sanitized environment,
+scenario hashes, product commit, preparation evidence, sandbox profile, and exact visible-check
+argv/cwd values. Any change to a frozen input creates a new scenario version and requires new
+Spark comparisons before final authorization.
 
 Every scenario change first passes model-free fixture, reference, mutant, isolation, schema,
 replay, and report checks. Live validation then starts with one ChangeSafely Spark smoke per new
@@ -255,10 +266,10 @@ toolchain. Complete paired Direct versus ChangeSafely development comparisons ru
 relevant product path and benchmark portfolio are stable.
 
 Final measured or publishable runs are forbidden until the version-matched Spark comparisons
-have completed and been evaluated, and then require a separate explicit user command with both
-`--final` and an explicit `--model`. The controller rejects `--final` until a paired evaluated
-Spark comparison exists for the same scenario version. Final runs are never started by CI, a
-default script, or completion of an implementation phase.
+have completed, replayed, and been reviewed, and then require a separate explicit user command
+with both `--final` and an explicit `--model`. The controller rejects `--final` until a paired
+evaluated Spark comparison exists for the same scenario version. Final runs are never started
+by CI, a default script, documentation generation, or completion of an implementation phase.
 
 ### 8.5 Isolation threat model
 

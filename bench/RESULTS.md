@@ -1,72 +1,78 @@
-# Spark development pilot
+# Spark development review
 
-> Development evidence from 2026-07-19. These are not final or publishable
-> measurements. Final comparisons require a separate explicit user command after
-> this Spark pilot has been reviewed.
+> Development evidence recorded on 2026-07-19. These are not final or publishable
+> measurements. Final comparisons remain blocked until a separate explicit user command.
 
-## Results
+## Current results
 
-All pairs used `gpt-5.3-codex-spark`, medium effort, the same task and baseline within
-each pair, Direct followed by ChangeSafely, one attempt per mode, and disabled worker
-network access.
+The current-product review covers all seven scenarios: TypeScript, CommonJS JavaScript,
+Python, PHP, and a JavaScript/Python repository. Every pair used
+`gpt-5.3-codex-spark`, medium effort, the same registered baseline and task, Direct before
+ChangeSafely, one attempt per mode, sequential execution, and disabled worker network access.
 
-| Scenario | Direct | Mutants | Time / turns | ChangeSafely | Mutants | Time / turns |
-| --- | --- | ---: | ---: | --- | ---: | ---: |
-| Double Charge | `visible_failure` | n/a | 19.0 s / 1 | `visible_failure` | 2/2 | 79.6 s / 10 |
-| Tenant Leak | `safe_success` | 1/2 | 19.9 s / 1 | `safe_success` | 2/2 | 103.1 s / 12 |
-| Restart Storm | `unsafe_green` | 1/2 | 27.7 s / 1 | `safe_success` | 2/2 | 84.9 s / 10 |
+`Tokens` is total/cached input. `n/a` means that no candidate tests existed or that they did
+not pass on the reference, so a mutation percentage would be misleading.
 
-The pilot exposed one unsafe-green Direct result in Restart Storm: visible tests
-passed, but the implementation did not fail readiness closed when the database probe
-threw. ChangeSafely passed the hidden acceptance, preservation, and scope checks and
-killed both declared mutants. In Tenant Leak both modes completed the task safely;
-the ChangeSafely tests killed both mutants while the Direct tests killed one.
+| Scenario | Direct outcome | Mutants | Time / turns | Tokens | ChangeSafely outcome | Product status | Mutants | Time / turns | Tokens |
+| --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| Double Charge v3 | `visible_failure` | n/a | 13.4 s / 1 | 79,171 / 65,536 | `visible_failure` | `FAILED` | 3/6 | 63.8 s / 11 | 500,750 / 352,128 |
+| Tenant Leak v3 | `unsafe_green` | 1/9 | 16.6 s / 1 | 96,511 / 84,864 | `unsafe_green` | `FAILED` | n/a | 156.0 s / 12 | 1,786,563 / 1,565,312 |
+| Restart Storm v3 | `unsafe_green` | 2/7 | 13.4 s / 1 | 84,494 / 73,216 | `visible_failure` | `FAILED` | 2/7 | 329.9 s / 7 | 259,332 / 173,952 |
+| Legacy Spaghetti v3 | `safe_success` | 5/8 | 24.3 s / 1 | 176,410 / 153,088 | `unsafe_green` | `REPLAN_REQUIRED` | 6/8 | 123.1 s / 12 | 1,421,487 / 1,224,192 |
+| Partial Replay v2 | `unsafe_green` | n/a | 17.2 s / 1 | 75,695 / 58,496 | `unsafe_green` | `FAILED` | n/a | 141.6 s / 13 | 1,186,937 / 962,176 |
+| Cancellation Saga v1 | `unsafe_green` | n/a | 45.1 s / 1 | 203,342 / 173,440 | `unsafe_green` | `VERIFIED` | n/a | 97.3 s / 12 | 691,902 / 492,672 |
+| Contract Drift v2 | `safe_success` | 4/6 | 21.4 s / 1 | 122,888 / 107,904 | `visible_failure` | `FAILED` | 5/6 | 52.5 s / 11 | 446,572 / 300,672 |
 
-These three pairs are useful development signals, not an aggregate score. The sample
-is too small and open to support a general superiority claim.
+The result is deliberately unflattering and useful. Direct achieved safe success on two of
+seven scenarios; ChangeSafely achieved none in this single-attempt Spark sample. The evidence
+does not support a superiority claim.
 
-## Double Charge case study
+It does show the product's safety boundaries doing real work. ChangeSafely rejected six
+candidates before claiming success: two harnesses rewrote protected fixtures, one deterministic
+verification failed, one model turn timed out, one implementation exceeded its selected plan,
+and the independent Verifier found a replay gap. Protected harnesses remained intact whenever
+one reached implementation. The remaining PHP candidate was product-`VERIFIED`, but the hidden
+oracle still found input-conflict and retry-key-isolation defects. This is an important limit:
+independent workflow verification reduces risk but is not an oracle.
 
-Double Charge was deliberately retained even though neither mode produced a safe
-success. Direct added a test that did not compile. ChangeSafely added a stronger test
-patch that killed both declared mutants, then stopped during Test Author before any
-production implementation was committed. That run also exposed a deterministic
-command-output capture defect, fixed separately in commit `1a3184c`.
+Candidate tests were stronger than Direct on Double Charge, Legacy Spaghetti, and Contract
+Drift. They were invalid against the reference on Tenant Leak, Partial Replay, and Cancellation
+Saga, so those mutation results remain `n/a` instead of receiving credit for failing everywhere.
 
-Because the product changed after this pair, Double Charge is diagnostic evidence and
-must be rerun from a fresh registered comparison before it can support a prerelease
-claim. Keeping the failed pair prevents cherry-picking and demonstrates the
-fail-closed workflow.
+## Evidence notes
 
-## Method
+Two earlier Python and PHP comparisons exposed a controller-runtime isolation defect. During
+`npm run`, the benchmark worker inherited the controller's `node_modules/.bin`, causing the
+Codex wrapper to resolve a binary outside the sandbox. Commit `88d2a99` removes only that path,
+preserves the external Codex executable, and has a regression test. The authoritative Python
+and PHP rows above are fresh registered comparisons after that fix. Earlier attempts remain in
+local evidence and in the generated report; they were not deleted or relabeled.
 
-Each scenario has a frozen TypeScript baseline, a reference patch, two plausible
-unsafe mutants, and a controller-owned evaluator. The worker sees only a disposable
-Git repository and the public task. The evaluator, reference, mutants, controller
-source, and previous results remain outside that workspace.
+The current registered comparison IDs are:
 
-After a worker exits, the controller commits its exact snapshot and records a bounded,
-hash-verified evidence package. Candidate-added tests are applied independently to the
-reference and each mutant, then run in the same network-disabled deterministic command
-sandbox. Replay verifies evidence and analysis hashes and generates reports without
-starting Codex or rerunning project commands.
+- Double Charge: `comparison-01abf67050a0aede`
+- Tenant Leak: `comparison-988467e61b5ad7b1`
+- Restart Storm: `comparison-cf0582e2b916adb3`
+- Legacy Spaghetti: `comparison-82eda1db2f40de39`
+- Partial Replay: `comparison-aeed9923643ee855`
+- Cancellation Saga: `comparison-278d9c588c575cbf`
+- Contract Drift: `comparison-a22b7d350211c241`
 
-The retained local comparison IDs are:
+Local raw evidence lives under the Git-ignored `bench/results/`. The generated report records
+per-role time, command/tool activity, correction turns, artifact volume, and total, input,
+cached input, non-cached input, output, and reasoning tokens. Replay verifies evidence and
+analysis hashes without starting Codex or running repository commands.
 
-- Double Charge: `comparison-cc7cbaf002535655`;
-- Tenant Leak: `comparison-4b088e3edba1a8eb`;
-- Restart Storm: `comparison-a205cff3cb89a343`.
+## Historical golden evidence
 
-The complete Tenant Leak and Restart Storm pairs are published under
-[`golden/spark-pilot`](golden/spark-pilot/README.md). Double Charge is retained only
-locally because it predates the runner fix and is not current-product golden evidence.
-The version 3 report derives per-role deltas from cumulative App Server snapshots and
-reports cached and non-cached input separately; it does not count inherited `C0` usage
-once per fork.
+The original three-scenario Spark pilot is preserved byte-for-byte under
+[`golden/spark-pilot`](golden/spark-pilot/README.md). It is historical development evidence for
+older scenario and product versions, not part of the current table. Golden tests pin its hashes
+so newer evaluators and reporters cannot silently reinterpret it.
 
 ## Reproduce
 
-Run all deterministic gates without a model:
+Run all model-free gates:
 
 ```sh
 npm ci --ignore-scripts
@@ -81,20 +87,20 @@ npm run benchmark:smoke -- --scenario <scenario> --mode changesafely
 npm run benchmark -- report
 ```
 
-Replay retained local evidence without a model:
+Replay retained evidence without a model:
 
 ```sh
 npm run benchmark -- replay --run <run-id>
 ```
 
-Replay published Spark evidence by adding `--results bench/golden/spark-pilot`.
+Add `--results bench/golden/spark-pilot` to replay published historical evidence.
 
 ## Limitations
 
-- This is a custom three-scenario pilot, not a statistically significant benchmark.
-- The scenarios and mutants are open and measure only their declared invariants.
-- There is one attempt per mode and scenario, so model variance is not estimated.
-- Double Charge predates a runner fix and is not a current-product measurement.
-- Wall time and token usage reflect one machine and one runtime version.
-- The published golden set contains development Spark evidence only. Fresh final
-  evidence still requires explicit authorization, hash verification, and secret scan.
+- This is one development attempt per mode and scenario, not a statistical study.
+- Spark variance is substantial and the sample is too small for aggregate claims.
+- The scenarios and mutants are open and measure only declared invariants.
+- Wall time and token usage reflect one machine, environment, and Codex version.
+- Some safe stops occur before implementation and therefore cannot produce a safe patch.
+- Local evidence is retained but not published as final evidence.
+- No final model run has been started or authorized.
