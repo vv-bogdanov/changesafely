@@ -5,11 +5,20 @@ All notable changes to SafeChange are documented here. The project follows
 
 ## [Unreleased]
 
+### Added
+
+- Versioned run state and artifact envelopes with closed phase/status contracts and
+  named predecessor hashes.
+- Versioned text/JSON outcomes, read-only `status`, explicit `--model`, total
+  workflow `--timeout`, phase progress, and resumable pre-write interruption handling.
+- Packed CLI functional coverage plus macOS and Windows package/process smoke jobs.
+
 ### Changed
 
 - Treat the generated Codex protocol version as a reproducible development baseline
   and validate runtime compatibility through the App Server contract.
 - Allow bounded targeted npm test scripts and common verification script variants.
+- Resolve npm, Codex, and package binaries portably without shell interpolation.
 
 ## [0.1.0] - 2026-07-18
 

@@ -1,5 +1,6 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
+import spawn from "cross-spawn";
 import {
   createJSONRPCErrorResponse,
   JSONRPCClient,
@@ -228,7 +229,7 @@ export class AppServerClient {
       cwd: this.options.cwd,
       env: safeEnvironment(this.options.env),
       stdio: ["pipe", "pipe", "pipe"],
-    });
+    }) as ChildProcessWithoutNullStreams;
 
     this.process.on("exit", (code, signal) =>
       this.failAll(new AppServerError(`App Server exited (${signal ?? String(code)})`)),

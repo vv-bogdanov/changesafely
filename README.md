@@ -52,7 +52,7 @@ override the user's default model.
 | Codex CLI | Standard authenticated executable on `PATH`; generated baseline currently `0.144.6` |
 | Git | Named branch, valid HEAD, clean tracked and staged state |
 | Target | Prepared npm-based TypeScript repository |
-| Host | Linux release path; other hosts are not yet qualified |
+| Host | Ubuntu, macOS, and Windows package/process smoke on Node.js 24 |
 
 The App Server protocol is generated reproducibly from the pinned development
 dependency. Runtime Codex versions are accepted when the App Server handshake and

@@ -1,40 +1,42 @@
 #!/usr/bin/env node
 
-import { execFile } from "node:child_process";
 import { cp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs, promisify } from "node:util";
+import { parseArgs } from "node:util";
+import spawn from "cross-spawn";
 
-const execFileAsync = promisify(execFile);
+function run(command: string, args: string[], cwd: string, timeout: number): void {
+  const result = spawn.sync(command, args, {
+    cwd,
+    timeout,
+    windowsHide: true,
+    encoding: "utf8",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(String(result.stderr || `${command} exited with ${String(result.status)}`));
+  }
+}
+
+const defaultTarget = join(tmpdir(), "safechange-payment-demo");
 const parsed = parseArgs({
-  options: { target: { type: "string", default: "/tmp/safechange-payment-demo" } },
+  options: { target: { type: "string", default: defaultTarget } },
 });
-const target = resolve(parsed.values.target ?? "/tmp/safechange-payment-demo");
+const target = resolve(parsed.values.target ?? defaultTarget);
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const template = join(packageRoot, "demo", "payment-retry-template");
 
 await mkdir(dirname(target), { recursive: true });
 await cp(template, target, { recursive: true, errorOnExist: true, force: false });
 await writeFile(join(target, ".gitignore"), "node_modules/\ndist/\n.safechange/\n", "utf8");
-await execFileAsync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], {
-  cwd: target,
-  timeout: 120_000,
-});
-await execFileAsync("git", ["init", "-b", "main"], { cwd: target, timeout: 10_000 });
-await execFileAsync("git", ["config", "user.name", "SafeChange Demo"], {
-  cwd: target,
-  timeout: 10_000,
-});
-await execFileAsync("git", ["config", "user.email", "demo@safechange.local"], {
-  cwd: target,
-  timeout: 10_000,
-});
-await execFileAsync("git", ["add", "."], { cwd: target, timeout: 10_000 });
-await execFileAsync("git", ["commit", "-m", "demo baseline"], {
-  cwd: target,
-  timeout: 10_000,
-});
+run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], target, 120_000);
+run("git", ["init", "-b", "main"], target, 10_000);
+run("git", ["config", "user.name", "SafeChange Demo"], target, 10_000);
+run("git", ["config", "user.email", "demo@safechange.local"], target, 10_000);
+run("git", ["add", "."], target, 10_000);
+run("git", ["commit", "-m", "demo baseline"], target, 10_000);
 
 const task = "Retry a payment once after a transient timeout without allowing a duplicate charge";
 process.stdout.write(

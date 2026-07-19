@@ -1,6 +1,7 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
+import spawn from "cross-spawn";
 
 export interface ProcessResult {
   exitCode: number | null;
@@ -152,7 +153,13 @@ if (args[0] === "--version") {
 }
 
 function run(command, commandArgs, options = {}) {
-  const child = spawn(command, commandArgs, { stdio: "inherit", ...options });
+  const npmCli = process.env.npm_execpath;
+  const useNpmCli = process.platform === "win32" && command === "npm" && npmCli;
+  const child = spawn(
+    useNpmCli ? process.execPath : command,
+    useNpmCli ? [npmCli, ...commandArgs] : commandArgs,
+    { stdio: "inherit", ...options },
+  );
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, () => child.kill(signal));
   }

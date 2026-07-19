@@ -47,8 +47,9 @@ publishing the first public prerelease.
 Create a `main` ruleset only at the prerelease boundary:
 
 - [ ] Require pull requests for `main` and require conversation resolution.
-- [ ] Require the `Node 22`, `Node 24`, `Supply chain`, `JavaScript and TypeScript`,
-  and `Dependency review` checks without allowing skipped required checks.
+- [ ] Require the `Node 22`, `Node 24`, `Supply chain`, `Package smoke (macOS)`,
+  `Package smoke (Windows)`, `JavaScript and TypeScript`, and `Dependency review`
+  checks without allowing skipped required checks.
 - [ ] Require branches to be current before merge, linear history, and block force
   pushes and branch deletion.
 - [ ] Restrict bypass to the minimum maintainer/release identity and audit every use.

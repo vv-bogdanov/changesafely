@@ -1,11 +1,8 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import spawn from "cross-spawn";
 import { AppServerClient } from "./app-server/client.js";
 import protocolVersion from "./app-server/generated/protocol-version.json" with { type: "json" };
 import { safeEnvironment } from "./environment.js";
 import { telemetryConfigurationStatus } from "./telemetry.js";
-
-const execFileAsync = promisify(execFile);
 
 interface DoctorCheck {
   name: string;
@@ -34,14 +31,19 @@ export interface DoctorOptions {
 }
 
 async function defaultExecute(command: string, args: string[], cwd?: string): Promise<string> {
-  const { stdout } = await execFileAsync(command, args, {
+  const result = spawn.sync(command, args, {
     ...(cwd ? { cwd } : {}),
     env: safeEnvironment(),
     timeout: 10_000,
     maxBuffer: 64 * 1024,
     windowsHide: true,
+    encoding: "utf8",
   });
-  return stdout.trim();
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(String(result.stderr || `${command} exited with ${String(result.status)}`));
+  }
+  return String(result.stdout).trim();
 }
 
 export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
