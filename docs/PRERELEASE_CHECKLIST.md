@@ -13,7 +13,7 @@ publishing the first public prerelease.
   every check must pass without a test-only shim.
 - [ ] Repeat the golden demo twice from fresh setup on the generated Codex baseline
   and once on the current standard Codex when it differs.
-  Use Spark only through `SAFECHANGE_LIVE_TEST_MODEL` for timed test runs; also run
+  Use Spark only through `--model gpt-5.3-codex-spark` for timed test runs; also run
   one untimed rehearsal without a model override.
 - [ ] Update `docs/RELEASE_REHEARSAL.md` with sanitized current evidence. Historical
   runs do not qualify after runtime or workflow code changes.

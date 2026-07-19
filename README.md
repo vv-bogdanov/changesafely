@@ -102,6 +102,14 @@ Run the full test-first workflow:
 safechange run --repo /path/to/repo --task "Describe the requested change" --plans 3
 ```
 
+Omit `--model` to use the current Codex default, or select one explicitly. Bound the
+whole command, including all roles and deterministic checks, with `--timeout`:
+
+```sh
+safechange run --model gpt-5.3-codex-spark --timeout 900 \
+  --repo /path/to/repo --task "Describe the requested change" --plans 3
+```
+
 Resume only from a validated persisted boundary:
 
 ```sh
@@ -116,7 +124,8 @@ safechange status --repo /path/to/repo --run <run-id>
 
 `plan`, `run`, `resume`, `status`, and `doctor` accept `--json`. Run commands emit
 one versioned outcome document on stdout; human diagnostics remain on stderr and the
-exit code remains authoritative:
+exit code remains authoritative. Without `--json`, phase progress is written to
+stderr while the final outcome remains on stdout:
 
 ```sh
 safechange status --repo /path/to/repo --run <run-id> --json
@@ -159,7 +168,7 @@ evidence is in [`docs/RELEASE_REHEARSAL.md`](docs/RELEASE_REHEARSAL.md) and
 Live performance tests can opt into Spark without changing the product default:
 
 ```sh
-SAFECHANGE_LIVE_TEST_MODEL=gpt-5.3-codex-spark safechange run \
+safechange run --model gpt-5.3-codex-spark \
   --repo /tmp/safechange-payment-demo \
   --plans 3 \
   --task "Retry a payment once after a transient timeout without allowing a duplicate charge"

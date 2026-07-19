@@ -3,9 +3,10 @@ import { AppServerClient } from "./app-server/client.js";
 import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artifact-key.js";
 import { ArtifactStore, artifactInputs, createRunId, type RunState } from "./artifacts.js";
 import { evaluatePlan, evaluatePlans, type PlanEligibility } from "./eligibility.js";
-import { SafeChangeError } from "./errors.js";
+import { abortReason, SafeChangeError } from "./errors.js";
 import { assertBaselineUnchanged, inspectBaseline } from "./git.js";
 import { createRunOutcome, type RunOutcome } from "./outcome.js";
+import { type ProgressReporter, reportProgress } from "./progress.js";
 import {
   contractPrompt,
   discoveryPrompt,
@@ -53,6 +54,7 @@ export interface PlanningOptions {
   parallelPlanners?: boolean;
   model?: string;
   signal?: AbortSignal;
+  onProgress?: ProgressReporter;
 }
 
 export interface PlanningResult extends RunOutcome {
@@ -66,6 +68,7 @@ function planningError(code: string, message: string): SafeChangeError {
 }
 
 export async function runPlanning(options: PlanningOptions): Promise<PlanningResult> {
+  const startedAt = Date.now();
   const repoPath = resolve(options.repoPath);
   const roleEffort = options.model ? "medium" : "low";
   const baseline = await inspectBaseline(repoPath);
@@ -95,6 +98,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     model: options.model ?? "",
   };
   await store.writeState(state);
+  reportProgress(options.onProgress, runId, "preflight", "Baseline captured", startedAt);
 
   const client =
     options.clientFactory?.() ??
@@ -109,6 +113,14 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
   const persist = async (phase: RunPhase): Promise<void> => {
     state.phase = phase;
     await store.writeState(state);
+    const actions: Partial<Record<RunPhase, string>> = {
+      discovery: "Collecting repository evidence",
+      contract: "Building the canonical change contract",
+      planners: "Comparing independent plans",
+      eligibility: "Applying deterministic eligibility gates",
+      judge: "Selecting one eligible plan",
+    };
+    reportProgress(options.onProgress, runId, phase, actions[phase] ?? phase, startedAt);
   };
   const addArtifact = (name: ArtifactKey, artifactHash: string): void => {
     state.artifacts[name] = artifactHash;
@@ -370,6 +382,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     await assertBaselineUnchanged(baseline);
     state.phase = "planning-complete";
     await store.writeState(state);
+    reportProgress(options.onProgress, runId, state.phase, "Planning outcome persisted", startedAt);
     const reportPath = await store.writeText(
       "report.md",
       planningReport(state, plans, eligibility, decision),
@@ -379,19 +392,21 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       ...(decision ? { decision } : {}),
     };
   } catch (error) {
+    const failure = abortReason(options.signal, error);
     state.status = "FAILED";
     state.phase = "failed";
-    state.reason = error instanceof Error ? error.message : String(error);
+    state.reason = failure instanceof Error ? failure.message : String(failure);
     state.nextAction =
       "Inspect state.json and the last role artifact, then fix the cause and retry.";
     await store.writeState(state);
+    reportProgress(options.onProgress, runId, state.phase, "Planning stopped", startedAt);
     const reportPath = await store.writeText(
       "report.md",
       planningReport(state, plans, eligibility, decision),
     );
-    if (!(error instanceof SafeChangeError)) throw error;
+    if (!(failure instanceof SafeChangeError)) throw failure;
     return {
-      ...(await createRunOutcome(repoPath, state, reportPath, error.code)),
+      ...(await createRunOutcome(repoPath, state, reportPath, failure.code)),
       ...(decision ? { decision } : {}),
     };
   } finally {

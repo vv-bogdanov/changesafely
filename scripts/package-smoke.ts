@@ -1,89 +1,14 @@
-import { execFile } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-const timeout = 120_000;
-
-async function run(
-  command: string,
-  args: string[],
-  cwd: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<string> {
-  const { stdout } = await execFileAsync(command, args, {
-    cwd,
-    timeout,
-    env: { ...env, CI: "1", NO_COLOR: "1" },
-  });
-  return stdout.trim();
-}
-
-async function createFixtureRepository(path: string): Promise<void> {
-  await mkdir(join(path, "src"), { recursive: true });
-  await writeFile(join(path, ".gitignore"), ".safechange/\n", "utf8");
-  await writeFile(join(path, "AGENTS.md"), "# Package smoke fixture\n", "utf8");
-  await writeFile(
-    join(path, "package.json"),
-    `${JSON.stringify(
-      {
-        name: "safechange-package-smoke-fixture",
-        private: true,
-        type: "module",
-        scripts: { test: "node --test" },
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-  await writeFile(join(path, "src", "value.ts"), "export const value = 1;\n", "utf8");
-  await run("git", ["init", "-b", "main"], path);
-  await run("git", ["config", "user.name", "SafeChange Package Smoke"], path);
-  await run("git", ["config", "user.email", "package-smoke@safechange.local"], path);
-  await run("git", ["add", "."], path);
-  await run("git", ["commit", "-m", "fixture baseline"], path);
-}
-
-async function createFakeCodex(path: string, codexVersion: string, fixture: string): Promise<void> {
-  await mkdir(path, { recursive: true });
-  const shim = join(path, "codex");
-  await writeFile(
-    shim,
-    `#!/usr/bin/env node
-import { spawnSync } from "node:child_process";
-
-const args = process.argv.slice(2);
-if (args[0] === "--version") {
-  process.stdout.write(${JSON.stringify(`${codexVersion}\n`)});
-  process.exit(0);
-}
-if (args[0] === "app-server") {
-  const result = spawnSync(process.execPath, [${JSON.stringify(fixture)}, "expect-workflow-spark"], {
-    stdio: "inherit",
-  });
-  process.exit(result.status ?? 1);
-}
-if (args[0] === "sandbox") {
-  const separator = args.indexOf("--");
-  const cwdIndex = args.indexOf("-C");
-  const command = args[separator + 1];
-  if (separator < 0 || !command) process.exit(2);
-  const result = spawnSync(command, args.slice(separator + 2), {
-    cwd: cwdIndex >= 0 ? args[cwdIndex + 1] : process.cwd(),
-    env: process.env,
-    stdio: "inherit",
-  });
-  process.exit(result.status ?? 1);
-}
-process.exit(2);
-`,
-    "utf8",
-  );
-  await chmod(shim, 0o755);
-}
+import {
+  cliEnvironment,
+  createFakeCodex,
+  createFunctionalRepository,
+  installPackedCli,
+  protocolVersion,
+  runSuccessful,
+} from "../test/support/packed-cli.js";
 
 function runIdFrom(output: string): string {
   const runId = output.match(/^Run: (.+)$/m)?.[1];
@@ -95,37 +20,10 @@ const root = process.cwd();
 const temporaryRoot = await mkdtemp(join(tmpdir(), "safechange-package-smoke-"));
 
 try {
-  const packOutput = await run(
-    "npm",
-    ["pack", "--json", "--pack-destination", temporaryRoot],
-    root,
-  );
-  const packResult = JSON.parse(packOutput) as Array<{ filename: string }>;
-  const filename = packResult[0]?.filename;
-  if (!filename) throw new Error("npm pack did not return a tarball filename");
-
-  const installRoot = join(temporaryRoot, "install");
-  await run(
-    "npm",
-    [
-      "install",
-      "--prefix",
-      installRoot,
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      join(temporaryRoot, filename),
-    ],
-    temporaryRoot,
-  );
-
-  const binRoot = join(installRoot, "node_modules", ".bin");
-  const extension = process.platform === "win32" ? ".cmd" : "";
-  const safechange = join(binRoot, `safechange${extension}`);
-  const setupDemo = join(binRoot, `safechange-demo${extension}`);
+  const { safechange, setupDemo } = await installPackedCli(root, temporaryRoot);
   await Promise.all([access(safechange), access(setupDemo)]);
 
-  const version = await run(safechange, ["--version"], temporaryRoot);
+  const version = await runSuccessful(safechange, ["--version"], temporaryRoot);
   const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
     version: string;
   };
@@ -135,26 +33,29 @@ try {
     );
   }
 
-  const protocol = JSON.parse(
-    await readFile(join(root, "src", "app-server", "generated", "protocol-version.json"), "utf8"),
-  ) as { codexVersion: string };
-  const fakeBin = join(temporaryRoot, "fake-bin");
-  await createFakeCodex(
-    fakeBin,
-    protocol.codexVersion,
+  const fakeBin = await createFakeCodex(
+    temporaryRoot,
+    await protocolVersion(root),
     join(root, "dist", "test", "fixtures", "fake-app-server.js"),
+    "expect-workflow-spark",
   );
   const functionalRepo = join(temporaryRoot, "functional-repo");
-  await createFixtureRepository(functionalRepo);
-  const functionalEnvironment = {
-    ...process.env,
-    PATH: `${fakeBin}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-    SAFECHANGE_LIVE_TEST_MODEL: "gpt-5.3-codex-spark",
-  };
+  await createFunctionalRepository(functionalRepo);
+  const functionalEnvironment = cliEnvironment(fakeBin);
 
-  const planOutput = await run(
+  const planOutput = await runSuccessful(
     safechange,
-    ["plan", "--task", "Change the fixture value.", "--plans", "1", "--repo", functionalRepo],
+    [
+      "plan",
+      "--task",
+      "Change the fixture value.",
+      "--plans",
+      "1",
+      "--model",
+      "gpt-5.3-codex-spark",
+      "--repo",
+      functionalRepo,
+    ],
     temporaryRoot,
     functionalEnvironment,
   );
@@ -166,7 +67,7 @@ try {
   }
 
   const doctorOutput = JSON.parse(
-    await run(
+    await runSuccessful(
       safechange,
       ["doctor", "--json", "--repo", functionalRepo],
       temporaryRoot,
@@ -175,9 +76,19 @@ try {
   ) as { ok?: boolean };
   if (doctorOutput.ok !== true) throw new Error("Installed CLI doctor reported not ready");
 
-  const runOutput = await run(
+  const runOutput = await runSuccessful(
     safechange,
-    ["run", "--task", "Change the fixture value.", "--plans", "1", "--repo", functionalRepo],
+    [
+      "run",
+      "--task",
+      "Change the fixture value.",
+      "--plans",
+      "1",
+      "--model",
+      "gpt-5.3-codex-spark",
+      "--repo",
+      functionalRepo,
+    ],
     temporaryRoot,
     functionalEnvironment,
   );
@@ -185,7 +96,7 @@ try {
   if (!runOutput.includes("Status: VERIFIED")) {
     throw new Error(`Installed CLI run did not verify: ${runOutput}`);
   }
-  const resumeOutput = await run(
+  const resumeOutput = await runSuccessful(
     safechange,
     ["resume", "--run", runId, "--repo", functionalRepo],
     temporaryRoot,
@@ -194,13 +105,13 @@ try {
   if (!resumeOutput.includes("Status: VERIFIED")) {
     throw new Error(`Installed CLI resume did not preserve verification: ${resumeOutput}`);
   }
-  const commits = await run("git", ["rev-list", "--count", "HEAD"], functionalRepo);
+  const commits = await runSuccessful("git", ["rev-list", "--count", "HEAD"], functionalRepo);
   if (commits !== "3") throw new Error(`Expected B0, T1, and I1 commits, found ${commits}`);
 
   const demoRoot = join(temporaryRoot, "demo");
-  await run(setupDemo, ["--target", demoRoot], temporaryRoot);
-  await run("npm", ["test"], demoRoot);
-  const status = await run("git", ["status", "--porcelain=v1"], demoRoot);
+  await runSuccessful(setupDemo, ["--target", demoRoot], temporaryRoot);
+  await runSuccessful(process.platform === "win32" ? "npm.cmd" : "npm", ["test"], demoRoot);
+  const status = await runSuccessful("git", ["status", "--porcelain=v1"], demoRoot);
   if (status !== "") throw new Error(`Packaged demo is dirty after its baseline test: ${status}`);
 
   process.stdout.write(`Package smoke passed for safechange ${version}\n`);

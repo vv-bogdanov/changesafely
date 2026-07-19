@@ -195,6 +195,11 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     };
   }
   if (prompt.includes("[SAFECHANGE_ROLE:implementer]")) {
+    if (mode === "delay-implementer") {
+      await mkdir(".safechange", { recursive: true });
+      await writeFile(".safechange/test-implementer-started", "ready\n", "utf8");
+      await new Promise((resolve) => setTimeout(resolve, 30_000));
+    }
     const source =
       mode === "failed-command"
         ? "export const value = 3;\n"
@@ -231,6 +236,25 @@ async function structuredOutput(prompt: string): Promise<unknown> {
   }
   if (prompt.includes("[SAFECHANGE_ROLE:verifier]")) {
     verifierNumber += 1;
+    if (mode === "verifier-reject") {
+      return {
+        verdict: "reject",
+        contractFulfilled: false,
+        invariantsPreserved: true,
+        scopeConformant: false,
+        evidenceSufficient: true,
+        reason: "The implementation does not satisfy the selected plan.",
+        findings: [
+          {
+            code: "PLAN_MISMATCH",
+            severity: "error",
+            message: "The change cannot be repaired within the selected scope.",
+            path: "",
+          },
+        ],
+        residualRisks: [],
+      };
+    }
     if (mode === "repair" && verifierNumber === 1) {
       return {
         verdict: "reject",

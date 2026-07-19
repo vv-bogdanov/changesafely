@@ -15,6 +15,7 @@ import {
   RUN_OUTCOME_VERSION,
   type RunOutcome,
 } from "./outcome.js";
+import { formatProgress, type ProgressReporter } from "./progress.js";
 import { captureFailure } from "./telemetry.js";
 import { VERSION } from "./version.js";
 import { runPlanning } from "./workflow.js";
@@ -22,9 +23,9 @@ import { runPlanning } from "./workflow.js";
 const HELP = `SafeChange ${VERSION}
 
 Usage:
-  safechange plan --task <text> [--plans 1..5] [--repo <path>]
-  safechange run --task <text> [--plans 1..5] [--repo <path>]
-  safechange resume --run <run-id> [--repo <path>]
+  safechange plan --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
+  safechange run --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
+  safechange resume --run <run-id> [--timeout <seconds>] [--repo <path>] [--json]
   safechange status --run <run-id> [--repo <path>] [--json]
   safechange doctor [--repo <path>] [--json]
 
@@ -36,8 +37,11 @@ Commands:
   doctor    Check local Git, Codex, App Server, and sandbox readiness
 
 Options:
-  -h, --help       Show this help
-  -v, --version    Show the SafeChange version
+  --model <id>         Override the Codex model; omit to use the Codex default
+  --timeout <seconds>  Bound the complete plan/run/resume command
+  --json               Emit one machine-readable outcome on stdout
+  -h, --help           Show this help
+  -v, --version        Show the SafeChange version
 `;
 
 function requiredString(value: unknown, name: string): string {
@@ -63,14 +67,23 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const json = argv.includes("--json");
   let command = "unknown";
   const abortController = new AbortController();
+  let workflowTimer: NodeJS.Timeout | undefined;
   let interruptedExitCode: number | undefined;
   const onSigint = () => {
     interruptedExitCode = 130;
-    abortController.abort(new Error("Interrupted by SIGINT"));
+    abortController.abort(
+      new SafeChangeError("INTERRUPTED", "Interrupted by SIGINT", {
+        nextAction: "Inspect the persisted boundary and resume when SafeChange reports it is safe.",
+      }),
+    );
   };
   const onSigterm = () => {
     interruptedExitCode = 143;
-    abortController.abort(new Error("Interrupted by SIGTERM"));
+    abortController.abort(
+      new SafeChangeError("INTERRUPTED", "Interrupted by SIGTERM", {
+        nextAction: "Inspect the persisted boundary and resume when SafeChange reports it is safe.",
+      }),
+    );
   };
   process.once("SIGINT", onSigint);
   process.once("SIGTERM", onSigterm);
@@ -89,6 +102,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           repo: { type: "string", default: process.cwd() },
           run: { type: "string" },
           json: { type: "boolean" },
+          model: { type: "string" },
+          timeout: { type: "string" },
         },
       });
     } catch (error) {
@@ -111,6 +126,37 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       throw usageError(`Unknown command: ${command}`);
     }
 
+    const onProgress: ProgressReporter | undefined = json
+      ? undefined
+      : (event) => process.stderr.write(formatProgress(event));
+    const modelValue = parsed.values.model;
+    const model = typeof modelValue === "string" ? modelValue.trim() || undefined : undefined;
+    if (modelValue !== undefined && !model) {
+      throw usageError("--model must not be empty");
+    }
+    if (model && command !== "plan" && command !== "run") {
+      throw usageError("--model is supported only by plan and run");
+    }
+    if (parsed.values.timeout !== undefined) {
+      if (!["plan", "run", "resume"].includes(command)) {
+        throw usageError("--timeout is supported only by plan, run, and resume");
+      }
+      const timeoutSeconds = Number(parsed.values.timeout);
+      if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 86_400) {
+        throw usageError("--timeout must be an integer from 1 to 86400 seconds");
+      }
+      workflowTimer = setTimeout(
+        () =>
+          abortController.abort(
+            new SafeChangeError("WORKFLOW_TIMEOUT", `Workflow exceeded ${timeoutSeconds} seconds`, {
+              nextAction:
+                "Inspect the persisted boundary and resume or retry with a larger timeout.",
+            }),
+          ),
+        timeoutSeconds * 1_000,
+      );
+    }
+
     const repoPath = resolve(requiredString(parsed.values.repo, "--repo"));
     if (command === "doctor") {
       const report = await runDoctor({ repoPath });
@@ -121,7 +167,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
     if (command === "resume") {
       const runId = requiredString(parsed.values.run, "--run");
-      const result = await resumeRun(repoPath, runId, abortController.signal);
+      const result = await resumeRun(repoPath, runId, abortController.signal, onProgress);
       printOutcome(result, json);
       return interruptedExitCode ?? exitCodeForOutcome(result);
     }
@@ -131,7 +177,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return exitCodeForOutcome(outcome);
     }
     const task = requiredString(parsed.values.task, "--task");
-    const testModel = process.env.SAFECHANGE_LIVE_TEST_MODEL?.trim() || undefined;
     const plannerCount = Number(parsed.values.plans);
     if (!Number.isInteger(plannerCount) || plannerCount < 1 || plannerCount > 5) {
       throw usageError("--plans must be an integer from 1 to 5");
@@ -144,14 +189,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
             plannerCount,
             parallelPlanners: true,
             signal: abortController.signal,
-            ...(testModel ? { model: testModel } : {}),
+            ...(model ? { model } : {}),
+            ...(onProgress ? { onProgress } : {}),
           })
         : await runFullWorkflow({
             repoPath,
             task,
             plannerCount,
             signal: abortController.signal,
-            ...(testModel ? { model: testModel } : {}),
+            ...(model ? { model } : {}),
+            ...(onProgress ? { onProgress } : {}),
           });
     printOutcome(result, json);
     return interruptedExitCode ?? exitCodeForOutcome(result);
@@ -172,6 +219,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     await captureFailure(errorReasonCode(error), command);
     return interruptedExitCode ?? errorExitCode(error);
   } finally {
+    if (workflowTimer) clearTimeout(workflowTimer);
     process.removeListener("SIGINT", onSigint);
     process.removeListener("SIGTERM", onSigterm);
   }

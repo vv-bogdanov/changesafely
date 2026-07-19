@@ -8,7 +8,7 @@ import {
   loadRunState,
   loadSelectedPlanArtifacts,
 } from "./artifacts.js";
-import { SafeChangeError } from "./errors.js";
+import { abortReason, SafeChangeError } from "./errors.js";
 import {
   assertProtectedConfigurationUnchanged,
   changedPaths,
@@ -18,6 +18,7 @@ import {
   hashFiles,
   inspectBaseline,
 } from "./git.js";
+import { type ProgressReporter, reportProgress } from "./progress.js";
 import { testAuthorPrompt } from "./prompts.js";
 import { isTestPath, pathWithinPrefixes } from "./repository-policy.js";
 import {
@@ -46,6 +47,7 @@ export interface HarnessOptions {
   sandboxCommands?: boolean;
   model?: string;
   signal?: AbortSignal;
+  onProgress?: ProgressReporter;
 }
 
 export interface HarnessResult {
@@ -80,6 +82,7 @@ export function diffRemovesExistingLines(diff: string): boolean {
 }
 
 export async function runHarness(options: HarnessOptions): Promise<HarnessResult> {
+  const startedAt = Date.now();
   const repoPath = resolve(options.repoPath);
   const roleEffort = options.model ? "medium" : "low";
   const state = await loadRunState(repoPath, options.runId);
@@ -101,6 +104,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     state.nextAction = "Start a new planning run from the current baseline.";
     const failedStore = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
     await failedStore.writeState(state);
+    reportProgress(options.onProgress, state.runId, state.phase, state.reason, startedAt);
     throw harnessError("BASELINE_CHANGED", state.reason, 2);
   }
 
@@ -121,6 +125,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     state.reason = error instanceof Error ? error.message : String(error);
     state.nextAction = "Move or commit pre-existing files, then start a new SafeChange run.";
     await store.writeState(state);
+    reportProgress(options.onProgress, state.runId, state.phase, state.reason, startedAt);
     throw error;
   }
   state.branch = branch;
@@ -128,6 +133,13 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   state.status = "RUNNING";
   state.nextAction = "Wait for the protected safety harness.";
   await store.writeState(state);
+  reportProgress(
+    options.onProgress,
+    state.runId,
+    state.phase,
+    "Creating and proving the protected safety harness",
+    startedAt,
+  );
 
   const client =
     options.clientFactory?.() ??
@@ -268,20 +280,35 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
         "Git HEAD does not match the recorded safety harness commit",
       );
     }
+    reportProgress(
+      options.onProgress,
+      state.runId,
+      state.phase,
+      "Safety harness committed as T1",
+      startedAt,
+    );
     return { branch, testCommit, protectedHashes, command, harness };
   } catch (error) {
+    const failure = abortReason(options.signal, error);
     state.status =
       options.sandboxCommands &&
-      error instanceof Error &&
-      /sandbox|test-failure signal/i.test(error.message)
+      failure instanceof Error &&
+      /sandbox|test-failure signal/i.test(failure.message)
         ? "BLOCKED"
         : "FAILED";
     state.phase = "test-author-failed";
-    state.reason = error instanceof Error ? error.message : String(error);
+    state.reason = failure instanceof Error ? failure.message : String(failure);
     state.nextAction =
       "Inspect the SafeChange branch and Test Author diff; no cleanup was performed.";
     await store.writeState(state);
-    throw error;
+    reportProgress(
+      options.onProgress,
+      state.runId,
+      state.phase,
+      "Safety harness stopped",
+      startedAt,
+    );
+    throw failure;
   } finally {
     await client.close();
   }

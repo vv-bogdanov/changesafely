@@ -7,8 +7,9 @@ import {
   loadRunState,
   loadSelectedPlanArtifacts,
   loadVerifiedArtifact,
+  type RunState,
 } from "./artifacts.js";
-import { SafeChangeError } from "./errors.js";
+import { abortReason, SafeChangeError } from "./errors.js";
 import {
   assertNoUntrackedFiles,
   assertProtectedConfigurationUnchanged,
@@ -19,6 +20,7 @@ import {
   diffFrom,
   hashFiles,
 } from "./git.js";
+import { type ProgressReporter, reportProgress } from "./progress.js";
 import { implementerPrompt, repairPrompt, verifierPrompt } from "./prompts.js";
 import { implementationReport } from "./report.js";
 import { isApprovalSensitivePath, pathWithinPrefixes } from "./repository-policy.js";
@@ -50,6 +52,7 @@ export interface ImplementationOptions {
   sandboxCommands?: boolean;
   model?: string;
   signal?: AbortSignal;
+  onProgress?: ProgressReporter;
 }
 
 export interface ImplementationResult {
@@ -65,6 +68,19 @@ function implementationError(code: string, message: string, exitCode: 1 | 2 = 1)
     exitCode,
     nextAction: "Inspect implementation and verification evidence before starting a new run.",
   });
+}
+
+async function canRestoreHarnessBoundary(repoPath: string, state: RunState): Promise<boolean> {
+  if (!state.testCommit || !state.branch || state.implementationCommit) return false;
+  try {
+    return (
+      (await currentCommit(repoPath)) === state.testCommit &&
+      (await currentBranch(repoPath)) === state.branch &&
+      (await changedPaths(repoPath, state.testCommit)).length === 0
+    );
+  } catch {
+    return false;
+  }
 }
 
 function projectCommands(harness: StoredHarnessArtifact, plan: DetailedPlan): string[][] {
@@ -190,6 +206,7 @@ function assertCommandsPassed(results: CommandResult[]): void {
 export async function runImplementationAndVerification(
   options: ImplementationOptions,
 ): Promise<ImplementationResult> {
+  const startedAt = Date.now();
   const repoPath = resolve(options.repoPath);
   const roleEffort = options.model ? "medium" : "low";
   const state = await loadRunState(repoPath, options.runId);
@@ -237,6 +254,13 @@ export async function runImplementationAndVerification(
   state.phase = "implementer";
   state.nextAction = "Wait for the one selected implementation.";
   await store.writeState(state);
+  reportProgress(
+    options.onProgress,
+    state.runId,
+    state.phase,
+    "Implementing the one selected plan",
+    startedAt,
+  );
   const client =
     options.clientFactory?.() ??
     new AppServerClient({ cwd: repoPath, ...(options.signal ? { signal: options.signal } : {}) });
@@ -308,6 +332,13 @@ export async function runImplementationAndVerification(
     state.artifacts.implementation = implementationStored.hash;
     state.phase = "deterministic-verification";
     await store.writeState(state);
+    reportProgress(
+      options.onProgress,
+      state.runId,
+      state.phase,
+      "Running approved deterministic commands",
+      startedAt,
+    );
 
     commandResults = await runProjectCommands(
       repoPath,
@@ -333,6 +364,13 @@ export async function runImplementationAndVerification(
       const actualDiff = await diffFrom(repoPath, state.baselineCommit);
       state.phase = role;
       await store.writeState(state);
+      reportProgress(
+        options.onProgress,
+        state.runId,
+        state.phase,
+        role === "verifier" ? "Running independent verification" : "Verifying the bounded repair",
+        startedAt,
+      );
       const verifierFork = await client.forkThread({
         threadId: contractContext.threadId,
         lastTurnId: contractContext.turnId,
@@ -388,6 +426,13 @@ export async function runImplementationAndVerification(
       state.repairCount = 1;
       state.nextAction = "Wait for the single bounded local repair.";
       await store.writeState(state);
+      reportProgress(
+        options.onProgress,
+        state.runId,
+        state.phase,
+        "Applying one bounded local repair",
+        startedAt,
+      );
 
       await assertNoUntrackedFiles(repoPath);
 
@@ -483,23 +528,56 @@ export async function runImplementationAndVerification(
         ? "The bounded repair was exhausted; inspect findings and start a new plan."
         : "Verifier findings are not safely repairable within the selected scope.";
     await store.writeState(state);
+    reportProgress(
+      options.onProgress,
+      state.runId,
+      state.phase,
+      accepted
+        ? "Independent verification accepted the change"
+        : "Verification rejected the change",
+      startedAt,
+    );
     const reportPath = await store.writeText(
       "report.md",
       implementationReport(state, decision, toCommandEvidence(commandResults), verification),
     );
     return { implementationCommit, commands: commandResults, verification, accepted, reportPath };
   } catch (error) {
+    const failure = abortReason(options.signal, error);
+    if (options.signal?.aborted && (await canRestoreHarnessBoundary(repoPath, state))) {
+      state.status = "RUNNING";
+      state.phase = "harness-complete";
+      state.contexts = state.contexts.filter((entry) => entry.status === "completed");
+      state.reason = failure instanceof Error ? failure.message : String(failure);
+      state.nextAction = "Resume the run from the unchanged T1 harness boundary.";
+      await store.writeState(state);
+      reportProgress(
+        options.onProgress,
+        state.runId,
+        state.phase,
+        "Interruption preserved the resumable T1 boundary",
+        startedAt,
+      );
+      throw failure;
+    }
     if (state.status === "RUNNING") {
       state.status =
-        options.sandboxCommands && error instanceof Error && /sandbox/i.test(error.message)
+        options.sandboxCommands && failure instanceof Error && /sandbox/i.test(failure.message)
           ? "BLOCKED"
           : "FAILED";
     }
     state.phase = "implementation-failed";
-    state.reason = error instanceof Error ? error.message : String(error);
+    state.reason = failure instanceof Error ? failure.message : String(failure);
     state.nextAction = "Inspect the branch and persisted artifacts; no cleanup was performed.";
     await store.writeState(state);
-    throw error;
+    reportProgress(
+      options.onProgress,
+      state.runId,
+      state.phase,
+      "Implementation stopped",
+      startedAt,
+    );
+    throw failure;
   } finally {
     await client.close();
   }

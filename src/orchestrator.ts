@@ -14,6 +14,7 @@ import {
 import { runHarness } from "./harness.js";
 import { runImplementationAndVerification } from "./implementation.js";
 import { createRunOutcome, type RunOutcome } from "./outcome.js";
+import { type ProgressReporter, reportProgress } from "./progress.js";
 import { implementationReport } from "./report.js";
 import { isApprovalSensitivePath } from "./repository-policy.js";
 import { resumablePhase } from "./schemas.js";
@@ -26,6 +27,7 @@ export interface FullRunOptions {
   plannerCount: number;
   model?: string;
   signal?: AbortSignal;
+  onProgress?: ProgressReporter;
 }
 
 export type FullRunResult = RunOutcome;
@@ -169,7 +171,12 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
   return state;
 }
 
-async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<FullRunResult> {
+async function finalizeVerifiedRun(
+  repoPath: string,
+  runId: string,
+  onProgress?: ProgressReporter,
+): Promise<FullRunResult> {
+  const startedAt = Date.now();
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
   state.model ??= "";
@@ -236,6 +243,7 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
     state.nextAction =
       "Review the SafeChange branch and merge it through the normal repository process.";
     await store.writeState(state);
+    reportProgress(onProgress, runId, state.phase, "Final release gate passed", startedAt);
     const reportPath = await store.writeText(
       "report.md",
       implementationReport(state, decision, verificationCommands, verification),
@@ -247,6 +255,7 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
     state.reason = error instanceof Error ? error.message : String(error);
     state.nextAction = "Inspect release gate evidence and start a new run if artifacts are stale.";
     await store.writeState(state);
+    reportProgress(onProgress, runId, state.phase, "Final release gate stopped", startedAt);
     throw error;
   }
 }
@@ -256,6 +265,7 @@ async function continueFromPlanning(
   runId: string,
   model?: string,
   signal?: AbortSignal,
+  onProgress?: ProgressReporter,
 ): Promise<FullRunResult> {
   try {
     await runHarness({
@@ -264,8 +274,9 @@ async function continueFromPlanning(
       sandboxCommands: true,
       ...(model ? { model } : {}),
       ...(signal ? { signal } : {}),
+      ...(onProgress ? { onProgress } : {}),
     });
-    return await continueFromHarness(repoPath, runId, model, signal);
+    return await continueFromHarness(repoPath, runId, model, signal, onProgress);
   } catch (error) {
     if (!(error instanceof SafeChangeError)) throw error;
     return persistedResult(repoPath, runId, undefined, error.code);
@@ -277,6 +288,7 @@ async function continueFromHarness(
   runId: string,
   model?: string,
   signal?: AbortSignal,
+  onProgress?: ProgressReporter,
 ): Promise<FullRunResult> {
   try {
     const implementation = await runImplementationAndVerification({
@@ -285,11 +297,12 @@ async function continueFromHarness(
       sandboxCommands: true,
       ...(model ? { model } : {}),
       ...(signal ? { signal } : {}),
+      ...(onProgress ? { onProgress } : {}),
     });
     if (!implementation.accepted) {
       return persistedResult(repoPath, runId, implementation.reportPath, "VERIFICATION_REJECTED");
     }
-    return await finalizeVerifiedRun(repoPath, runId);
+    return await finalizeVerifiedRun(repoPath, runId, onProgress);
   } catch (error) {
     if (!(error instanceof SafeChangeError)) throw error;
     return persistedResult(repoPath, runId, undefined, error.code);
@@ -328,12 +341,19 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
     parallelPlanners: true,
     ...(options.model ? { model: options.model } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
   if (planning.status !== "PLANNED") {
     return planning;
   }
   return withRepositoryWriteLock(repoPath, planning.runId, () =>
-    continueFromPlanning(repoPath, planning.runId, options.model, options.signal),
+    continueFromPlanning(
+      repoPath,
+      planning.runId,
+      options.model,
+      options.signal,
+      options.onProgress,
+    ),
   );
 }
 
@@ -341,6 +361,7 @@ export async function resumeRun(
   repoPathInput: string,
   runId: string,
   signal?: AbortSignal,
+  onProgress?: ProgressReporter,
 ): Promise<FullRunResult> {
   const repoPath = resolve(repoPathInput);
   return withRepositoryWriteLock(repoPath, runId, async () => {
@@ -348,14 +369,14 @@ export async function resumeRun(
     const model = state.model || undefined;
     const boundary = resumablePhase(state);
     if (boundary === "planning-complete") {
-      return continueFromPlanning(repoPath, runId, model, signal);
+      return continueFromPlanning(repoPath, runId, model, signal, onProgress);
     }
     if (boundary === "harness-complete") {
-      return continueFromHarness(repoPath, runId, model, signal);
+      return continueFromHarness(repoPath, runId, model, signal, onProgress);
     }
     if (boundary === "verification-complete") {
       try {
-        return await finalizeVerifiedRun(repoPath, runId);
+        return await finalizeVerifiedRun(repoPath, runId, onProgress);
       } catch (error) {
         if (!(error instanceof SafeChangeError)) throw error;
         return persistedResult(repoPath, runId, undefined, error.code);

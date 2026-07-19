@@ -89,7 +89,10 @@ function parseJson(content: string, description: string): unknown {
   try {
     return JSON.parse(content);
   } catch {
-    throw new Error(`Invalid JSON in ${description}`);
+    throw new SafeChangeError("INVALID_PERSISTED_JSON", `Invalid JSON in ${description}`, {
+      exitCode: 2,
+      nextAction: "Inspect the damaged run data and start a new SafeChange run.",
+    });
   }
 }
 

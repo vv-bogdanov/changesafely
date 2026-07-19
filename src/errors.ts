@@ -35,3 +35,7 @@ export function errorNextAction(error: unknown): string {
 export function errorExitCode(error: unknown): SafeChangeExitCode {
   return error instanceof SafeChangeError ? error.exitCode : 1;
 }
+
+export function abortReason(signal: AbortSignal | undefined, fallback: unknown): unknown {
+  return signal?.aborted ? signal.reason : fallback;
+}
