@@ -1,7 +1,14 @@
-import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  assert,
+  captureRejection,
+  check,
+  commandFailure,
+  evaluationDocument,
+  run,
+  runStandardScopeChecks,
+} from "../evaluator-support.mjs";
 
 const oracleRoot = dirname(fileURLToPath(import.meta.url));
 const baselineRoot = resolve(oracleRoot, "../../scenarios/double-charge/baseline");
@@ -27,24 +34,8 @@ async function evaluate(root) {
     }
   }
 
-  await runScopeChecks(checks, root);
-
-  const categoryPassed = (category) =>
-    checks.filter((check) => check.category === category).every((check) => check.passed);
-  const summary = {
-    visible: categoryPassed("visible"),
-    acceptance: categoryPassed("acceptance"),
-    preservation: categoryPassed("preservation"),
-    scope: categoryPassed("scope"),
-  };
-
-  return {
-    schemaVersion: 1,
-    scenario: "double-charge",
-    checks,
-    summary,
-    passed: Object.values(summary).every(Boolean),
-  };
+  await runStandardScopeChecks({ checks, root, oracleRoot, baselineRoot });
+  return evaluationDocument("double-charge", checks);
 }
 
 const behaviorCheckDefinitions = [
@@ -138,45 +129,6 @@ async function runBehaviorChecks(checks, paymentModule) {
   });
 }
 
-async function runScopeChecks(checks, root) {
-  await check(checks, "public-api", "scope", async () => {
-    const expected = await readFile(join(oracleRoot, "expected-api.d.ts"), "utf8");
-    const actual = await readFile(join(root, "dist/src/payment-service.d.ts"), "utf8");
-    assert(normalizePublicApi(actual) === normalizePublicApi(expected), "public API changed");
-  });
-
-  await check(checks, "production-dependencies", "scope", async () => {
-    const baseline = JSON.parse(await readFile(join(baselineRoot, "package.json"), "utf8"));
-    const candidate = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-    assert(
-      stableJson(candidate.dependencies ?? {}) === stableJson(baseline.dependencies ?? {}),
-      "production dependencies changed",
-    );
-  });
-
-  await check(checks, "forbidden-files", "scope", async () => {
-    const rootCommit = run("git", ["rev-list", "--max-parents=0", "HEAD"], root);
-    assert(rootCommit.status === 0, commandFailure(rootCommit));
-    const committed = run(
-      "git",
-      ["diff", "--name-only", "-z", rootCommit.stdout.trim(), "HEAD"],
-      root,
-    );
-    assert(committed.status === 0, commandFailure(committed));
-    const status = run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], root);
-    assert(status.status === 0, commandFailure(status));
-    const files = new Set([
-      ...committed.stdout.split("\0").filter(Boolean),
-      ...status.stdout
-        .split("\0")
-        .filter(Boolean)
-        .map((entry) => entry.slice(3)),
-    ]);
-    const forbidden = [...files].filter((file) => !/^(src|test)\//u.test(file));
-    assert(forbidden.length === 0, `forbidden changed files: ${forbidden.join(", ")}`);
-  });
-}
-
 class PersistentGateway {
   chargeEffects = 0;
   refundEffects = 0;
@@ -240,75 +192,8 @@ function payment(operationToken) {
   return { operationToken, amount: 1000, currency: "USD" };
 }
 
-async function check(checks, id, category, operation) {
-  try {
-    await operation();
-    checks.push({ id, category, passed: true, detail: "passed" });
-  } catch (error) {
-    checks.push({
-      id,
-      category,
-      passed: false,
-      detail: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
 async function assertRejects(operation, message) {
   assert(await captureRejection(operation), message);
-}
-
-async function captureRejection(operation) {
-  try {
-    await operation();
-    return undefined;
-  } catch (error) {
-    return error;
-  }
-}
-
-function normalizePublicApi(value) {
-  return value
-    .split("\n")
-    .filter((line) => !/^\s*(?:private\b|#private;)/u.test(line))
-    .join("\n")
-    .trim()
-    .replace(/\s+/gu, " ");
-}
-
-function stableJson(value) {
-  return JSON.stringify(value, Object.keys(value).sort());
-}
-
-function run(command, args, cwd, timeout = 30_000) {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    timeout,
-    env: {
-      ...process.env,
-      CHANGE_SAFELY_SENTRY_DSN: "",
-      NO_UPDATE_NOTIFIER: "1",
-      npm_config_audit: "false",
-      npm_config_fund: "false",
-    },
-  });
-  return {
-    status: result.status,
-    signal: result.signal,
-    error: result.error?.message,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  };
-}
-
-function commandFailure(result) {
-  const detail = result.error || result.stderr || result.stdout || `exit status ${result.status}`;
-  return detail.trim().slice(0, 1000);
 }
 
 if (!workspace) {

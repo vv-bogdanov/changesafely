@@ -43,6 +43,7 @@ Validate the fixture and prove the Linux permission boundary without a model cal
 
 ```sh
 npm run benchmark -- validate --scenario double-charge
+npm run benchmark -- validate --scenario tenant-leak
 npm run benchmark -- canary --scenario double-charge
 ```
 
@@ -53,6 +54,9 @@ until the matching Direct attempt exists, and refuses a second attempt in either
 npm run benchmark -- run --scenario double-charge --mode direct --model gpt-5.3-codex-spark
 npm run benchmark -- run --scenario double-charge --mode changesafely --model gpt-5.3-codex-spark
 ```
+
+Tenant Leak uses the same commands with `--scenario tenant-leak` after its deterministic
+validator passes.
 
 Evaluate candidate-added tests against the reference and declared mutants, then replay
 only the persisted hash-verified evidence and generate the paired report:

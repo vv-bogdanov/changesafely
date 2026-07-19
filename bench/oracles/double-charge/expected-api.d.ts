@@ -1,3 +1,4 @@
+// source: payment-service.d.ts
 export type Currency = "EUR" | "USD";
 export interface PaymentRequest {
   amount: number;

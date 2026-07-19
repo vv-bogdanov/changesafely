@@ -1,0 +1,14 @@
+{
+  "mutants": [
+    {
+      "id": "user-only-key",
+      "patch": "user-only-key.patch",
+      "expectedFailures": ["tenant-isolation", "cross-instance-isolation"]
+    },
+    {
+      "id": "stale-positive",
+      "patch": "stale-positive.patch",
+      "expectedFailures": ["revocation"]
+    }
+  ]
+}

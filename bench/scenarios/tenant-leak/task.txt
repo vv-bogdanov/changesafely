@@ -1,0 +1,2 @@
+Cache authorization checks to reduce database load.
+Do not change the public authorization API.

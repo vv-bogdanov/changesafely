@@ -22,9 +22,9 @@ const SPARK_MODEL = "gpt-5.3-codex-spark";
 const help = `ChangeSafely Risk Suite
 
 Usage:
-  npm run benchmark -- run --scenario double-charge --mode direct|changesafely --model ${SPARK_MODEL}
-  npm run benchmark -- validate --scenario double-charge
-  npm run benchmark -- canary --scenario double-charge
+  npm run benchmark -- run --scenario <id> --mode direct|changesafely --model ${SPARK_MODEL}
+  npm run benchmark -- validate --scenario double-charge|tenant-leak
+  npm run benchmark -- canary --scenario <id>
   npm run benchmark -- evaluate --run <run-id> [--results <path>]
   npm run benchmark -- replay --run <run-id> [--results <path>]
   npm run benchmark -- report [--results <path>]

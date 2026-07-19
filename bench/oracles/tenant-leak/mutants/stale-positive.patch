@@ -1,0 +1,25 @@
+diff --git a/src/authorization-service.ts b/src/authorization-service.ts
+--- a/src/authorization-service.ts
++++ b/src/authorization-service.ts
+@@ -33,10 +33,19 @@ export class AuthorizationService {
+   async authorize(request: AuthorizationRequest): Promise<boolean> {
+     if (!request.tenantId.trim() || !request.userId.trim()) return false;
+     const subject = { tenantId: request.tenantId, userId: request.userId };
+     try {
+-      await this.backend.version(subject);
++      const cacheKey = JSON.stringify([request.tenantId, request.userId]);
++      const cached = await this.cache.get(cacheKey);
++      if (cached) return cached.permissions.includes(request.permission);
++
++      const version = await this.backend.version(subject);
+       const permissions = await this.backend.loadPermissions(subject);
+-      return permissions.includes(request.permission);
++      const snapshot: AuthorizationSnapshot = {
++        version,
++        permissions: [...permissions],
++      };
++      await this.cache.set(cacheKey, snapshot);
++      return snapshot.permissions.includes(request.permission);
+     } catch {
+       return false;
+     }
