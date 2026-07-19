@@ -49,7 +49,7 @@ export interface RunCaseCard {
   outcome: VerifiedEvidence["run"]["outcome"];
   productStatus?: string;
   evidenceManifestSha256: string;
-  analysisSha256: string;
+  analysisSha256: string | null;
   safeTaskSuccess: boolean;
   unsafeGreen: boolean;
   scopeDiscipline: boolean | null;
@@ -57,10 +57,10 @@ export interface RunCaseCard {
   turns: number | null;
   tokens: TokenMetrics;
   analytics: RunAnalytics | null;
-  diff: DiffSummary;
-  candidateTests: AnalysisDocument["candidateTests"];
-  mutation: AnalysisDocument["mutation"];
-  protectedTests: AnalysisDocument["protectedTests"];
+  diff: DiffSummary | null;
+  candidateTests: AnalysisDocument["candidateTests"] | null;
+  mutation: AnalysisDocument["mutation"] | null;
+  protectedTests: AnalysisDocument["protectedTests"] | null;
 }
 
 export interface BenchmarkReport {
@@ -89,7 +89,7 @@ export async function replayBenchmarkRun(resultsRoot: string, runId: string) {
     manifest: evidence.manifest,
     analysis: analysis?.document ?? null,
     analysisManifest: analysis?.manifest ?? null,
-    caseCard: analysis ? await buildRunCaseCard(evidence, analysis) : null,
+    caseCard: await buildRunCaseCard(evidence, analysis),
   } as const;
 }
 
@@ -117,11 +117,6 @@ export async function buildBenchmarkReport(resultsRoot: string): Promise<Benchma
         evidence.run.runId,
         evidence,
       );
-      if (!analysis) {
-        throw new Error(
-          `Missing analysis for ${evidence.run.runId}; run benchmark evaluate --run ${evidence.run.runId}`,
-        );
-      }
       runs.push(await buildRunCaseCard(evidence, analysis));
     }
     comparisons.push({
@@ -175,7 +170,7 @@ export async function writeBenchmarkReport(resultsRoot: string, report: Benchmar
 
 async function buildRunCaseCard(
   evidence: VerifiedEvidence,
-  analysis: VerifiedAnalysis,
+  analysis?: VerifiedAnalysis,
 ): Promise<RunCaseCard> {
   const evaluation = await readEvaluation(evidence);
   const analytics = await readRunAnalytics(evidence);
@@ -186,7 +181,7 @@ async function buildRunCaseCard(
     outcome: evidence.run.outcome,
     ...(productStatus ? { productStatus } : {}),
     evidenceManifestSha256: evidence.manifestSha256,
-    analysisSha256: analysis.manifest.analysisSha256,
+    analysisSha256: analysis?.manifest.analysisSha256 ?? null,
     safeTaskSuccess: evidence.run.outcome === "safe_success",
     unsafeGreen: evidence.run.outcome === "unsafe_green",
     scopeDiscipline: evaluation?.summary.scope ?? null,
@@ -203,10 +198,10 @@ async function buildRunCaseCard(
         reasoningTokens: evidence.run.usage.reasoningTokens,
       }),
     analytics,
-    diff: await diffSummary(evidence, analysis.document.candidateTests.paths),
-    candidateTests: analysis.document.candidateTests,
-    mutation: analysis.document.mutation,
-    protectedTests: analysis.document.protectedTests,
+    diff: analysis ? await diffSummary(evidence, analysis.document.candidateTests.paths) : null,
+    candidateTests: analysis?.document.candidateTests ?? null,
+    mutation: analysis?.document.mutation ?? null,
+    protectedTests: analysis?.document.protectedTests ?? null,
   };
 }
 
@@ -241,7 +236,7 @@ function renderMarkdownReport(report: BenchmarkReport): string {
     );
     for (const run of comparison.runs) {
       lines.push(
-        `| ${run.mode} | ${run.outcome} | ${yesNo(run.safeTaskSuccess)} | ${yesNo(run.scopeDiscipline)} | ${mutationLabel(run)} | ${run.wallTimeMs} ms | ${run.turns ?? "n/a"} | ${tokenLabel(run.tokens.totalTokens)} (${tokenLabel(run.tokens.cachedInputTokens)}) | +${run.diff.additions}/-${run.diff.deletions} |`,
+        `| ${run.mode} | ${run.outcome} | ${yesNo(run.safeTaskSuccess)} | ${yesNo(run.scopeDiscipline)} | ${mutationLabel(run)} | ${run.wallTimeMs} ms | ${run.turns ?? "n/a"} | ${tokenLabel(run.tokens.totalTokens)} (${tokenLabel(run.tokens.cachedInputTokens)}) | ${diffLabel(run.diff)} |`,
       );
     }
     lines.push("");
@@ -249,9 +244,17 @@ function renderMarkdownReport(report: BenchmarkReport): string {
       lines.push(
         `### ${run.mode}: ${run.runId}`,
         "",
-        `- Candidate tests: ${fileCount(run.candidateTests.paths.length)}, +${run.candidateTests.additions}/-${run.candidateTests.deletions}`,
-        `- Production diff: ${fileCount(run.diff.productionFiles)}, +${run.diff.productionAdditions}`,
-        `- Protected tests: ${run.protectedTests.detail}`,
+        ...(run.candidateTests
+          ? [
+              `- Candidate tests: ${fileCount(run.candidateTests.paths.length)}, +${run.candidateTests.additions}/-${run.candidateTests.deletions}`,
+            ]
+          : ["- Candidate tests: n/a (analysis not available)"]),
+        ...(run.diff
+          ? [
+              `- Production diff: ${fileCount(run.diff.productionFiles)}, +${run.diff.productionAdditions}`,
+            ]
+          : ["- Production diff: n/a (analysis not available)"]),
+        `- Protected tests: ${run.protectedTests?.detail ?? "n/a (analysis not available)"}`,
         ...(run.productStatus
           ? [`- Product status: \`${escapeMarkdown(run.productStatus)}\``]
           : []),
@@ -264,7 +267,7 @@ function renderMarkdownReport(report: BenchmarkReport): string {
             ]
           : []),
         `- Evidence manifest: \`${run.evidenceManifestSha256}\``,
-        `- Analysis: \`${run.analysisSha256}\``,
+        `- Analysis: ${run.analysisSha256 ? `\`${run.analysisSha256}\`` : "n/a"}`,
         "",
       );
       if (run.analytics) {
@@ -396,9 +399,13 @@ function yesNo(value: boolean | null): string {
 }
 
 function mutationLabel(run: RunCaseCard): string {
-  return run.mutation.killRate === null
+  return !run.mutation || run.mutation.killRate === null
     ? "n/a"
     : `${run.mutation.killed}/${run.mutation.total} (${Math.round(run.mutation.killRate * 100)}%)`;
+}
+
+function diffLabel(diff: DiffSummary | null): string {
+  return diff ? `+${diff.additions}/-${diff.deletions}` : "n/a";
 }
 
 function escapeMarkdown(value: string): string {

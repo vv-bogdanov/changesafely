@@ -11,7 +11,7 @@ import {
   loadAnalysisPackage,
 } from "../bench/src/analysis.js";
 import { createEvidencePackage } from "../bench/src/evidence.js";
-import type { RunCaseCard } from "../bench/src/report.js";
+import { buildBenchmarkReport, type RunCaseCard, replayBenchmarkRun } from "../bench/src/report.js";
 import {
   materializeAttempt,
   scenarioDefinition,
@@ -137,10 +137,10 @@ test("evaluates candidate tests against reference and mutants, then replays one 
     resultsRoot,
   ]);
   assert.equal(replay.verified, true);
-  assert.equal(replay.caseCard?.mutation.killRate, 1 / 3);
+  assert.equal(replay.caseCard?.mutation?.killRate, 1 / 3);
   assert.equal(replay.caseCard?.productStatus, "FAILED");
-  assert.ok((replay.caseCard?.diff.testAdditions ?? 0) > 0);
-  assert.equal(replay.caseCard?.diff.productionFiles, 0);
+  assert.ok((replay.caseCard?.diff?.testAdditions ?? 0) > 0);
+  assert.equal(replay.caseCard?.diff?.productionFiles, 0);
 
   const reportOutput = await benchmarkCli<{ jsonPath: string; markdownPath: string }>([
     "report",
@@ -164,6 +164,28 @@ test("evaluates candidate tests against reference and mutants, then replays one 
     loadAnalysisPackage(resultsRoot, run.runId, evidence),
     /analysis document|hash/u,
   );
+});
+
+test("reports verified attempts whose versioned mutation analysis is unavailable", async (t) => {
+  const resultsRoot = await mkdtemp(join(tmpdir(), "changesafely-unanalysed-report-"));
+  t.after(async () => rm(resultsRoot, { recursive: true, force: true }));
+  const run = benchmarkRunDocument("unanalysed-run", { outcome: "technical_failure" });
+  await createEvidencePackage(resultsRoot, run, {
+    "comparison.json": benchmarkComparisonContent(run),
+    "diff.patch": "",
+    "events.jsonl": '{"type":"synthetic"}\n',
+  });
+
+  const replay = await replayBenchmarkRun(resultsRoot, run.runId);
+  assert.equal(replay.verified, true);
+  assert.equal(replay.analysis, null);
+  assert.equal(replay.caseCard.analysisSha256, null);
+  assert.equal(replay.caseCard.mutation, null);
+  assert.equal(replay.caseCard.diff, null);
+
+  const report = await buildBenchmarkReport(resultsRoot);
+  assert.equal(report.comparisons[0]?.runs[0]?.outcome, "technical_failure");
+  assert.equal(report.comparisons[0]?.runs[0]?.candidateTests, null);
 });
 
 async function benchmarkCli<Value>(args: string[]): Promise<Value> {
