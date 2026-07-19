@@ -43,6 +43,37 @@ function completeTurn({ threadId, turnId, text }: PendingCompletion): void {
       },
     },
   });
+  if (mode === "malformed-token-usage") {
+    send({
+      method: "thread/tokenUsage/updated",
+      params: { threadId, turnId, tokenUsage: { total: { inputTokens: "invalid" } } },
+    });
+    return;
+  }
+  send({
+    method: "thread/tokenUsage/updated",
+    params: {
+      threadId,
+      turnId,
+      tokenUsage: {
+        total: {
+          totalTokens: turnNumber * 100,
+          inputTokens: turnNumber * 70,
+          cachedInputTokens: turnNumber * 20,
+          outputTokens: turnNumber * 30,
+          reasoningOutputTokens: turnNumber * 10,
+        },
+        last: {
+          totalTokens: 100,
+          inputTokens: 70,
+          cachedInputTokens: 20,
+          outputTokens: 30,
+          reasoningOutputTokens: 10,
+        },
+        modelContextWindow: 200000,
+      },
+    },
+  });
   send({
     method: "turn/completed",
     params: {

@@ -33,6 +33,7 @@ import type { ThreadResumeParams } from "./generated/types/v2/ThreadResumeParams
 import type { ThreadResumeResponse } from "./generated/types/v2/ThreadResumeResponse.js";
 import type { ThreadStartParams } from "./generated/types/v2/ThreadStartParams.js";
 import type { ThreadStartResponse } from "./generated/types/v2/ThreadStartResponse.js";
+import type { ThreadTokenUsageUpdatedNotification } from "./generated/types/v2/ThreadTokenUsageUpdatedNotification.js";
 import type { TurnCompletedNotification } from "./generated/types/v2/TurnCompletedNotification.js";
 import type { TurnInterruptParams } from "./generated/types/v2/TurnInterruptParams.js";
 import type { TurnStartParams } from "./generated/types/v2/TurnStartParams.js";
@@ -202,6 +203,41 @@ function validateTurnCompleted(value: unknown): TurnCompletedNotification | unde
   return value as unknown as TurnCompletedNotification;
 }
 
+function validateTokenUsage(value: unknown): ThreadTokenUsageUpdatedNotification | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.threadId !== "string" ||
+    typeof value.turnId !== "string" ||
+    !isRecord(value.tokenUsage) ||
+    !validTokenBreakdown(value.tokenUsage.total) ||
+    !validTokenBreakdown(value.tokenUsage.last) ||
+    !(
+      value.tokenUsage.modelContextWindow === null ||
+      validNonnegativeInteger(value.tokenUsage.modelContextWindow)
+    )
+  ) {
+    return undefined;
+  }
+  return value as unknown as ThreadTokenUsageUpdatedNotification;
+}
+
+function validTokenBreakdown(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    [
+      value.totalTokens,
+      value.inputTokens,
+      value.cachedInputTokens,
+      value.outputTokens,
+      value.reasoningOutputTokens,
+    ].every(validNonnegativeInteger)
+  );
+}
+
+function validNonnegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 export class AppServerClient {
   private process: ChildProcessWithoutNullStreams | undefined;
   private lines: Interface | undefined;
@@ -226,6 +262,9 @@ export class AppServerClient {
     );
     server.addMethod("turn/completed", (params) =>
       this.handleNotification("turn/completed", params),
+    );
+    server.addMethod("thread/tokenUsage/updated", (params) =>
+      this.handleNotification("thread/tokenUsage/updated", params),
     );
     const client = new JSONRPCClient((message) => this.write(withoutVersion(message)));
     this.rpc = new JSONRPCServerAndClient(server, client, {
@@ -580,6 +619,31 @@ export class AppServerClient {
   }
 
   private handleNotification(method: string, value: unknown): void {
+    if (method === "thread/tokenUsage/updated") {
+      const params = validateTokenUsage(value);
+      if (!params) {
+        this.failProtocol(
+          "Invalid thread/tokenUsage/updated notification from App Server",
+          contentEvidence(JSON.stringify(value)),
+        );
+        return;
+      }
+      const total = params.tokenUsage.total;
+      void this.trace?.append({
+        component: "app-server",
+        event: "token.usage",
+        status: "info",
+        threadId: params.threadId,
+        turnId: params.turnId,
+        totalTokens: total.totalTokens,
+        inputTokens: total.inputTokens,
+        cachedInputTokens: total.cachedInputTokens,
+        outputTokens: total.outputTokens,
+        reasoningTokens: total.reasoningOutputTokens,
+      });
+      return;
+    }
+
     if (method === "item/completed") {
       const params = validateItemCompleted(value);
       if (!params) {

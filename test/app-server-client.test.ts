@@ -117,6 +117,43 @@ test("fails closed on a malformed App Server notification without persisting its
   });
 });
 
+test("persists allowlisted cumulative token usage without raw RPC data", async (t) => {
+  await withTracedFakeClient(t, "default", async (client, trace) => {
+    const thread = await startReadOnlyThread(client);
+    await client.runTurn(thread.thread.id, "Return the smoke artifact.", {
+      cwd: process.cwd(),
+      sandboxPolicy: { type: "readOnly", networkAccess: false },
+      outputSchema: smokeArtifactSchema,
+    });
+    const document = await loadTrace(trace.repoPath, trace.runId);
+    const usage = document.events.find((event) => event.event === "token.usage");
+    assert.equal(usage?.totalTokens, 100);
+    assert.equal(usage?.inputTokens, 70);
+    assert.equal(usage?.cachedInputTokens, 20);
+    assert.equal(usage?.outputTokens, 30);
+    assert.equal(usage?.reasoningTokens, 10);
+    assert.doesNotMatch(await readFile(document.tracePath, "utf8"), /modelContextWindow/u);
+  });
+});
+
+test("fails closed on malformed token usage without persisting its body", async (t) => {
+  await withTracedFakeClient(t, "malformed-token-usage", async (client, trace) => {
+    const thread = await startReadOnlyThread(client);
+    await assert.rejects(
+      client.runTurn(thread.thread.id, "Return the smoke artifact.", {
+        cwd: process.cwd(),
+        sandboxPolicy: { type: "readOnly", networkAccess: false },
+        outputSchema: smokeArtifactSchema,
+      }),
+      /Invalid thread\/tokenUsage\/updated notification/u,
+    );
+    const document = await loadTrace(trace.repoPath, trace.runId);
+    const failure = document.events.find((event) => event.event === "protocol.message");
+    assert.equal(failure?.status, "failed");
+    assert.doesNotMatch(await readFile(document.tracePath, "utf8"), /inputTokens.*invalid/u);
+  });
+});
+
 test("fails closed on a malformed App Server error response", async () => {
   await withFakeClient("malformed-error", async (client) => {
     await assert.rejects(client.start(), /Invalid error response from App Server/);

@@ -72,6 +72,11 @@ const traceEventSchema = Type.Object(
     payloadBytes: Type.Optional(Type.Integer({ minimum: 0 })),
     payloadSha256: Type.Optional(Type.String({ pattern: SHA256_PATTERN })),
     runtimeVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+    totalTokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    inputTokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    cachedInputTokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    outputTokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    reasoningTokens: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: false },
 );
@@ -158,6 +163,11 @@ export interface TraceEvent {
   payloadBytes?: number;
   payloadSha256?: string;
   runtimeVersion?: string;
+  totalTokens?: number;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
 }
 
 export type TraceEventInput = Omit<TraceEvent, "traceVersion" | "seq" | "timestamp" | "runId">;
