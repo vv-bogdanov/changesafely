@@ -103,6 +103,7 @@ export function formatJsonOutcome(outcome: RunOutcome | CliErrorOutcome): string
 }
 
 export function exitCodeForOutcome(outcome: RunOutcome): 0 | 1 | 2 {
-  if (outcome.status === "PLANNED" || outcome.status === "VERIFIED") return 0;
+  if (outcome.status === "PLANNED") return outcome.reasonCode === "PLANNED" ? 0 : 2;
+  if (outcome.status === "VERIFIED") return 0;
   return outcome.status === "FAILED" ? 1 : 2;
 }

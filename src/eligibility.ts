@@ -1,4 +1,4 @@
-import { pathWithinPrefixes } from "./repository-policy.js";
+import { isTestPath, pathWithinPrefixes } from "./repository-policy.js";
 import { isSafetyTestCommand } from "./runner.js";
 import type { ChangeContract, DetailedPlan, PlanEligibility } from "./schemas.js";
 
@@ -59,6 +59,16 @@ export function evaluatePlan(contract: ChangeContract, plan: DetailedPlan): Plan
     failures.push({
       code: "MISSING_VERIFICATION_STRATEGY",
       message: "Plan requires safety tests and deterministic verification commands",
+    });
+  }
+  const plannedPaths = new Set([
+    ...plan.files.map((file) => file.path),
+    ...plan.steps.flatMap((step) => step.paths),
+  ]);
+  if (![...plannedPaths].some(isTestPath)) {
+    failures.push({
+      code: "MISSING_TEST_PATH",
+      message: "Plan does not declare a repository test path for the safety harness",
     });
   }
   const invalidSafetyCommands = plan.safetyTests.filter((test) => !isSafetyTestCommand(test.argv));

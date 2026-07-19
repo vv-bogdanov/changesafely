@@ -46,6 +46,19 @@ test("rejects a safety check that does not execute tests", () => {
   );
 });
 
+test("rejects a plan without a declared safety harness path", () => {
+  const result = evaluatePlan(contract, {
+    ...plan,
+    files: [{ path: "src/value.ts", purpose: "Implementation" }],
+    steps: [{ id: "S1", description: "Implement the behavior.", paths: ["src/value.ts"] }],
+  });
+  assert.equal(result.eligible, false);
+  assert.deepEqual(
+    result.failures.map((failure) => failure.code),
+    ["MISSING_TEST_PATH"],
+  );
+});
+
 test("rejects a direct source test command outside the npm MVP contract", () => {
   const result = evaluatePlan(contract, {
     ...plan,

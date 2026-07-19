@@ -58,4 +58,8 @@ test("maps every persisted status to a stable terminal exit code", () => {
   for (const [status, exitCode] of Object.entries(expected) as Array<[RunStatus, 0 | 1 | 2]>) {
     assert.equal(exitCodeForOutcome(outcome(status)), exitCode, status);
   }
+  assert.equal(
+    exitCodeForOutcome({ ...outcome("PLANNED"), reasonCode: "HARNESS_PLAN_INVALID" }),
+    2,
+  );
 });
