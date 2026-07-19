@@ -49,9 +49,10 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.deepEqual(snapshot.changedFiles, ["src/candidate.ts"]);
   assert.match(snapshot.diff, /candidate = true/u);
   assert.doesNotMatch(snapshot.diff, /ignored\.js/u);
+  assert.equal(scenario.version, 2);
   assert.throws(
-    () => scenarioDefinition(benchRoot, "double-charge", 2),
-    /scenario double-charge v2 is unavailable/u,
+    () => scenarioDefinition(benchRoot, "double-charge", 3),
+    /scenario double-charge v3 is unavailable/u,
   );
 });
 

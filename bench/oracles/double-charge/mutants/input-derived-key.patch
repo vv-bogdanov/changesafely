@@ -1,0 +1,11 @@
+diff --git a/src/payment-service.ts b/src/payment-service.ts
+--- a/src/payment-service.ts
++++ b/src/payment-service.ts
+@@ -67,6 +67,7 @@ export class PaymentService {
+     const receipt = await this.gateway.charge({
+       amount: input.amount,
+       currency: input.currency,
++      idempotencyKey: `${input.operationToken}:${input.amount}:${input.currency}`,
+     });
+     await this.store.save({ ...input, receipt });
+     return receipt;

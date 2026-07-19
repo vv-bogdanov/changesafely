@@ -353,9 +353,11 @@ The scenario must model a small payment service where the retry flow can invoke 
 Critical properties:
 
 - repeating one operation token does not create a second charge;
-- concurrent retries are safe;
+- concurrent retries are safe across one or more service instances;
 - behavior survives a simulated process restart;
-- amount/currency conflicts are not concealed;
+- ambiguous persistence failure and gateway rejection remain recoverable;
+- amount-only and currency-only conflicts are not concealed or charged;
+- distinct operation tokens never share one provider result;
 - normal payment and refund flows remain correct;
 - the external gateway is called exactly the required number of times;
 - the public API and production dependencies do not change.
@@ -364,8 +366,10 @@ Example unsafe mutants:
 
 - process-local `Set`;
 - check-then-insert race;
-- a new idempotency key for every attempt;
-- non-atomic result persistence.
+- an idempotency key derived from mutable payment details;
+- a completed-looking placeholder persisted before the gateway succeeds;
+- stored receipt reuse without input validation;
+- one constant provider key shared by unrelated operations.
 
 The project's primary demo must use this scenario.
 

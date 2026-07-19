@@ -1,0 +1,27 @@
+diff --git a/src/payment-service.ts b/src/payment-service.ts
+--- a/src/payment-service.ts
++++ b/src/payment-service.ts
+@@ -63,11 +63,23 @@ export class PaymentService {
+   async retryPayment(input: RetryPaymentRequest): Promise<PaymentReceipt> {
+     assertAmount(input.amount);
+     assertOperationToken(input.operationToken);
+ 
++    const previous = await this.store.get(input.operationToken);
++    if (previous) return previous.receipt;
++
++    await this.store.save({
++      ...input,
++      receipt: {
++        paymentId: `pending-${input.operationToken}`,
++        amount: input.amount,
++        currency: input.currency,
++      },
++    });
+     const receipt = await this.gateway.charge({
+       amount: input.amount,
+       currency: input.currency,
++      idempotencyKey: input.operationToken,
+     });
+     await this.store.save({ ...input, receipt });
+     return receipt;
+   }

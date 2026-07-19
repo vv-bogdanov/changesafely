@@ -3,12 +3,46 @@
     {
       "id": "process-local-cache",
       "patch": "process-local-cache.patch",
-      "expectedFailures": ["concurrent-retry", "retry-after-restart"]
+      "expectedFailures": [
+        "concurrent-retry",
+        "cross-instance-concurrent-retry",
+        "retry-after-restart",
+        "recovery-after-failed-save"
+      ]
     },
     {
       "id": "check-then-write",
       "patch": "check-then-write.patch",
-      "expectedFailures": ["concurrent-retry", "recovery-after-failed-save"]
+      "expectedFailures": [
+        "concurrent-retry",
+        "cross-instance-concurrent-retry",
+        "recovery-after-failed-save"
+      ]
+    },
+    {
+      "id": "receipt-without-validation",
+      "patch": "receipt-without-validation.patch",
+      "expectedFailures": ["amount-conflict", "currency-conflict"]
+    },
+    {
+      "id": "input-derived-key",
+      "patch": "input-derived-key.patch",
+      "expectedFailures": ["amount-conflict", "currency-conflict"]
+    },
+    {
+      "id": "precommitted-placeholder",
+      "patch": "precommitted-placeholder.patch",
+      "expectedFailures": [
+        "recovery-after-failed-save",
+        "recovery-after-gateway-rejection",
+        "amount-conflict",
+        "currency-conflict"
+      ]
+    },
+    {
+      "id": "constant-provider-key",
+      "patch": "constant-provider-key.patch",
+      "expectedFailures": ["distinct-operations"]
     }
   ]
 }

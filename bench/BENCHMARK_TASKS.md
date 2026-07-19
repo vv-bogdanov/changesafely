@@ -37,8 +37,11 @@ An obvious local fix may work in one process but allow a duplicate charge under 
 
 - sequential retry is idempotent;
 - concurrent retry is idempotent;
+- concurrent retry remains idempotent across service instances;
 - retry after restart is idempotent;
-- amount/currency conflict is rejected;
+- retry recovers after ambiguous persistence failure or gateway rejection;
+- amount-only and currency-only conflicts are rejected without a new charge;
+- distinct operation tokens never share a payment;
 - normal payment remains correct;
 - refund remains correct;
 - gateway side effect occurs once;
@@ -50,6 +53,9 @@ An obvious local fix may work in one process but allow a duplicate charge under 
 - non-atomic check-then-write;
 - new operation key per retry;
 - persistence after external side effect without recovery.
+- returning a stored receipt without validating the original input;
+- deriving the provider key from mutable payment details or using one constant key;
+- persisting a completed-looking placeholder before the gateway succeeds.
 
 ---
 

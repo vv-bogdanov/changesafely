@@ -41,9 +41,13 @@ async function evaluate(root) {
 const behaviorCheckDefinitions = [
   ["sequential-retry", "acceptance"],
   ["concurrent-retry", "acceptance"],
+  ["cross-instance-concurrent-retry", "acceptance"],
   ["retry-after-restart", "acceptance"],
   ["recovery-after-failed-save", "acceptance"],
-  ["amount-currency-conflict", "acceptance"],
+  ["recovery-after-gateway-rejection", "acceptance"],
+  ["amount-conflict", "acceptance"],
+  ["currency-conflict", "acceptance"],
+  ["distinct-operations", "acceptance"],
   ["normal-payment", "preservation"],
   ["refund", "preservation"],
 ];
@@ -74,6 +78,19 @@ async function runBehaviorChecks(checks, paymentModule) {
     assert(gateway.chargeEffects === 1, `expected 1 charge effect, got ${gateway.chargeEffects}`);
   });
 
+  await check(checks, "cross-instance-concurrent-retry", "acceptance", async () => {
+    const gateway = new PersistentGateway();
+    const store = new PersistentStore();
+    const firstService = new PaymentService(gateway, store);
+    const secondService = new PaymentService(gateway, store);
+    const [first, second] = await Promise.all([
+      firstService.retryPayment(payment("cross-instance")),
+      secondService.retryPayment(payment("cross-instance")),
+    ]);
+    assert(first.paymentId === second.paymentId, "service instances returned different payments");
+    assert(gateway.chargeEffects === 1, `expected 1 charge effect, got ${gateway.chargeEffects}`);
+  });
+
   await check(checks, "retry-after-restart", "acceptance", async () => {
     const gateway = new PersistentGateway();
     const store = new PersistentStore();
@@ -93,14 +110,38 @@ async function runBehaviorChecks(checks, paymentModule) {
     const recovered = await new PaymentService(gateway, store).retryPayment(payment("failed-save"));
     assert(recovered.paymentId === "payment-1", "recovery returned a different payment");
     assert(gateway.chargeEffects === 1, `expected 1 charge effect, got ${gateway.chargeEffects}`);
+    assert(store.saveAttempts === 2, `expected 2 save attempts, got ${store.saveAttempts}`);
+    assert(store.successfulSaves === 1, `expected 1 successful save, got ${store.successfulSaves}`);
+    assert(
+      (await store.get("failed-save"))?.receipt.paymentId === recovered.paymentId,
+      "recovered operation was not persisted",
+    );
   });
 
-  await check(checks, "amount-currency-conflict", "acceptance", async () => {
+  await check(checks, "recovery-after-gateway-rejection", "acceptance", async () => {
+    const gateway = new PersistentGateway(1);
+    const store = new PersistentStore();
+    const service = new PaymentService(gateway, store);
+    await assertRejects(
+      () => service.retryPayment(payment("gateway-rejection")),
+      "first gateway call should fail",
+    );
+    const recovered = await service.retryPayment(payment("gateway-rejection"));
+    assert(recovered.paymentId === "payment-1", "gateway retry returned the wrong payment");
+    assert(
+      gateway.chargeAttempts === 2,
+      `expected 2 charge attempts, got ${gateway.chargeAttempts}`,
+    );
+    assert(gateway.chargeEffects === 1, `expected 1 charge effect, got ${gateway.chargeEffects}`);
+    assert(store.successfulSaves === 1, `expected 1 successful save, got ${store.successfulSaves}`);
+  });
+
+  await check(checks, "amount-conflict", "acceptance", async () => {
     const gateway = new PersistentGateway();
     const service = new PaymentService(gateway, new PersistentStore());
-    await service.retryPayment(payment("conflict"));
+    await service.retryPayment(payment("amount-conflict"));
     const error = await captureRejection(() =>
-      service.retryPayment({ operationToken: "conflict", amount: 1100, currency: "EUR" }),
+      service.retryPayment({ operationToken: "amount-conflict", amount: 1100, currency: "USD" }),
     );
     assert(error, "conflicting retry was accepted");
     assert(
@@ -108,6 +149,30 @@ async function runBehaviorChecks(checks, paymentModule) {
       `expected PaymentConflictError, got ${error.name || typeof error}`,
     );
     assert(gateway.chargeEffects === 1, `expected 1 charge effect, got ${gateway.chargeEffects}`);
+  });
+
+  await check(checks, "currency-conflict", "acceptance", async () => {
+    const gateway = new PersistentGateway();
+    const service = new PaymentService(gateway, new PersistentStore());
+    await service.retryPayment(payment("currency-conflict"));
+    const error = await captureRejection(() =>
+      service.retryPayment({ operationToken: "currency-conflict", amount: 1000, currency: "EUR" }),
+    );
+    assert(error, "conflicting retry was accepted");
+    assert(
+      error instanceof PaymentConflictError || error.name === "PaymentConflictError",
+      `expected PaymentConflictError, got ${error.name || typeof error}`,
+    );
+    assert(gateway.chargeEffects === 1, `expected 1 charge effect, got ${gateway.chargeEffects}`);
+  });
+
+  await check(checks, "distinct-operations", "acceptance", async () => {
+    const gateway = new PersistentGateway();
+    const service = new PaymentService(gateway, new PersistentStore());
+    const first = await service.retryPayment(payment("operation-a"));
+    const second = await service.retryPayment(payment("operation-b"));
+    assert(first.paymentId !== second.paymentId, "distinct operations reused one payment");
+    assert(gateway.chargeEffects === 2, `expected 2 charge effects, got ${gateway.chargeEffects}`);
   });
 
   await check(checks, "normal-payment", "preservation", async () => {
@@ -130,11 +195,21 @@ async function runBehaviorChecks(checks, paymentModule) {
 }
 
 class PersistentGateway {
+  chargeAttempts = 0;
   chargeEffects = 0;
   refundEffects = 0;
   #payments = new Map();
 
+  constructor(failedCharges = 0) {
+    this.failedCharges = failedCharges;
+  }
+
   async charge(input) {
+    this.chargeAttempts += 1;
+    if (this.failedCharges > 0) {
+      this.failedCharges -= 1;
+      throw new Error("simulated gateway rejection");
+    }
     if (!input.idempotencyKey) return await this.#createPayment(input);
 
     const previous = this.#payments.get(input.idempotencyKey);
@@ -147,7 +222,12 @@ class PersistentGateway {
       return await previous.receipt;
     }
 
-    const receipt = this.#createPayment(input);
+    const receipt = this.#createPayment(input).catch((error) => {
+      if (this.#payments.get(input.idempotencyKey)?.receipt === receipt) {
+        this.#payments.delete(input.idempotencyKey);
+      }
+      throw error;
+    });
     this.#payments.set(input.idempotencyKey, { ...input, receipt });
     return await receipt;
   }
@@ -170,6 +250,8 @@ class PersistentGateway {
 
 class PersistentStore {
   #operations = new Map();
+  saveAttempts = 0;
+  successfulSaves = 0;
 
   constructor(failedSaves = 0) {
     this.failedSaves = failedSaves;
@@ -180,11 +262,13 @@ class PersistentStore {
   }
 
   async save(operation) {
+    this.saveAttempts += 1;
     if (this.failedSaves > 0) {
       this.failedSaves -= 1;
       throw new Error("simulated persistent-store failure");
     }
     this.#operations.set(operation.operationToken, operation);
+    this.successfulSaves += 1;
   }
 }
 

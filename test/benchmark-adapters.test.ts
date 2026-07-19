@@ -117,8 +117,8 @@ test("controller runs a fair fake Direct and ChangeSafely pair end to end", asyn
   });
 
   assert.equal(direct.run.comparisonId, changesafely.run.comparisonId);
-  assert.equal(direct.run.scenarioVersion, 1);
-  assert.equal(changesafely.run.scenarioVersion, 1);
+  assert.equal(direct.run.scenarioVersion, 2);
+  assert.equal(changesafely.run.scenarioVersion, 2);
   assert.equal(direct.run.outcome, "unsafe_green");
   assert.equal(changesafely.run.outcome, "unsafe_green");
   assert.equal(direct.run.usage.inputTokens, 100);

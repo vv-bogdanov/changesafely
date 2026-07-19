@@ -41,6 +41,7 @@ test("evaluates candidate tests against reference and mutants, then replays one 
   const run = benchmarkRunDocument("mutation-run", {
     baselineCommit: attempt.baselineCommit,
     mode: "changesafely",
+    scenarioVersion: scenario.version,
     snapshotCommit: snapshot.snapshotCommit,
     taskText: await readFile(scenario.task, "utf8"),
   });
@@ -99,9 +100,13 @@ test("evaluates candidate tests against reference and mutants, then replays one 
     [
       ["process-local-cache", true],
       ["check-then-write", true],
+      ["receipt-without-validation", false],
+      ["input-derived-key", false],
+      ["precommitted-placeholder", false],
+      ["constant-provider-key", false],
     ],
   );
-  assert.equal(document.mutation.killRate, 1);
+  assert.equal(document.mutation.killRate, 1 / 3);
   assert.deepEqual(document.candidateTests.paths, ["test/candidate-mutation.test.ts"]);
   assert.equal(document.protectedTests.applicable, true);
   assert.equal(document.protectedTests.intact, false);
@@ -127,7 +132,7 @@ test("evaluates candidate tests against reference and mutants, then replays one 
     resultsRoot,
   ]);
   assert.equal(replay.verified, true);
-  assert.equal(replay.caseCard?.mutation.killRate, 1);
+  assert.equal(replay.caseCard?.mutation.killRate, 1 / 3);
   assert.ok((replay.caseCard?.diff.testAdditions ?? 0) > 0);
   assert.equal(replay.caseCard?.diff.productionFiles, 0);
 
@@ -138,7 +143,7 @@ test("evaluates candidate tests against reference and mutants, then replays one 
   ]);
   const report = JSON.parse(await readFile(reportOutput.jsonPath, "utf8"));
   assert.deepEqual(report.comparisons[0]?.runs[0], replay.caseCard);
-  assert.match(await readFile(reportOutput.markdownPath, "utf8"), /2\/2 \(100%\)/u);
+  assert.match(await readFile(reportOutput.markdownPath, "utf8"), /2\/6 \(33%\)/u);
 
   const analysisManifestPath = join(analysis.path, "analysis-manifest.json");
   const analysisManifest = await readFile(analysisManifestPath, "utf8");
