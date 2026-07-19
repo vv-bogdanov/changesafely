@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
+import { parsePlanArtifactKey } from "./artifact-key.js";
 import {
   ArtifactStore,
+  artifactInputs,
   loadRunState,
   loadSelectedPlanArtifacts,
   loadVerifiedArtifact,
@@ -31,6 +33,7 @@ import {
   type DetailedPlan,
   type ImplementationArtifact,
   implementationArtifactSchema,
+  type RunPhase,
   type StoredHarnessArtifact,
   type VerificationArtifact,
   validateImplementationArtifact,
@@ -175,6 +178,7 @@ export async function runImplementationAndVerification(
   await assertNoUntrackedFiles(repoPath);
 
   const { contract, decision, plan } = await loadSelectedPlanArtifacts(repoPath, state);
+  const selectedPlanKey = parsePlanArtifactKey(decision.winnerPlanId);
   const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
   const harnessCommandEvidence = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
   if (harness.testCommit !== state.testCommit) {
@@ -257,7 +261,7 @@ export async function runImplementationAndVerification(
       "implementation",
       "implementer",
       { ...implementation, implementationCommit, actualPaths },
-      [state.artifacts.decision ?? "", state.artifacts.harness ?? ""],
+      artifactInputs(state, "decision", "harness", selectedPlanKey),
     );
     state.artifacts.implementation = implementationStored.hash;
     state.phase = "deterministic-verification";
@@ -275,13 +279,15 @@ export async function runImplementationAndVerification(
       "verificationCommands",
       "deterministic-runner",
       toCommandEvidence(commandResults),
-      [implementationStored.hash],
+      artifactInputs(state, "implementation"),
     );
     state.artifacts.verificationCommands = commandsStored.hash;
     await store.writeState(state);
     assertCommandsPassed(commandResults);
 
-    const verify = async (role: string): Promise<VerificationArtifact> => {
+    const verify = async (
+      role: Extract<RunPhase, "verifier" | "verifier:repair">,
+    ): Promise<VerificationArtifact> => {
       const actualDiff = await diffFrom(repoPath, state.baselineCommit);
       state.phase = role;
       await store.writeState(state);
@@ -333,7 +339,7 @@ export async function runImplementationAndVerification(
         "verificationAttempt1",
         "verifier",
         verification,
-        [implementationStored.hash, commandsStored.hash],
+        artifactInputs(state, "implementation", "verificationCommands"),
       );
       state.artifacts.verificationAttempt1 = firstVerificationStored.hash;
       state.phase = "repair";
@@ -393,7 +399,7 @@ export async function runImplementationAndVerification(
         "repair",
         "repair",
         { ...implementation, implementationCommit, actualPaths },
-        [firstVerificationStored.hash],
+        artifactInputs(state, "verificationAttempt1"),
       );
       state.artifacts.repair = repairStored.hash;
       commandResults = await runProjectCommands(
@@ -408,7 +414,7 @@ export async function runImplementationAndVerification(
         "verificationCommandsRepair",
         "deterministic-runner",
         toCommandEvidence(commandResults),
-        [repairStored.hash],
+        artifactInputs(state, "repair"),
       );
       state.artifacts.verificationCommandsRepair = commandsStored.hash;
       await store.writeState(state);
@@ -416,13 +422,13 @@ export async function runImplementationAndVerification(
       verification = await verify("verifier:repair");
     }
 
-    const finalImplementationHash =
-      state.repairCount === 1 ? (state.artifacts.repair ?? "") : implementationStored.hash;
     const verificationStored = await store.writeArtifact(
       "verification",
       state.repairCount === 1 ? "verifier:repair" : "verifier",
       verification,
-      [finalImplementationHash, commandsStored.hash],
+      state.repairCount === 1
+        ? artifactInputs(state, "repair", "verificationCommandsRepair")
+        : artifactInputs(state, "implementation", "verificationCommands"),
     );
     state.artifacts.verification = verificationStored.hash;
     const accepted = verificationAccepted(verification);

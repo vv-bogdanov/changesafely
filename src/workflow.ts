@@ -1,7 +1,13 @@
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
 import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artifact-key.js";
-import { ArtifactStore, createRunId, type RunState, type RunStatus } from "./artifacts.js";
+import {
+  ArtifactStore,
+  artifactInputs,
+  createRunId,
+  type RunState,
+  type RunStatus,
+} from "./artifacts.js";
 import { evaluatePlan, evaluatePlans, type PlanEligibility } from "./eligibility.js";
 import { assertBaselineUnchanged, inspectBaseline } from "./git.js";
 import {
@@ -26,11 +32,14 @@ import {
   decisionArtifactSchema,
   detailedPlanSchema,
   evidenceArtifactSchema,
+  RUN_STATE_VERSION,
+  type RunPhase,
   validateChangeContract,
   validateDecisionArtifact,
   validateDetailedPlan,
   validateEvidenceArtifact,
 } from "./schemas.js";
+import { VERSION } from "./version.js";
 
 const plannerLenses = [
   "minimal-change",
@@ -67,6 +76,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
   await store.initialize();
 
   const state: RunState = {
+    stateVersion: RUN_STATE_VERSION,
+    producerVersion: VERSION,
     runId,
     task: options.task,
     repoPath: baseline.repoPath,
@@ -97,7 +108,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
   let eligibility: PlanEligibility[] = [];
   let decision: DecisionArtifact | undefined;
 
-  const persist = async (phase: string): Promise<void> => {
+  const persist = async (phase: RunPhase): Promise<void> => {
     state.phase = phase;
     await store.writeState(state);
   };
@@ -156,9 +167,12 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     );
     completeContext(contractContext, contractTurn.turnId);
     const contractArtifact = parseRoleArtifact(contractTurn.message, validateChangeContract);
-    const contractStored = await store.writeArtifact("contract", "contract", contractArtifact, [
-      evidenceStored.hash,
-    ]);
+    const contractStored = await store.writeArtifact(
+      "contract",
+      "contract",
+      contractArtifact,
+      artifactInputs(state, "evidence"),
+    );
     addArtifact("contract", contractStored.hash);
     await store.writeState(state);
 
@@ -241,9 +255,12 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         );
     for (const { planId, plan } of plannerResults) {
       plans.push(plan);
-      const stored = await store.writeArtifact(planId, `planner:${planId}`, plan, [
-        contractStored.hash,
-      ]);
+      const stored = await store.writeArtifact(
+        planId,
+        `planner:${planId}`,
+        plan,
+        artifactInputs(state, "contract"),
+      );
       addArtifact(planId, stored.hash);
     }
     await store.writeState(state);
@@ -254,7 +271,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       "eligibility",
       "deterministic-eligibility",
       eligibility,
-      plans.map((plan) => state.artifacts[plan.planId] ?? ""),
+      artifactInputs(state, "contract", ...plannerResults.map(({ planId }) => planId)),
     );
     addArtifact("eligibility", eligibilityStored.hash);
     const eligiblePlanIds = new Set(
@@ -328,10 +345,12 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       if (!eligiblePlanIds.has(decision.winnerPlanId)) {
         throw new Error(`Judge selected ineligible or unknown plan ${decision.winnerPlanId}`);
       }
-      const decisionStored = await store.writeArtifact("decision", "judge", decision, [
-        contractStored.hash,
-        eligibilityStored.hash,
-      ]);
+      const decisionStored = await store.writeArtifact(
+        "decision",
+        "judge",
+        decision,
+        artifactInputs(state, "contract", "eligibility"),
+      );
       addArtifact("decision", decisionStored.hash);
       if (decision.humanDecisionRequired) {
         state.status = "HUMAN_DECISION_REQUIRED";

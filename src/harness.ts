@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
-import { ArtifactStore, loadRunState, loadSelectedPlanArtifacts } from "./artifacts.js";
+import { parsePlanArtifactKey } from "./artifact-key.js";
+import {
+  ArtifactStore,
+  artifactInputs,
+  loadRunState,
+  loadSelectedPlanArtifacts,
+} from "./artifacts.js";
 import {
   assertProtectedConfigurationUnchanged,
   changedPaths,
@@ -76,6 +82,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     baseline.fingerprint !== state.baselineFingerprint
   ) {
     state.status = "BASELINE_CHANGED";
+    state.phase = "baseline-changed";
     state.reason = "Baseline no longer matches planning artifacts.";
     state.nextAction = "Start a new planning run from the current baseline.";
     const failedStore = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
@@ -206,14 +213,14 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       "harness",
       "test-author",
       { ...harness, protectedHashes, testCommit },
-      [state.artifacts.contract ?? "", state.artifacts.decision ?? ""],
+      artifactInputs(state, "contract", "decision", parsePlanArtifactKey(decision.winnerPlanId)),
     );
     state.artifacts.harness = harnessStored.hash;
     const commandStored = await store.writeArtifact(
       "commands",
       "deterministic-runner",
       toCommandEvidence([command]),
-      [harnessStored.hash],
+      artifactInputs(state, "harness"),
     );
     state.artifacts.commands = commandStored.hash;
     state.testCommit = testCommit;

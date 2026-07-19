@@ -3,6 +3,9 @@ import { Compile } from "typebox/compile";
 import type { TLocalizedValidationError } from "typebox/error";
 import { ARTIFACT_KEY_PATTERN } from "./artifact-key.js";
 
+export const RUN_STATE_VERSION = 1;
+export const ARTIFACT_VERSION = 1;
+
 type Mutable<Value> = Value extends readonly (infer Item)[]
   ? Mutable<Item>[]
   : Value extends object
@@ -177,24 +180,53 @@ const contextEntrySchema = strictObject({
   status: stringEnum("started", "completed", "failed"),
 });
 
+const runPhaseSchema = stringEnum(
+  "preflight",
+  "discovery",
+  "contract",
+  "planners",
+  "eligibility",
+  "judge",
+  "planning-complete",
+  "failed",
+  "baseline-changed",
+  "write-preflight-blocked",
+  "test-author",
+  "harness-complete",
+  "test-author-failed",
+  "implementer",
+  "deterministic-verification",
+  "verifier",
+  "repair",
+  "verifier:repair",
+  "verification-complete",
+  "implementation-failed",
+  "verified",
+  "release-gate-blocked",
+);
+
+const runStatusSchema = stringEnum(
+  "RUNNING",
+  "PLANNED",
+  "BLOCKED",
+  "HUMAN_DECISION_REQUIRED",
+  "BASELINE_CHANGED",
+  "REPLAN_REQUIRED",
+  "FAILED",
+  "VERIFIED",
+);
+
 const runStateSchema = strictObject({
+  stateVersion: Type.Literal(RUN_STATE_VERSION),
+  producerVersion: Type.String({ minLength: 1, maxLength: 255 }),
   runId: runIdSchema,
   task: Type.String({ minLength: 1, maxLength: 100_000 }),
   repoPath: Type.String({ minLength: 1, maxLength: 4096 }),
   baselineCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
   baselineFingerprint: sha256Schema,
   baselineProtectedConfiguration: hashRecordSchema,
-  phase: Type.String({ minLength: 1, maxLength: 100 }),
-  status: stringEnum(
-    "RUNNING",
-    "PLANNED",
-    "BLOCKED",
-    "HUMAN_DECISION_REQUIRED",
-    "BASELINE_CHANGED",
-    "REPLAN_REQUIRED",
-    "FAILED",
-    "VERIFIED",
-  ),
+  phase: runPhaseSchema,
+  status: runStatusSchema,
   reason: Type.String({ maxLength: 32_768 }),
   nextAction: Type.String({ maxLength: 4096 }),
   artifacts: artifactHashRecordSchema,
@@ -208,13 +240,15 @@ const runStateSchema = strictObject({
 
 const artifactEnvelopeSchema = strictObject({
   meta: strictObject({
+    artifactVersion: Type.Literal(ARTIFACT_VERSION),
+    producerVersion: Type.String({ minLength: 1, maxLength: 255 }),
     runId: runIdSchema,
     baselineCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
     role: Type.String({ minLength: 1, maxLength: 100 }),
     createdAt: Type.String({
       pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
     }),
-    inputHashes: Type.Array(sha256Schema, { maxItems: 32 }),
+    inputs: artifactHashRecordSchema,
   }),
   payload: Type.Unknown(),
 });
@@ -275,6 +309,7 @@ export type ImplementationArtifact = Mutable<Type.Static<typeof implementationAr
 export type VerificationArtifact = Mutable<Type.Static<typeof verificationArtifactSchema>>;
 export type ContextEntry = Mutable<Type.Static<typeof contextEntrySchema>>;
 export type RunState = Mutable<Type.Static<typeof runStateSchema>>;
+export type RunPhase = RunState["phase"];
 export type RunStatus = RunState["status"];
 export type PlanEligibility = Mutable<Type.Static<typeof planEligibilitySchema>>;
 export type CommandEvidence = Mutable<Type.Static<typeof commandEvidenceSchema>>;
@@ -307,6 +342,52 @@ function compileArtifactValidator<const Schema extends Type.TSchema>(
   };
 }
 
+const RESUMABLE_STATUS_BY_PHASE = {
+  "planning-complete": "PLANNED",
+  "harness-complete": "RUNNING",
+  "verification-complete": "RUNNING",
+  verified: "VERIFIED",
+} as const satisfies Partial<Record<RunPhase, RunStatus>>;
+
+const RUN_STATE_STATUSES_BY_PHASE = {
+  preflight: ["RUNNING"],
+  discovery: ["RUNNING"],
+  contract: ["RUNNING"],
+  planners: ["RUNNING"],
+  eligibility: ["RUNNING"],
+  judge: ["RUNNING"],
+  "planning-complete": ["PLANNED", "BLOCKED", "HUMAN_DECISION_REQUIRED"],
+  failed: ["FAILED"],
+  "baseline-changed": ["BASELINE_CHANGED"],
+  "write-preflight-blocked": ["BLOCKED"],
+  "test-author": ["RUNNING"],
+  "harness-complete": ["RUNNING"],
+  "test-author-failed": ["FAILED", "BLOCKED"],
+  implementer: ["RUNNING"],
+  "deterministic-verification": ["RUNNING"],
+  verifier: ["RUNNING"],
+  repair: ["RUNNING"],
+  "verifier:repair": ["RUNNING"],
+  "verification-complete": ["RUNNING", "FAILED"],
+  "implementation-failed": ["FAILED", "BLOCKED", "REPLAN_REQUIRED", "HUMAN_DECISION_REQUIRED"],
+  verified: ["VERIFIED"],
+  "release-gate-blocked": ["BLOCKED"],
+} as const satisfies Record<RunPhase, readonly RunStatus[]>;
+
+export class RunStateInvariantError extends Error {
+  constructor(state: Pick<RunState, "phase" | "status">) {
+    super(`Invalid SafeChange phase/status combination: ${state.phase}/${state.status}`);
+    this.name = "RunStateInvariantError";
+  }
+}
+
+export function resumablePhase(
+  state: Pick<RunState, "phase" | "status">,
+): keyof typeof RESUMABLE_STATUS_BY_PHASE | undefined {
+  const phase = state.phase as keyof typeof RESUMABLE_STATUS_BY_PHASE;
+  return RESUMABLE_STATUS_BY_PHASE[phase] === state.status ? phase : undefined;
+}
+
 export const validateSmokeArtifact = compileArtifactValidator(
   "smoke artifact",
   smokeArtifactSchema,
@@ -336,7 +417,14 @@ export const validateVerificationArtifact = compileArtifactValidator(
   "verification artifact",
   verificationArtifactSchema,
 );
-export const validateRunState = compileArtifactValidator("SafeChange run state", runStateSchema);
+const validateRunStateSchema = compileArtifactValidator("SafeChange run state", runStateSchema);
+export function validateRunState(value: unknown): RunState {
+  const state = validateRunStateSchema(value);
+  if (!(RUN_STATE_STATUSES_BY_PHASE[state.phase] as readonly RunStatus[]).includes(state.status)) {
+    throw new RunStateInvariantError(state);
+  }
+  return state;
+}
 export const validateArtifactEnvelope = compileArtifactValidator(
   "SafeChange artifact envelope",
   artifactEnvelopeSchema,

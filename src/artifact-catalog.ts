@@ -23,6 +23,7 @@ const validators = {
 };
 
 type Validator<Value> = (value: unknown) => Value;
+export type ArtifactInputHashes = Partial<Record<ArtifactKey, string>>;
 export type ArtifactPayload<Key extends ArtifactKey> = Key extends PlanArtifactKey
   ? Schema.DetailedPlan
   : Key extends StaticArtifactKey
@@ -32,6 +33,77 @@ export type ArtifactPayload<Key extends ArtifactKey> = Key extends PlanArtifactK
 export interface ArtifactDefinition<Value> {
   path: string;
   validate: Validator<Value>;
+}
+
+function sorted(keys: readonly ArtifactKey[]): ArtifactKey[] {
+  return [...keys].sort();
+}
+
+function sameKeys(actual: readonly ArtifactKey[], expected: readonly ArtifactKey[]): boolean {
+  return JSON.stringify(sorted(actual)) === JSON.stringify(sorted(expected));
+}
+
+function hasOnePlan(keys: readonly ArtifactKey[], required: readonly StaticArtifactKey[]): boolean {
+  return (
+    keys.length === required.length + 1 &&
+    required.every((key) => keys.includes(key)) &&
+    keys.filter(isPlanArtifactKey).length === 1
+  );
+}
+
+export function validateArtifactInputKeys(key: ArtifactKey, inputs: ArtifactKey[]): void {
+  let valid: boolean;
+  if (isPlanArtifactKey(key)) {
+    valid = sameKeys(inputs, ["contract"]);
+  } else {
+    switch (key) {
+      case "evidence":
+        valid = inputs.length === 0;
+        break;
+      case "contract":
+        valid = sameKeys(inputs, ["evidence"]);
+        break;
+      case "eligibility":
+        valid =
+          inputs.includes("contract") &&
+          inputs.length >= 2 &&
+          inputs.length <= 6 &&
+          inputs.filter(isPlanArtifactKey).length === inputs.length - 1;
+        break;
+      case "decision":
+        valid = sameKeys(inputs, ["contract", "eligibility"]);
+        break;
+      case "harness":
+        valid = hasOnePlan(inputs, ["contract", "decision"]);
+        break;
+      case "commands":
+        valid = sameKeys(inputs, ["harness"]);
+        break;
+      case "implementation":
+        valid = hasOnePlan(inputs, ["decision", "harness"]);
+        break;
+      case "verificationCommands":
+        valid = sameKeys(inputs, ["implementation"]);
+        break;
+      case "verificationAttempt1":
+        valid = sameKeys(inputs, ["implementation", "verificationCommands"]);
+        break;
+      case "repair":
+        valid = sameKeys(inputs, ["verificationAttempt1"]);
+        break;
+      case "verificationCommandsRepair":
+        valid = sameKeys(inputs, ["repair"]);
+        break;
+      case "verification":
+        valid =
+          sameKeys(inputs, ["implementation", "verificationCommands"]) ||
+          sameKeys(inputs, ["repair", "verificationCommandsRepair"]);
+        break;
+    }
+  }
+  if (!valid) {
+    throw new Error(`Artifact input contract mismatch for ${key}: ${sorted(inputs).join(", ")}`);
+  }
 }
 
 export function artifactDefinition<Key extends ArtifactKey>(

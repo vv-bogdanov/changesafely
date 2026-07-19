@@ -6,16 +6,22 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   ArtifactStore,
+  artifactInputs,
   loadRunState,
   loadVerifiedArtifact,
+  PersistedVersionError,
   type RunState,
   validateRunId,
 } from "../src/artifacts.js";
+import { ARTIFACT_VERSION, RUN_STATE_VERSION, RunStateInvariantError } from "../src/schemas.js";
+import { VERSION } from "../src/version.js";
 
 const baselineCommit = "a".repeat(40);
 
 function validState(repoPath: string): RunState {
   return {
+    stateVersion: RUN_STATE_VERSION,
+    producerVersion: VERSION,
     runId: "safe-run",
     task: "Make a bounded change",
     repoPath,
@@ -63,8 +69,30 @@ test("validates run state on write and load", async (t) => {
     store.writeState({ ...state, repairCount: 2 }),
     /Invalid SafeChange run state/,
   );
-  await store.writeText("state.json", '{"runId":"safe-run"}\n');
+  await assert.rejects(
+    store.writeState({ ...state, phase: "verified", status: "RUNNING" }),
+    RunStateInvariantError,
+  );
+  await store.writeText("state.json", `{"stateVersion":${RUN_STATE_VERSION}}\n`);
   await assert.rejects(loadRunState(repoPath, "safe-run"), /Invalid SafeChange run state/);
+});
+
+test("reports unsupported state versions before full schema validation", async (t) => {
+  const repoPath = await mkdtemp(join(tmpdir(), "safechange-state-version-"));
+  t.after(async () => rm(repoPath, { recursive: true, force: true }));
+  const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
+  await store.initialize();
+
+  for (const stateVersion of [undefined, 2]) {
+    const value = { ...validState(repoPath), stateVersion };
+    if (stateVersion === undefined) delete (value as { stateVersion?: number }).stateVersion;
+    await store.writeText("state.json", `${JSON.stringify(value)}\n`);
+    await assert.rejects(
+      loadRunState(repoPath, "safe-run"),
+      (error: unknown) =>
+        error instanceof PersistedVersionError && error.code === "UNSUPPORTED_STATE_VERSION",
+    );
+  }
 });
 
 test("validates artifact payloads, hashes, and run identity", async (t) => {
@@ -82,6 +110,9 @@ test("validates artifact payloads, hashes, and run identity", async (t) => {
     unknowns: [],
   };
   const stored = await store.writeArtifact("evidence", "discovery", evidence);
+  assert.equal(stored.envelope.meta.artifactVersion, ARTIFACT_VERSION);
+  assert.equal(stored.envelope.meta.producerVersion, VERSION);
+  assert.deepEqual(stored.envelope.meta.inputs, {});
   const state = validState(repoPath);
   state.artifacts.evidence = stored.hash;
   await store.writeState(state);
@@ -92,11 +123,13 @@ test("validates artifact payloads, hashes, and run identity", async (t) => {
 
   const wrongRunContent = `${JSON.stringify({
     meta: {
+      artifactVersion: ARTIFACT_VERSION,
+      producerVersion: VERSION,
       runId: "other-run",
       baselineCommit,
       role: "discovery",
       createdAt: new Date().toISOString(),
-      inputHashes: [],
+      inputs: {},
     },
     payload: evidence,
   })}\n`;
@@ -113,5 +146,84 @@ test("validates artifact payloads, hashes, and run identity", async (t) => {
   await assert.rejects(
     loadVerifiedArtifact(repoPath, state, "evidence"),
     /Invalid evidence artifact/,
+  );
+});
+
+test("reports unsupported artifact versions before envelope validation", async (t) => {
+  const repoPath = await mkdtemp(join(tmpdir(), "safechange-envelope-version-"));
+  t.after(async () => rm(repoPath, { recursive: true, force: true }));
+  const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
+  await store.initialize();
+  const stored = await store.writeArtifact("evidence", "discovery", {
+    summary: "Fixture repository",
+    facts: [],
+    commands: [],
+    testGaps: [],
+    constraints: [],
+    assumptions: [],
+    unknowns: [],
+  });
+  const state = validState(repoPath);
+
+  for (const artifactVersion of [undefined, 2]) {
+    const envelope = structuredClone(stored.envelope) as {
+      meta: { artifactVersion?: number };
+    };
+    if (artifactVersion === undefined) delete envelope.meta.artifactVersion;
+    else envelope.meta.artifactVersion = artifactVersion;
+    const content = `${JSON.stringify(envelope)}\n`;
+    await store.writeText("evidence.json", content);
+    state.artifacts.evidence = createHash("sha256").update(content).digest("hex");
+    await assert.rejects(
+      loadVerifiedArtifact(repoPath, state, "evidence"),
+      (error: unknown) =>
+        error instanceof PersistedVersionError && error.code === "UNSUPPORTED_ARTIFACT_VERSION",
+    );
+  }
+});
+
+test("binds artifact lineage to named predecessors", async (t) => {
+  const repoPath = await mkdtemp(join(tmpdir(), "safechange-input-lineage-"));
+  t.after(async () => rm(repoPath, { recursive: true, force: true }));
+  const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
+  await store.initialize();
+  const state = validState(repoPath);
+  const evidenceStored = await store.writeArtifact("evidence", "discovery", {
+    summary: "Fixture repository",
+    facts: [],
+    commands: [],
+    testGaps: [],
+    constraints: [],
+    assumptions: [],
+    unknowns: [],
+  });
+  state.artifacts.evidence = evidenceStored.hash;
+  const contractStored = await store.writeArtifact(
+    "contract",
+    "contract",
+    {
+      goal: "Make the requested change",
+      acceptanceCriteria: [{ id: "AC1", statement: "Behavior is observable" }],
+      protectedInvariants: [{ id: "INV1", statement: "API stays stable" }],
+      nonGoals: [],
+      allowedPathPrefixes: ["src"],
+      approvalRequiredChanges: [],
+      evidenceGaps: [],
+      risks: [],
+      unknowns: [],
+    },
+    artifactInputs(state, "evidence"),
+  );
+  const otherKnownHash = "c".repeat(64);
+  const tamperedEnvelope = structuredClone(contractStored.envelope);
+  tamperedEnvelope.meta.inputs.evidence = otherKnownHash;
+  const content = `${JSON.stringify(tamperedEnvelope)}\n`;
+  await store.writeText("contract.json", content);
+  state.artifacts.contract = createHash("sha256").update(content).digest("hex");
+  state.artifacts["plan-1"] = otherKnownHash;
+
+  await assert.rejects(
+    loadVerifiedArtifact(repoPath, state, "contract"),
+    /Artifact input lineage mismatch: contract\.json <- evidence/,
   );
 });

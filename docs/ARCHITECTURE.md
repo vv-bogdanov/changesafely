@@ -55,6 +55,7 @@ task -> evidence -> contract -> plans -> eligibility -> decision
 
 - Git commit ids, branch, status, paths, and diffs.
 - Atomic artifact envelopes and SHA-256 hashes.
+- Versioned state and artifact contracts with named predecessor hashes.
 - TypeBox contracts used as both inferred TypeScript types and locally compiled JSON Schemas.
 - Structured command argv, real exit codes, timeouts, and bounded output.
 - Explicit App Server thread ids, turn ids, parent C0 id, and checkpoint turn id.
@@ -78,8 +79,11 @@ environment. See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the limits of this bou
 
 `.safechange/runs/<run-id>/state.json` records the last completed boundary. Resume is
 allowed only after planning, T1, or independent verification. Before reuse,
-SafeChange checks protocol equality, artifact hashes and schemas, role lineage, Git
-branch and HEAD, baseline ancestry, protected configuration metadata, and T1 hashes.
+SafeChange checks persisted-format versions before full schema validation, the closed
+phase/status contract, named artifact inputs, artifact hashes and schemas, role
+lineage, Git branch and HEAD, baseline ancestry, protected configuration metadata,
+and T1 hashes. Unknown state or artifact versions fail closed; migrations are added
+only when a second supported persisted format exists.
 
 Failures keep the branch, working tree, and artifacts inspectable. SafeChange does
 not claim automatic rollback or clean up user state.

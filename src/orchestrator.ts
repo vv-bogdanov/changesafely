@@ -20,6 +20,7 @@ import { runHarness } from "./harness.js";
 import { runImplementationAndVerification } from "./implementation.js";
 import { implementationReport } from "./report.js";
 import { isApprovalSensitivePath } from "./repository-policy.js";
+import { resumablePhase } from "./schemas.js";
 import { hashRecordsEqual, verificationAccepted } from "./verification.js";
 import { runPlanning } from "./workflow.js";
 
@@ -108,6 +109,10 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
   if (state.repoPath !== repoPath || state.runId !== runId || state.repairCount > 1) {
     throw new Error("Run state identity or repair bound is invalid");
   }
+  const boundary = resumablePhase(state);
+  if (!boundary) {
+    throw new Error(`Run ${runId} is not at a validated resume boundary`);
+  }
   for (const name of Object.keys(state.artifacts)) {
     if (!isArtifactKey(name)) throw new Error(`Unknown persisted artifact key: ${name}`);
     await loadVerifiedArtifact(repoPath, state, name);
@@ -115,7 +120,7 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
   validateLineage(state);
 
   const snapshot = await inspectBaseline(repoPath);
-  if (state.phase === "planning-complete") {
+  if (boundary === "planning-complete") {
     if (
       snapshot.commit !== state.baselineCommit ||
       snapshot.fingerprint !== state.baselineFingerprint ||
@@ -134,7 +139,7 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
     throw new Error("Protected configuration metadata changed before resume");
   }
   const expectedHead =
-    state.phase === "harness-complete" ? state.testCommit : state.implementationCommit;
+    boundary === "harness-complete" ? state.testCommit : state.implementationCommit;
   if (!expectedHead || snapshot.commit !== expectedHead) {
     throw new Error("Resume HEAD does not match the completed phase commit");
   }
@@ -327,20 +332,21 @@ export async function resumeRun(
   return withRepositoryWriteLock(repoPath, runId, async () => {
     const state = await validateResumeBoundary(repoPath, runId);
     const model = state.model || undefined;
-    if (state.phase === "planning-complete" && state.status === "PLANNED") {
+    const boundary = resumablePhase(state);
+    if (boundary === "planning-complete") {
       return continueFromPlanning(repoPath, runId, model, signal);
     }
-    if (state.phase === "harness-complete" && state.status === "RUNNING") {
+    if (boundary === "harness-complete") {
       return continueFromHarness(repoPath, runId, model, signal);
     }
-    if (state.phase === "verification-complete" && state.status === "RUNNING") {
+    if (boundary === "verification-complete") {
       try {
         return await finalizeVerifiedRun(repoPath, runId);
       } catch {
         return persistedResult(repoPath, runId);
       }
     }
-    if (state.phase === "verified" && state.status === "VERIFIED") {
+    if (boundary === "verified") {
       return {
         runId,
         status: state.status,
