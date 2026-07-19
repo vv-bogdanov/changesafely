@@ -417,10 +417,7 @@ async function resolveCapturedCommand(
 ): Promise<string[]> {
   if (argv[0] === "node") return [process.execPath, ...argv.slice(1)];
   if (argv[0] !== "npm") {
-    return [
-      await realpath(await resolveExecutable(argv[0] ?? "", environment.PATH)),
-      ...argv.slice(1),
-    ];
+    return [await resolveExecutable(argv[0] ?? "", environment.PATH), ...argv.slice(1)];
   }
   const runtimeNpm = join(
     dirname(process.execPath),

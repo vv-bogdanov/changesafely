@@ -80,3 +80,26 @@ test("unsupported repositories fail closed without a detected test check", async
   const capabilities = await discoverRepositoryCapabilities(repoPath);
   assert.throws(() => assertUsableCapabilities(capabilities), /No deterministic repository test/u);
 });
+
+test("discovers a prepared pytest repository without executing project code", async (t) => {
+  const repoPath = await createTestRepo(t, {
+    files: {
+      "pyproject.toml": '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+      "requirements-test.txt": "pytest==9.1.1\n",
+      "src/value.py": "def value():\n    return 1\n",
+      "tests/test_value.py": "def test_value():\n    assert True\n",
+    },
+  });
+  const capabilities = await discoverRepositoryCapabilities(repoPath);
+  assert.deepEqual(capabilities.checks, [
+    {
+      id: "python:.:pytest",
+      kind: "test",
+      argv: ["python", "-m", "pytest"],
+      cwd: ".",
+    },
+  ]);
+  assert.ok(capabilities.sources.some((source) => source.startsWith("runtime:pytest:pytest ")));
+  assert.deepEqual(capabilities.controlFiles, ["pyproject.toml", "requirements-test.txt"]);
+  assert.equal(isCapabilityTestPath(capabilities, "tests/test_new_behavior.py"), true);
+});

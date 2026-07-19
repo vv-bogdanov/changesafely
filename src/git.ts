@@ -70,7 +70,16 @@ function sha256(value: string | Buffer): string {
 
 async function inspectProtectedConfiguration(repoPath: string): Promise<Record<string, string>> {
   const protectedConfiguration: Record<string, string> = {};
-  for (const path of [".env", ".env.local", ".npmrc"]) {
+  for (const path of [
+    ".env",
+    ".env.local",
+    ".npmrc",
+    ".pypirc",
+    "pip.conf",
+    ".config/pip/pip.conf",
+    ".venv/pyvenv.cfg",
+    "venv/pyvenv.cfg",
+  ]) {
     const absolutePath = join(repoPath, path);
     if (await pathExists(absolutePath)) {
       const metadata = await stat(absolutePath);

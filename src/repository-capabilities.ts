@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { access, readFile, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { delimiter, dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
 import { ChangeSafelyError } from "./errors.js";
@@ -33,6 +34,17 @@ const npmControlNames = new Set([
   "pnpm-lock.yaml",
   "yarn.lock",
   "tsconfig.json",
+]);
+const pythonControlNames = new Set([
+  "pyproject.toml",
+  "pytest.ini",
+  "setup.cfg",
+  "requirements.txt",
+  "requirements-dev.txt",
+  "requirements-test.txt",
+  "poetry.lock",
+  "uv.lock",
+  "Pipfile.lock",
 ]);
 
 export async function discoverRepositoryCapabilities(
@@ -67,12 +79,58 @@ export async function discoverRepositoryCapabilities(
       testPathPrefixes.add(cwd === "." ? directory : `${cwd}/${directory}`);
     }
   }
-  if (manifests.length > 0) sources.push(`executable:npm:${await resolveExecutable("npm")}`);
+  if (manifests.length > 0) {
+    const npm = await resolveExecutable("npm");
+    sources.push(`executable:npm:${npm}`, `executable-target:npm:${await realpath(npm)}`);
+  }
+
+  const pythonRoots = new Set(
+    trackedFiles
+      .filter((path) => ["pyproject.toml", "pytest.ini"].includes(posix.basename(path)))
+      .map((path) => (posix.dirname(path) === "." ? "." : posix.dirname(path))),
+  );
+  const preparedPythonRoots = [...pythonRoots].filter((root) =>
+    trackedFiles.some((path) =>
+      root === "."
+        ? isPythonTestPath(path)
+        : path.startsWith(`${root}/`) && isPythonTestPath(path.slice(root.length + 1)),
+    ),
+  );
+  if (preparedPythonRoots.length > 0) {
+    const python = await resolveExecutable("python");
+    const pytestVersion = await pythonModuleVersion(python, "pytest");
+    sources.push(
+      `executable:python:${python}`,
+      `executable-target:python:${await realpath(python)}`,
+      `runtime:pytest:${pytestVersion}`,
+    );
+    for (const root of preparedPythonRoots.sort()) {
+      checks.push({
+        id: `python:${root}:pytest`,
+        kind: "test",
+        argv: ["python", "-m", "pytest"],
+        cwd: root,
+      });
+      testPathPrefixes.add(root === "." ? "tests" : `${root}/tests`);
+      for (const path of trackedFiles) {
+        if (root !== "." && !path.startsWith(`${root}/`)) continue;
+        const relative = root === "." ? path : path.slice(root.length + 1);
+        if (
+          pythonControlNames.has(posix.basename(path)) ||
+          /^requirements(?:-[A-Za-z0-9_.-]+)?\.txt$/u.test(posix.basename(path))
+        ) {
+          controlFiles.add(path);
+        }
+        if (relative === "conftest.py") controlFiles.add(path);
+      }
+      sources.push(`python:${root}`);
+    }
+  }
 
   return normalizeCapabilities({
     checks,
     testPathPrefixes: [...testPathPrefixes],
-    testFilePatterns: ["*.test.*", "*.spec.*"],
+    testFilePatterns: ["*.test.*", "*.spec.*", "test_*.py", "*_test.py"],
     controlFiles: [...controlFiles],
     sources,
   });
@@ -219,7 +277,7 @@ async function resolveExecutable(name: string): Promise<string> {
     const candidate = join(directory, process.platform === "win32" ? `${name}.cmd` : name);
     try {
       await access(candidate, constants.X_OK);
-      return await realpath(candidate);
+      return candidate;
     } catch {
       // Continue to the next PATH entry.
     }
@@ -227,5 +285,38 @@ async function resolveExecutable(name: string): Promise<string> {
   throw new ChangeSafelyError("RUNTIME_NOT_FOUND", `Cannot resolve required runtime: ${name}`, {
     exitCode: 2,
     nextAction: `Install ${name} or add it to PATH, then retry.`,
+  });
+}
+
+function isPythonTestPath(path: string): boolean {
+  return (
+    path.startsWith("tests/") ||
+    posix.basename(path) === "conftest.py" ||
+    /^test_.+\.py$/u.test(posix.basename(path)) ||
+    /_test\.py$/u.test(posix.basename(path))
+  );
+}
+
+async function pythonModuleVersion(python: string, module: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync(python, ["-m", module, "--version"], {
+      cwd: tmpdir(),
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: tmpdir(),
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1",
+      },
+    });
+    const version = stdout.trim();
+    if (version) return version.slice(0, 200);
+  } catch {
+    // The actionable preflight error is emitted below.
+  }
+  throw new ChangeSafelyError("PYTEST_NOT_FOUND", `Prepared Python repository requires ${module}`, {
+    exitCode: 2,
+    nextAction: `Install the repository's locked ${module} dependency, then retry.`,
   });
 }

@@ -38,6 +38,9 @@ export function repositoryCommandEnvironment(
     XDG_CONFIG_HOME: isolatedHome,
     npm_config_userconfig: `${isolatedHome}/.npmrc`,
     NPM_CONFIG_USERCONFIG: `${isolatedHome}/.npmrc`,
+    PIP_CONFIG_FILE: `${isolatedHome}/pip.conf`,
+    PYTHONNOUSERSITE: "1",
+    PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1",
   };
   for (const key of ["PATH", "SHELL", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "TERM"] as const) {
     const value = source[key];
