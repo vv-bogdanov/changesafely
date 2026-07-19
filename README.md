@@ -9,8 +9,10 @@ ChangeSafely is a local TypeScript CLI that compares independent implementation
 plans, creates a protected failing-first safety harness, implements one selected
 plan, and verifies the resulting Git branch from a clean Codex context.
 
-It is deliberately narrow: one prepared npm/TypeScript repository, one branch,
-one plan, real command exits, inspectable artifacts, and explicit safe stops.
+The workflow is target-language independent by design. The current public proof is
+deliberately narrow: one prepared npm/TypeScript repository, one branch, one plan,
+real command exits, inspectable artifacts, and explicit safe stops. Additional
+toolchains are listed only after an end-to-end fixture passes.
 
 ## Why ChangeSafely
 
@@ -51,7 +53,8 @@ model for every role and defaults to `gpt-5.6-sol`.
 | Node.js | Active LTS 22 and 24 |
 | Codex CLI | Standard authenticated executable on `PATH`; generated baseline currently `0.144.6` |
 | Git | Named branch, valid HEAD, clean tracked and staged state |
-| Target | Prepared npm-based TypeScript repository |
+| Target architecture | Source-language independent; repository-owned deterministic checks |
+| Validated target | Prepared npm-based TypeScript repository |
 | Host | Ubuntu, macOS, and Windows package/process smoke on Node.js 24 |
 
 The App Server protocol is generated reproducibly from the pinned development

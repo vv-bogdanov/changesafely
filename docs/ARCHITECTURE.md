@@ -89,6 +89,13 @@ environment. Their evidence includes exact argv, repository-relative cwd, timing
 exit/signal/timeout, sandbox state, byte counts, SHA-256 hashes, and truncation flags.
 See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the limits of this boundary.
 
+The core does not parse or transform target source code. Ecosystem-specific knowledge
+is limited to a baseline repository capability catalog: approved checks, working
+directories, test paths, control files, and their source. The current implementation
+has a bounded npm catalog. Subsequent toolchains must reuse the same process runner and
+Git/artifact flow rather than introduce per-language orchestration. Explicit repository
+capabilities remain data, not a runtime plugin system.
+
 ## Persistence and recovery
 
 `.changesafely/runs/<run-id>/state.json` records the last completed boundary. Resume is
@@ -124,6 +131,8 @@ not claim automatic rollback or clean up user state.
 
 ## Extension rule
 
-New abstractions require a current second use case. Additional ecosystems, providers,
-worktrees, hosted services, and UI surfaces remain outside the core until the existing
-vertical workflow demonstrates a concrete need.
+New abstractions require a current second use case. Python is the second target
+toolchain that justifies extracting the npm command policy into a small capability
+value model; it does not justify a plugin framework. Providers, worktrees, hosted
+services, and UI surfaces remain outside the core until the existing vertical workflow
+demonstrates a concrete need.

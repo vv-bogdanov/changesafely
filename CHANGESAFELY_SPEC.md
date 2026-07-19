@@ -96,7 +96,7 @@ The primary MVP audience:
 - DevOps engineers who use agents to change configuration and infrastructure code;
 - owners of critical product areas: payments, authentication, permissions, data, and integrations.
 
-The MVP is optimized for **TypeScript / Node.js repositories**, but the architecture must not artificially couple orchestration to a particular test framework.
+The CLI implementation uses **TypeScript / Node.js**. The target repository language is not a product invariant: orchestration, artifacts, Git boundaries, and verification must not interpret source syntax or depend on a particular test framework. The current validated target remains one prepared npm/TypeScript repository until additional toolchains pass end-to-end fixtures.
 
 ---
 
@@ -153,7 +153,7 @@ The following capabilities are deliberately excluded until the core workflow is 
 - Git worktree management;
 - implementing multiple competing plans;
 - a universal policy language;
-- support for every language and package manager;
+- bundled zero-configuration adapters for every language and package manager;
 - a full CI/CD platform;
 - proof that every possible regression is absent;
 - a complex multi-agent framework or workflow engine;
@@ -467,7 +467,7 @@ After implementation, create a separate `I1` commit.
 
 ### 7.10. Deterministic verification
 
-Ordinary TypeScript code, not the model, runs and records:
+Ordinary CLI code, not the model, runs and records:
 
 - targeted tests;
 - the full test suite when available and justified;
@@ -668,6 +668,15 @@ Is responsible only for safe, explainable operations:
 Runs approved project commands, records exit code, stdout, and stderr, and does not accept interactive confirmations.
 
 Repository-controlled commands must run in a restricted environment without production credentials and without network access by default.
+
+Target-language support is expressed as a deterministic repository capability catalog:
+
+- exact non-interactive argv and repository-relative working directory;
+- check kind such as test, typecheck, lint, or build;
+- test paths and tracked control files;
+- the detector or explicit configuration that supplied each capability.
+
+The catalog is fixed and hashed before the first write. Plans may select only catalog commands. The model cannot authorize a new executable command, mutate the catalog during a run, or request dependency installation. Common toolchains may have small built-in detectors; other and polyglot repositories use one versioned explicit contract after that contract is implemented and security-qualified.
 
 ### Report Generator
 
@@ -937,7 +946,7 @@ selected plan
 → independent verifier
 ```
 
-Only for one prepared TypeScript demo repository.
+The initial validated vertical slice uses one prepared TypeScript demo repository. This is evidence scope, not a target-language architecture constraint.
 
 ### Then improve reliability
 
@@ -963,7 +972,7 @@ Keep a runnable project version at every stage. Do not build all future capabili
 
 A coding agent must not change the following decisions without explicit agreement:
 
-1. The primary language is TypeScript.
+1. The CLI implementation language is TypeScript; the target repository language is not an invariant.
 2. The primary product is a CLI.
 3. The AI runtime is Codex App Server over `stdio`.
 4. Scratch Discovery and Canonical Contract are separate root threads.

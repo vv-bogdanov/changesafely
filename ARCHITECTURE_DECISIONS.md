@@ -20,7 +20,7 @@ This document preserves decisions already made and why they were chosen. When ne
 
 **Decision:** implement the project core in TypeScript.
 
-**Why:** it matches the target user stack, supports convenient testing and packaging, and fits local developer tooling well.
+**Why:** it supports convenient testing and npm packaging and fits local developer tooling well. This decision applies to the ChangeSafely CLI, not to the language of repositories it changes.
 
 ## AD-04. Codex App Server instead of an SDK or direct `codex exec`
 
@@ -148,7 +148,7 @@ This document preserves decisions already made and why they were chosen. When ne
 
 **Decision:** start with one controlled TypeScript payment/retry demo, then improve robustness, and expand only afterward.
 
-**Why:** the hackathon goal is a finished, runnable product; broad unfinished support is worse than one convincing scenario.
+**Why:** the hackathon goal is a finished, runnable product; broad unfinished support is worse than one convincing scenario. The demo is the first validation target, not a permanent product boundary.
 
 ## AD-25. One explicit model per run
 
@@ -159,3 +159,22 @@ a material benefit.
 
 **Why:** a uniform model keeps comparisons explainable and removes routing policy from
 the MVP while preserving a simple override for development runs.
+
+## AD-26. Target-language independence through repository capabilities
+
+**Decision:** keep orchestration, artifacts, Git boundaries, role isolation, and
+verification independent of target source syntax. Authorize deterministic project
+commands from an immutable baseline capability catalog containing exact argv, cwd,
+check kind, test paths, control files, and source attribution. Small built-in detectors
+may provide zero-configuration support for proven toolchains; a versioned explicit
+repository contract will cover other and polyglot repositories. A model may select a
+catalog command but cannot create, broaden, or mutate command authority during a run.
+
+**Why:** per-language orchestration duplicates owned code, while arbitrary
+model-proposed shell commands break the fail-closed execution boundary. A small data
+contract preserves the workflow's strength, supports multiple toolchains in one
+repository, and keeps runtime/process safety centralized.
+
+**Rollout:** the current validated target is a prepared npm/TypeScript repository.
+Documentation may describe the architecture as language-independent, but practical
+support is claimed only after the corresponding end-to-end fixture passes.
