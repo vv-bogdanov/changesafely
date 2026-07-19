@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { access, open, readFile, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { REPOSITORY_CONTROL_FILE_NAMES } from "./repository-policy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -119,16 +120,7 @@ export async function inspectBaseline(repoPath: string): Promise<BaselineSnapsho
   }
 
   const trackedFiles = (await git(root, ["ls-files"])).split("\n").filter(Boolean);
-  const manifestNames = new Set([
-    "package.json",
-    "package-lock.json",
-    "pnpm-lock.yaml",
-    "yarn.lock",
-    "tsconfig.json",
-  ]);
-  const relevant = trackedFiles.filter(
-    (path) => basename(path) === "AGENTS.md" || manifestNames.has(basename(path)),
-  );
+  const relevant = trackedFiles.filter((path) => REPOSITORY_CONTROL_FILE_NAMES.has(basename(path)));
   const files: Record<string, string> = {};
   for (const path of relevant.sort()) {
     files[path] = sha256(await readFile(join(root, path)));

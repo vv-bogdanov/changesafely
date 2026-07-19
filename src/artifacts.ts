@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
+import { type ArtifactPayload, artifactDefinition } from "./artifact-catalog.js";
+import type { ArtifactKey } from "./artifact-key.js";
 import { type RunState, validateArtifactEnvelope, validateRunState } from "./schemas.js";
 
 export type { ContextEntry, RunState, RunStatus } from "./schemas.js";
@@ -83,13 +85,14 @@ export class ArtifactStore {
     await this.writeJson("state.json", validated);
   }
 
-  async writeArtifact<T>(
-    relativePath: string,
+  async writeArtifact<Key extends ArtifactKey>(
+    key: Key,
     role: string,
-    payload: T,
+    payload: ArtifactPayload<Key>,
     inputHashes: string[] = [],
-  ): Promise<StoredArtifact<T>> {
-    const envelope: ArtifactEnvelope<T> = {
+  ): Promise<StoredArtifact<ArtifactPayload<Key>>> {
+    const definition = artifactDefinition(key);
+    const envelope: ArtifactEnvelope<ArtifactPayload<Key>> = {
       meta: {
         runId: this.runId,
         baselineCommit: this.baselineCommit,
@@ -97,13 +100,13 @@ export class ArtifactStore {
         createdAt: new Date().toISOString(),
         inputHashes,
       },
-      payload,
+      payload: definition.validate(payload),
     };
     validateArtifactEnvelope(envelope);
     const content = `${JSON.stringify(envelope, null, 2)}\n`;
-    const path = resolveWithin(this.runPath, relativePath);
+    const path = resolveWithin(this.runPath, definition.path);
     await mkdir(dirname(path), { recursive: true });
-    await this.writeText(relativePath, content);
+    await this.writeText(definition.path, content);
     return { path, hash: hashContent(content), envelope };
   }
 
@@ -134,49 +137,32 @@ export async function loadRunState(repoPath: string, runId: string): Promise<Run
   return validated;
 }
 
-export async function loadArtifact<T>(
-  repoPath: string,
-  runId: string,
-  relativePath: string,
-): Promise<ArtifactEnvelope<T>> {
-  const validated = validateArtifactEnvelope(
-    parseJson(
-      await readFile(resolveWithin(runPath(repoPath, runId), relativePath), "utf8"),
-      "SafeChange artifact",
-    ),
-  );
-  if (validated.meta.runId !== runId) {
-    throw new Error(`Artifact run identity mismatch: ${relativePath}`);
-  }
-  return validated as ArtifactEnvelope<T>;
-}
-
-export async function loadVerifiedArtifact<T>(
+export async function loadVerifiedArtifact<Key extends ArtifactKey>(
   repoPath: string,
   state: RunState,
-  artifactName: string,
-  relativePath: string,
-): Promise<ArtifactEnvelope<T>> {
+  artifactName: Key,
+): Promise<ArtifactEnvelope<ArtifactPayload<Key>>> {
+  const definition = artifactDefinition(artifactName);
   const content = await readFile(
-    resolveWithin(runPath(repoPath, state.runId), relativePath),
+    resolveWithin(runPath(repoPath, state.runId), definition.path),
     "utf8",
   );
   const expectedHash = state.artifacts[artifactName];
   if (!expectedHash || hashContent(content) !== expectedHash) {
-    throw new Error(`Artifact hash mismatch: ${relativePath}`);
+    throw new Error(`Artifact hash mismatch: ${definition.path}`);
   }
   const envelope = validateArtifactEnvelope(
-    parseJson(content, `SafeChange artifact ${relativePath}`),
-  ) as ArtifactEnvelope<T>;
+    parseJson(content, `SafeChange artifact ${definition.path}`),
+  );
   if (
     envelope.meta.runId !== state.runId ||
     envelope.meta.baselineCommit !== state.baselineCommit
   ) {
-    throw new Error(`Artifact lineage mismatch: ${relativePath}`);
+    throw new Error(`Artifact lineage mismatch: ${definition.path}`);
   }
   const knownHashes = new Set(Object.values(state.artifacts));
   if (envelope.meta.inputHashes.some((inputHash) => !knownHashes.has(inputHash))) {
-    throw new Error(`Artifact input lineage mismatch: ${relativePath}`);
+    throw new Error(`Artifact input lineage mismatch: ${definition.path}`);
   }
-  return envelope;
+  return { meta: envelope.meta, payload: definition.validate(envelope.payload) };
 }

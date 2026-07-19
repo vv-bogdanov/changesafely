@@ -15,13 +15,16 @@ import { runPlanning } from "../src/workflow.js";
 
 const execFileAsync = promisify(execFile);
 
-async function fixtureRepo(testScript = "node --test"): Promise<string> {
+async function fixtureRepo(
+  testScript = "node --test",
+  scripts: Record<string, string> = {},
+): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), "safechange-plan-"));
   await mkdir(join(path, "src"));
   await writeFile(join(path, "AGENTS.md"), "# Fixture\n", "utf8");
   await writeFile(
     join(path, "package.json"),
-    `${JSON.stringify({ name: "fixture", scripts: { test: testScript } }, null, 2)}\n`,
+    `${JSON.stringify({ name: "fixture", scripts: { test: testScript, ...scripts } }, null, 2)}\n`,
     "utf8",
   );
   await writeFile(join(path, "src", "value.ts"), "export const value = 1;\n", "utf8");
@@ -304,6 +307,43 @@ test("creates I1, preserves T1, runs commands, and verifies from a fresh C0 fork
     "test: add SafeChange safety harness",
     "feat: implement selected SafeChange plan",
   ]);
+});
+
+test("runs the selected plan verification commands without rediscovering package scripts", async (t) => {
+  const repoPath = await fixtureRepo("node --test", {
+    "check:plan": 'node -e "process.exit(0)"',
+  });
+  t.after(async () => rm(repoPath, { recursive: true, force: true }));
+  const fixture = join(process.cwd(), "dist", "test", "fixtures", "fake-app-server.js");
+  const clientFactory = (): AppServerClient =>
+    new AppServerClient({
+      command: process.execPath,
+      args: [fixture, "plan-command"],
+      cwd: repoPath,
+      requestTimeoutMs: 1_000,
+      turnTimeoutMs: 1_000,
+    });
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value and use the selected verification command.",
+    plannerCount: 1,
+    clientFactory,
+  });
+  await runHarness({ repoPath, runId: planning.runId, clientFactory });
+
+  const result = await runImplementationAndVerification({
+    repoPath,
+    runId: planning.runId,
+    clientFactory,
+  });
+
+  assert.deepEqual(
+    result.commands.map((command) => command.argv),
+    [
+      ["npm", "test"],
+      ["npm", "run", "check:plan"],
+    ],
+  );
 });
 
 test("resumes the same Implementer once for a local repair and forks a fresh Verifier", async (t) => {

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
+import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artifact-key.js";
 import {
   ArtifactStore,
   type ContextEntry,
@@ -130,7 +131,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     state.phase = phase;
     await store.writeState(state);
   };
-  const addArtifact = (name: string, artifactHash: string): void => {
+  const addArtifact = (name: ArtifactKey, artifactHash: string): void => {
     state.artifacts[name] = artifactHash;
   };
 
@@ -163,7 +164,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       discoveryTurn.message,
       validateEvidenceArtifact,
     );
-    const evidenceStored = await store.writeArtifact("evidence.json", "discovery", evidence);
+    const evidenceStored = await store.writeArtifact("evidence", "discovery", evidence);
     addArtifact("evidence", evidenceStored.hash);
     await store.writeState(state);
 
@@ -193,19 +194,16 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       contractTurn.message,
       validateChangeContract,
     );
-    const contractStored = await store.writeArtifact(
-      "contract.json",
-      "contract",
-      contractArtifact,
-      [evidenceStored.hash],
-    );
+    const contractStored = await store.writeArtifact("contract", "contract", contractArtifact, [
+      evidenceStored.hash,
+    ]);
     addArtifact("contract", contractStored.hash);
     await store.writeState(state);
 
     await persist("planners");
-    const plannerRuns: Array<() => Promise<{ planId: string; plan: DetailedPlan }>> = [];
+    const plannerRuns: Array<() => Promise<{ planId: PlanArtifactKey; plan: DetailedPlan }>> = [];
     for (let index = 0; index < options.plannerCount; index += 1) {
-      const planId = `plan-${index + 1}`;
+      const planId = planArtifactKey(index + 1);
       const lens = plannerLenses[index];
       if (!lens) throw new Error(`No planner lens for index ${index}`);
       const fork = await client.forkThread({
@@ -277,13 +275,13 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     await store.writeState(state);
     const plannerResults = options.parallelPlanners
       ? await Promise.all(plannerRuns.map((run) => run()))
-      : await plannerRuns.reduce<Promise<Array<{ planId: string; plan: DetailedPlan }>>>(
+      : await plannerRuns.reduce<Promise<Array<{ planId: PlanArtifactKey; plan: DetailedPlan }>>>(
           async (previous, run) => [...(await previous), await run()],
           Promise.resolve([]),
         );
     for (const { planId, plan } of plannerResults) {
       plans.push(plan);
-      const stored = await store.writeArtifact(`plans/${planId}.json`, `planner:${planId}`, plan, [
+      const stored = await store.writeArtifact(planId, `planner:${planId}`, plan, [
         contractStored.hash,
       ]);
       addArtifact(planId, stored.hash);
@@ -293,7 +291,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     await persist("eligibility");
     eligibility = evaluatePlans(contractArtifact, plans);
     const eligibilityStored = await store.writeArtifact(
-      "eligibility.json",
+      "eligibility",
       "deterministic-eligibility",
       eligibility,
       plans.map((plan) => state.artifacts[plan.planId] ?? ""),
@@ -375,7 +373,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       if (!eligiblePlanIds.has(decision.winnerPlanId)) {
         throw new Error(`Judge selected ineligible or unknown plan ${decision.winnerPlanId}`);
       }
-      const decisionStored = await store.writeArtifact("decision.json", "judge", decision, [
+      const decisionStored = await store.writeArtifact("decision", "judge", decision, [
         contractStored.hash,
         eligibilityStored.hash,
       ]);

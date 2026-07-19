@@ -4,11 +4,10 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { loadArtifact, loadRunState } from "./artifacts.js";
+import { loadRunState, loadVerifiedArtifact } from "./artifacts.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
 import { PreflightError } from "./git.js";
 import { resumeRun, runFullWorkflow } from "./orchestrator.js";
-import type { DecisionArtifact } from "./schemas.js";
 import { captureFailure } from "./telemetry.js";
 import { VERSION } from "./version.js";
 import { runPlanning } from "./workflow.js";
@@ -43,8 +42,7 @@ async function printRunSummary(repoPath: string, runId: string, reportPath: stri
   const state = await loadRunState(repoPath, runId);
   let selectedPlan = "none";
   if (state.artifacts.decision) {
-    selectedPlan = (await loadArtifact<DecisionArtifact>(repoPath, runId, "decision.json")).payload
-      .winnerPlanId;
+    selectedPlan = (await loadVerifiedArtifact(repoPath, state, "decision")).payload.winnerPlanId;
   }
   process.stdout.write(
     [

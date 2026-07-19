@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
   ArtifactStore,
-  loadArtifact,
   loadRunState,
+  loadVerifiedArtifact,
   type RunState,
   validateRunId,
 } from "../src/artifacts.js";
@@ -45,7 +46,6 @@ test("rejects unsafe run ids and artifact paths", async (t) => {
   const store = new ArtifactStore(repoPath, "safe-run", "baseline");
   await store.initialize();
   await assert.rejects(store.writeText("../outside.json", "unsafe"), /escapes/);
-  await assert.rejects(loadArtifact(repoPath, "safe-run", "../../outside.json"), /escapes/);
 });
 
 test("validates run state on write and load", async (t) => {
@@ -67,32 +67,51 @@ test("validates run state on write and load", async (t) => {
   await assert.rejects(loadRunState(repoPath, "safe-run"), /Invalid SafeChange run state/);
 });
 
-test("validates artifact envelopes and run identity", async (t) => {
+test("validates artifact payloads, hashes, and run identity", async (t) => {
   const repoPath = await mkdtemp(join(tmpdir(), "safechange-envelope-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
-  await store.writeArtifact("evidence.json", "discovery", { value: 1 });
+  const evidence = {
+    summary: "Fixture repository",
+    facts: [],
+    commands: [],
+    testGaps: [],
+    constraints: [],
+    assumptions: [],
+    unknowns: [],
+  };
+  const stored = await store.writeArtifact("evidence", "discovery", evidence);
+  const state = validState(repoPath);
+  state.artifacts.evidence = stored.hash;
+  await store.writeState(state);
   assert.equal(
-    (await loadArtifact<{ value: number }>(repoPath, "safe-run", "evidence.json")).payload.value,
-    1,
+    (await loadVerifiedArtifact(repoPath, state, "evidence")).payload.summary,
+    evidence.summary,
   );
 
-  await store.writeText(
-    "evidence.json",
-    `${JSON.stringify({
-      meta: {
-        runId: "other-run",
-        baselineCommit,
-        role: "discovery",
-        createdAt: new Date().toISOString(),
-        inputHashes: [],
-      },
-      payload: {},
-    })}\n`,
-  );
+  const wrongRunContent = `${JSON.stringify({
+    meta: {
+      runId: "other-run",
+      baselineCommit,
+      role: "discovery",
+      createdAt: new Date().toISOString(),
+      inputHashes: [],
+    },
+    payload: evidence,
+  })}\n`;
+  await store.writeText("evidence.json", wrongRunContent);
+  state.artifacts.evidence = createHash("sha256").update(wrongRunContent).digest("hex");
+  await assert.rejects(loadVerifiedArtifact(repoPath, state, "evidence"), /lineage mismatch/);
+
+  const invalidPayloadContent = `${JSON.stringify({
+    meta: { ...stored.envelope.meta },
+    payload: { summary: "Missing required evidence fields" },
+  })}\n`;
+  await store.writeText("evidence.json", invalidPayloadContent);
+  state.artifacts.evidence = createHash("sha256").update(invalidPayloadContent).digest("hex");
   await assert.rejects(
-    loadArtifact(repoPath, "safe-run", "evidence.json"),
-    /run identity mismatch/,
+    loadVerifiedArtifact(repoPath, state, "evidence"),
+    /Invalid evidence artifact/,
   );
 });

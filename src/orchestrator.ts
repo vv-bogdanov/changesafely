@@ -1,4 +1,5 @@
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
+import { isArtifactKey } from "./artifact-key.js";
 import {
   ArtifactStore,
   loadRunState,
@@ -18,27 +19,8 @@ import {
 import { runHarness } from "./harness.js";
 import { runImplementationAndVerification } from "./implementation.js";
 import { implementationReport } from "./report.js";
-import type { CommandEvidence } from "./runner.js";
-import {
-  type DecisionArtifact,
-  type HarnessArtifact,
-  type VerificationArtifact,
-  validateChangeContract,
-  validateCommandEvidenceList,
-  validateDecisionArtifact,
-  validateDetailedPlan,
-  validateEvidenceArtifact,
-  validatePlanEligibilityList,
-  validateStoredHarnessArtifact,
-  validateStoredImplementationArtifact,
-  validateVerificationArtifact,
-} from "./schemas.js";
+import { isApprovalSensitivePath } from "./repository-policy.js";
 import { runPlanning } from "./workflow.js";
-
-interface StoredHarness extends HarnessArtifact {
-  protectedHashes: Record<string, string>;
-  testCommit: string;
-}
 
 export interface FullRunOptions {
   repoPath: string;
@@ -57,47 +39,6 @@ export interface FullRunResult {
 
 function hashesMatch(expected: Record<string, string>, actual: Record<string, string>): boolean {
   return Object.keys(expected).every((path) => expected[path] === actual[path]);
-}
-
-function artifactPath(name: string): string {
-  if (/^plan-\d+$/.test(name)) return `plans/${name}.json`;
-  const paths: Record<string, string> = {
-    evidence: "evidence.json",
-    contract: "contract.json",
-    eligibility: "eligibility.json",
-    decision: "decision.json",
-    harness: "harness.json",
-    commands: "commands.json",
-    implementation: "implementation.json",
-    verificationCommands: "verification-commands.json",
-    verificationAttempt1: "verification-attempt-1.json",
-    repair: "repair.json",
-    verificationCommandsRepair: "verification-commands-repair.json",
-    verification: "verification.json",
-  };
-  const path = paths[name];
-  if (!path) throw new Error(`Unknown persisted artifact key: ${name}`);
-  return path;
-}
-
-function validateArtifactPayload(name: string, payload: unknown): void {
-  if (name === "evidence") validateEvidenceArtifact(payload);
-  else if (name === "contract") validateChangeContract(payload);
-  else if (/^plan-\d+$/.test(name)) validateDetailedPlan(payload);
-  else if (name === "eligibility") validatePlanEligibilityList(payload);
-  else if (name === "decision") validateDecisionArtifact(payload);
-  else if (name === "harness") validateStoredHarnessArtifact(payload);
-  else if (name === "implementation" || name === "repair") {
-    validateStoredImplementationArtifact(payload);
-  } else if (
-    name === "commands" ||
-    name === "verificationCommands" ||
-    name === "verificationCommandsRepair"
-  ) {
-    validateCommandEvidenceList(payload);
-  } else if (name === "verification" || name === "verificationAttempt1") {
-    validateVerificationArtifact(payload);
-  }
 }
 
 function validateLineage(state: RunState): void {
@@ -171,8 +112,8 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
     throw new Error("Run state identity or repair bound is invalid");
   }
   for (const name of Object.keys(state.artifacts)) {
-    const envelope = await loadVerifiedArtifact<unknown>(repoPath, state, name, artifactPath(name));
-    validateArtifactPayload(name, envelope.payload);
+    if (!isArtifactKey(name)) throw new Error(`Unknown persisted artifact key: ${name}`);
+    await loadVerifiedArtifact(repoPath, state, name);
   }
   validateLineage(state);
 
@@ -206,9 +147,7 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
   if (!(await isAncestor(repoPath, state.baselineCommit, expectedHead))) {
     throw new Error("Recorded phase commit does not descend from B0");
   }
-  const harness = (
-    await loadVerifiedArtifact<StoredHarness>(repoPath, state, "harness", "harness.json")
-  ).payload;
+  const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
   if (harness.testCommit !== state.testCommit) {
     throw new Error("T1 artifact does not match persisted state");
   }
@@ -237,28 +176,16 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
       throw new Error("Current branch or HEAD differs from recorded I1");
     }
     await inspectBaseline(repoPath);
-    const harness = (
-      await loadVerifiedArtifact<StoredHarness>(repoPath, state, "harness", "harness.json")
-    ).payload;
+    const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
     const protectedActual = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
     if (!hashesMatch(harness.protectedHashes, protectedActual)) {
       throw new Error("Protected T1 hashes changed before release gate");
     }
-    const baselineCommands = (
-      await loadVerifiedArtifact<CommandEvidence[]>(repoPath, state, "commands", "commands.json")
-    ).payload;
+    const baselineCommands = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
     const finalCommandArtifact =
-      state.repairCount === 1
-        ? ["verificationCommandsRepair", "verification-commands-repair.json"]
-        : ["verificationCommands", "verification-commands.json"];
-    const verificationCommands = (
-      await loadVerifiedArtifact<CommandEvidence[]>(
-        repoPath,
-        state,
-        finalCommandArtifact[0] ?? "",
-        finalCommandArtifact[1] ?? "",
-      )
-    ).payload;
+      state.repairCount === 1 ? "verificationCommandsRepair" : "verificationCommands";
+    const verificationCommands = (await loadVerifiedArtifact(repoPath, state, finalCommandArtifact))
+      .payload;
     const allCommands = [...baselineCommands, ...verificationCommands];
     if (
       allCommands.length === 0 ||
@@ -276,14 +203,7 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
     ) {
       throw new Error("Recorded command outcomes do not satisfy the harness and final checks");
     }
-    const verification = (
-      await loadVerifiedArtifact<VerificationArtifact>(
-        repoPath,
-        state,
-        "verification",
-        "verification.json",
-      )
-    ).payload;
+    const verification = (await loadVerifiedArtifact(repoPath, state, "verification")).payload;
     const accepted =
       verification.verdict === "accept" &&
       verification.contractFulfilled &&
@@ -294,18 +214,12 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
     if (!accepted) throw new Error("Independent Verifier did not accept the change");
 
     const releasePaths = await changedPaths(repoPath, state.baselineCommit);
-    const forbidden = releasePaths.filter(
-      (path) =>
-        ["AGENTS.md", "package.json", "package-lock.json"].includes(basename(path)) ||
-        /(?:^|\/)(?:migrations?|secrets?)(?:\/|$)/i.test(path),
-    );
+    const forbidden = releasePaths.filter(isApprovalSensitivePath);
     if (forbidden.length > 0) {
       throw new Error(`Release diff contains approval-sensitive paths: ${forbidden.join(", ")}`);
     }
 
-    const decision = (
-      await loadVerifiedArtifact<DecisionArtifact>(repoPath, state, "decision", "decision.json")
-    ).payload;
+    const decision = (await loadVerifiedArtifact(repoPath, state, "decision")).payload;
     state.status = "VERIFIED";
     state.phase = "verified";
     state.reason = verification.reason;

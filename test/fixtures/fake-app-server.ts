@@ -128,7 +128,16 @@ async function structuredOutput(prompt: string): Promise<unknown> {
               : ["npm", "test"],
         },
       ],
-      verificationCommands: [{ name: "test", argv: ["npm", "test"], purpose: "Verify behavior" }],
+      verificationCommands:
+        mode === "plan-command"
+          ? [
+              {
+                name: "selected plan check",
+                argv: ["npm", "run", "check:plan"],
+                purpose: "Verify the selected plan contract",
+              },
+            ]
+          : [{ name: "test", argv: ["npm", "test"], purpose: "Verify behavior" }],
       dependencies: [],
       migrations: [],
       approvalRequiredChanges: [],

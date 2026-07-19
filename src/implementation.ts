@@ -1,7 +1,12 @@
-import { readFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
-import { ArtifactStore, type ContextEntry, loadArtifact, loadRunState } from "./artifacts.js";
+import { parsePlanArtifactKey } from "./artifact-key.js";
+import {
+  ArtifactStore,
+  type ContextEntry,
+  loadRunState,
+  loadVerifiedArtifact,
+} from "./artifacts.js";
 import {
   assertNoUntrackedFiles,
   assertProtectedConfigurationUnchanged,
@@ -14,15 +19,9 @@ import {
 } from "./git.js";
 import { implementerPrompt, repairPrompt, verifierPrompt } from "./prompts.js";
 import { implementationReport } from "./report.js";
+import { isApprovalSensitivePath, pathWithinPrefixes } from "./repository-policy.js";
+import { type CommandResult, runCommand, toCommandEvidence } from "./runner.js";
 import {
-  type CommandEvidence,
-  type CommandResult,
-  runCommand,
-  toCommandEvidence,
-} from "./runner.js";
-import {
-  type ChangeContract,
-  type DecisionArtifact,
   type DetailedPlan,
   type HarnessArtifact,
   type ImplementationArtifact,
@@ -65,28 +64,15 @@ function parseStructured<T>(message: string, validate: (value: unknown) => T): T
   return validate(value);
 }
 
-function pathMatches(path: string, allowed: string[]): boolean {
-  const candidate = path.replace(/^\.\//, "");
-  return allowed.some((raw) => {
-    const prefix = raw.replace(/^\.\//, "").replace(/\/$/, "");
-    return prefix === "." || candidate === prefix || candidate.startsWith(`${prefix}/`);
-  });
-}
-
 function sameHashes(expected: Record<string, string>, actual: Record<string, string>): boolean {
   return Object.keys(expected).every((path) => expected[path] === actual[path]);
 }
 
-async function projectCommands(repoPath: string, harness: StoredHarness): Promise<string[][]> {
-  const commands: string[][] = [harness.targetedCommand.argv];
-  const packageJson = JSON.parse(await readFile(resolve(repoPath, "package.json"), "utf8")) as {
-    scripts?: Record<string, string>;
-  };
-  for (const name of ["test", "typecheck", "build"]) {
-    if (packageJson.scripts?.[name]) {
-      commands.push(name === "test" ? ["npm", "test"] : ["npm", "run", name]);
-    }
-  }
+function projectCommands(harness: StoredHarness, plan: DetailedPlan): string[][] {
+  const commands = [
+    harness.targetedCommand.argv,
+    ...plan.verificationCommands.map(({ argv }) => argv),
+  ];
   const seen = new Set<string>();
   return commands.filter((argv) => {
     const key = JSON.stringify(argv);
@@ -114,7 +100,7 @@ function repairableVerification(verification: VerificationArtifact, planPaths: s
     verification.scopeConformant &&
     verification.evidenceSufficient &&
     errors.length > 0 &&
-    errors.every((finding) => finding.path !== "" && pathMatches(finding.path, planPaths))
+    errors.every((finding) => finding.path !== "" && pathWithinPrefixes(finding.path, planPaths))
   );
 }
 
@@ -139,16 +125,12 @@ async function validateImplementationChange(input: {
   if (!sameHashes(input.harness.protectedHashes, protectedAfter)) {
     throw new Error("Implementer changed a protected T1 path");
   }
-  const outsidePlan = actualPaths.filter((path) => !pathMatches(path, input.planPaths));
+  const outsidePlan = actualPaths.filter((path) => !pathWithinPrefixes(path, input.planPaths));
   if (outsidePlan.length > 0) {
     input.state.status = "REPLAN_REQUIRED";
     throw new Error(`Implementation expanded beyond selected plan: ${outsidePlan.join(", ")}`);
   }
-  const protectedNames = new Set(["AGENTS.md", "package.json", "package-lock.json"]);
-  const sensitive = actualPaths.filter(
-    (path) =>
-      protectedNames.has(basename(path)) || /(?:^|\/)(?:migrations?|secrets?)(?:\/|$)/i.test(path),
-  );
+  const sensitive = actualPaths.filter(isApprovalSensitivePath);
   if (sensitive.length > 0) {
     input.state.status = "HUMAN_DECISION_REQUIRED";
     throw new Error(`Implementation changed approval-sensitive paths: ${sensitive.join(", ")}`);
@@ -164,12 +146,13 @@ async function validateImplementationChange(input: {
 async function runProjectCommands(
   repoPath: string,
   harness: StoredHarness,
+  plan: DetailedPlan,
   sandboxed: boolean,
   protectedConfiguration: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<CommandResult[]> {
   const results: CommandResult[] = [];
-  for (const argv of await projectCommands(repoPath, harness)) {
+  for (const argv of projectCommands(harness, plan)) {
     results.push(
       await runCommand(argv, repoPath, {
         sandboxed,
@@ -214,18 +197,13 @@ export async function runImplementationAndVerification(
   }
   await assertNoUntrackedFiles(repoPath);
 
-  const contract = (await loadArtifact<ChangeContract>(repoPath, state.runId, "contract.json"))
-    .payload;
-  const decision = (await loadArtifact<DecisionArtifact>(repoPath, state.runId, "decision.json"))
-    .payload;
+  const contract = (await loadVerifiedArtifact(repoPath, state, "contract")).payload;
+  const decision = (await loadVerifiedArtifact(repoPath, state, "decision")).payload;
   const plan = (
-    await loadArtifact<DetailedPlan>(repoPath, state.runId, `plans/${decision.winnerPlanId}.json`)
+    await loadVerifiedArtifact(repoPath, state, parsePlanArtifactKey(decision.winnerPlanId))
   ).payload;
-  const harness = (await loadArtifact<StoredHarness>(repoPath, state.runId, "harness.json"))
-    .payload;
-  const harnessCommandEvidence = (
-    await loadArtifact<CommandEvidence[]>(repoPath, state.runId, "commands.json")
-  ).payload;
+  const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
+  const harnessCommandEvidence = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
   if (harness.testCommit !== state.testCommit) {
     throw new Error("Harness artifact does not match T1");
   }
@@ -312,7 +290,7 @@ export async function runImplementationAndVerification(
     );
     state.implementationCommit = implementationCommit;
     const implementationStored = await store.writeArtifact(
-      "implementation.json",
+      "implementation",
       "implementer",
       { ...implementation, implementationCommit, actualPaths },
       [state.artifacts.decision ?? "", state.artifacts.harness ?? ""],
@@ -324,12 +302,13 @@ export async function runImplementationAndVerification(
     commandResults = await runProjectCommands(
       repoPath,
       harness,
+      plan,
       options.sandboxCommands ?? false,
       state.baselineProtectedConfiguration ?? {},
       options.signal,
     );
     let commandsStored = await store.writeArtifact(
-      "verification-commands.json",
+      "verificationCommands",
       "deterministic-runner",
       toCommandEvidence(commandResults),
       [implementationStored.hash],
@@ -393,7 +372,7 @@ export async function runImplementationAndVerification(
     verification = await verify("verifier");
     if (repairableVerification(verification, planPaths)) {
       const firstVerificationStored = await store.writeArtifact(
-        "verification-attempt-1.json",
+        "verificationAttempt1",
         "verifier",
         verification,
         [implementationStored.hash, commandsStored.hash],
@@ -465,7 +444,7 @@ export async function runImplementationAndVerification(
       );
       state.implementationCommit = implementationCommit;
       const repairStored = await store.writeArtifact(
-        "repair.json",
+        "repair",
         "repair",
         { ...implementation, implementationCommit, actualPaths },
         [firstVerificationStored.hash],
@@ -474,12 +453,13 @@ export async function runImplementationAndVerification(
       commandResults = await runProjectCommands(
         repoPath,
         harness,
+        plan,
         options.sandboxCommands ?? false,
         state.baselineProtectedConfiguration ?? {},
         options.signal,
       );
       commandsStored = await store.writeArtifact(
-        "verification-commands-repair.json",
+        "verificationCommandsRepair",
         "deterministic-runner",
         toCommandEvidence(commandResults),
         [repairStored.hash],
@@ -493,7 +473,7 @@ export async function runImplementationAndVerification(
     const finalImplementationHash =
       state.repairCount === 1 ? (state.artifacts.repair ?? "") : implementationStored.hash;
     const verificationStored = await store.writeArtifact(
-      "verification.json",
+      "verification",
       state.repairCount === 1 ? "verifier:repair" : "verifier",
       verification,
       [finalImplementationHash, commandsStored.hash],

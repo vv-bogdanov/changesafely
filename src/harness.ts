@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
-import { ArtifactStore, type ContextEntry, loadArtifact, loadRunState } from "./artifacts.js";
+import { parsePlanArtifactKey } from "./artifact-key.js";
+import {
+  ArtifactStore,
+  type ContextEntry,
+  loadRunState,
+  loadVerifiedArtifact,
+} from "./artifacts.js";
 import {
   assertProtectedConfigurationUnchanged,
   changedPaths,
@@ -12,6 +18,7 @@ import {
   inspectBaseline,
 } from "./git.js";
 import { testAuthorPrompt } from "./prompts.js";
+import { isTestPath, pathWithinPrefixes } from "./repository-policy.js";
 import {
   type CommandResult,
   isSafetyTestCommand,
@@ -19,8 +26,6 @@ import {
   toCommandEvidence,
 } from "./runner.js";
 import {
-  type ChangeContract,
-  type DecisionArtifact,
   type DetailedPlan,
   type HarnessArtifact,
   harnessArtifactSchema,
@@ -52,22 +57,6 @@ function parseHarness(message: string): HarnessArtifact {
     throw new Error(`Test Author returned invalid JSON: ${message.slice(0, 300)}`);
   }
   return validateHarnessArtifact(value);
-}
-
-function isTestPath(path: string): boolean {
-  const parts = path.split("/");
-  return (
-    parts.some((part) => ["test", "tests", "__tests__", "fixtures"].includes(part)) ||
-    /(?:\.test\.|\.spec\.)/.test(path)
-  );
-}
-
-function matchesAllowed(path: string, allowed: string[]): boolean {
-  return allowed.some((raw) => {
-    const prefix = raw.replace(/^\.\//, "").replace(/\/$/, "");
-    const candidate = path.replace(/^\.\//, "");
-    return candidate === prefix || candidate.startsWith(`${prefix}/`);
-  });
 }
 
 function selectedTestPaths(plan: DetailedPlan): string[] {
@@ -104,12 +93,10 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     throw new Error(state.reason);
   }
 
-  const contract = (await loadArtifact<ChangeContract>(repoPath, state.runId, "contract.json"))
-    .payload;
-  const decision = (await loadArtifact<DecisionArtifact>(repoPath, state.runId, "decision.json"))
-    .payload;
+  const contract = (await loadVerifiedArtifact(repoPath, state, "contract")).payload;
+  const decision = (await loadVerifiedArtifact(repoPath, state, "decision")).payload;
   const plan = (
-    await loadArtifact<DetailedPlan>(repoPath, state.runId, `plans/${decision.winnerPlanId}.json`)
+    await loadVerifiedArtifact(repoPath, state, parsePlanArtifactKey(decision.winnerPlanId))
   ).payload;
   const allowedTestPaths = selectedTestPaths(plan);
   const contractContext = state.contexts.find((entry) => entry.role === "contract");
@@ -182,7 +169,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     const paths = await changedPaths(repoPath, "HEAD");
     if (paths.length === 0) throw new Error("Test Author did not create a safety harness");
     const unexpected = paths.filter(
-      (path) => !isTestPath(path) || !matchesAllowed(path, allowedTestPaths),
+      (path) => !isTestPath(path) || !pathWithinPrefixes(path, allowedTestPaths),
     );
     if (unexpected.length > 0) {
       throw new Error(`Test Author changed paths outside test scope: ${unexpected.join(", ")}`);
@@ -239,14 +226,14 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     const testCommit = await commitPaths(repoPath, paths, "test: add SafeChange safety harness");
     const protectedHashes = await hashFiles(repoPath, paths);
     const harnessStored = await store.writeArtifact(
-      "harness.json",
+      "harness",
       "test-author",
       { ...harness, protectedHashes, testCommit },
       [state.artifacts.contract ?? "", state.artifacts.decision ?? ""],
     );
     state.artifacts.harness = harnessStored.hash;
     const commandStored = await store.writeArtifact(
-      "commands.json",
+      "commands",
       "deterministic-runner",
       toCommandEvidence([command]),
       [harnessStored.hash],

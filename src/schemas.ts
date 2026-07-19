@@ -1,6 +1,7 @@
 import Type from "typebox";
 import { Compile } from "typebox/compile";
 import type { TLocalizedValidationError } from "typebox/error";
+import { ARTIFACT_KEY_PATTERN } from "./artifact-key.js";
 
 type Mutable<Value> = Value extends readonly (infer Item)[]
   ? Mutable<Item>[]
@@ -164,8 +165,7 @@ const hashRecordSchema = Type.Record(Type.String(), sha256Schema, {
 const artifactHashRecordSchema = Type.Record(Type.String(), sha256Schema, {
   maxProperties: 32,
   propertyNames: Type.String({
-    pattern:
-      "^(?:evidence|contract|eligibility|decision|harness|commands|implementation|verificationCommands|verificationAttempt1|repair|verificationCommandsRepair|verification|plan-[1-5])$",
+    pattern: ARTIFACT_KEY_PATTERN,
   }),
 });
 const contextEntrySchema = strictObject({
@@ -278,6 +278,10 @@ export type RunState = Mutable<Type.Static<typeof runStateSchema>>;
 export type RunStatus = RunState["status"];
 export type PlanEligibility = Mutable<Type.Static<typeof planEligibilitySchema>>;
 export type CommandEvidence = Mutable<Type.Static<typeof commandEvidenceSchema>>;
+export type StoredHarnessArtifact = Mutable<Type.Static<typeof storedHarnessArtifactSchema>>;
+export type StoredImplementationArtifact = Mutable<
+  Type.Static<typeof storedImplementationArtifactSchema>
+>;
 
 export class ArtifactValidationError extends Error {
   constructor(

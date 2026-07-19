@@ -1,17 +1,10 @@
+import { pathWithinPrefixes } from "./repository-policy.js";
 import { isSafetyTestCommand } from "./runner.js";
 import type { ChangeContract, DetailedPlan, PlanEligibility } from "./schemas.js";
 
 export type { PlanEligibility } from "./schemas.js";
 
 type EligibilityFailure = PlanEligibility["failures"][number];
-
-function pathAllowed(path: string, prefixes: string[]): boolean {
-  return prefixes.some((rawPrefix) => {
-    const prefix = rawPrefix.replace(/^\.\//, "").replace(/\/$/, "");
-    const candidate = path.replace(/^\.\//, "");
-    return prefix === "." || candidate === prefix || candidate.startsWith(`${prefix}/`);
-  });
-}
 
 function missingIds(required: string[], covered: string[]): string[] {
   const coverage = new Set(covered);
@@ -44,7 +37,7 @@ export function evaluatePlan(contract: ChangeContract, plan: DetailedPlan): Plan
 
   const outsideScope = plan.files
     .map((file) => file.path)
-    .filter((path) => !pathAllowed(path, contract.allowedPathPrefixes));
+    .filter((path) => !pathWithinPrefixes(path, contract.allowedPathPrefixes));
   if (outsideScope.length > 0) {
     failures.push({
       code: "OUTSIDE_ALLOWED_SCOPE",
