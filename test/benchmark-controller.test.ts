@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { EVIDENCE_VERSION, type RunDocument } from "../bench/src/contracts.js";
+import { COMPARISON_VERSION, EVIDENCE_VERSION, type RunDocument } from "../bench/src/contracts.js";
 import { classifyTechnicalFailure } from "../bench/src/controller.js";
 import {
   contentSha256,
@@ -13,7 +13,7 @@ import {
   loadEvidencePackage,
   readVerifiedEvidenceFile,
 } from "../bench/src/evidence.js";
-import { buildCanaryCommand } from "../bench/src/isolation.js";
+import { prepareCodexHome } from "../bench/src/isolation.js";
 import {
   materializeAttempt,
   scenarioDefinition,
@@ -51,11 +51,37 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.doesNotMatch(snapshot.diff, /ignored\.js/u);
 });
 
+test("scope evaluation sees forbidden files after the controller snapshot commit", async (t) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-scope-"));
+  t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
+  const scenario = scenarioDefinition(benchRoot, "double-charge");
+  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"), {
+    installDependencies: false,
+  });
+  await writeFile(join(attempt.workspace, "README.md"), "forbidden benchmark change\n");
+  await snapshotAttempt(attempt.workspace, attempt.baselineCommit);
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [scenario.evaluator, attempt.workspace],
+    {
+      timeout: 180_000,
+    },
+  );
+  const evaluation = JSON.parse(stdout) as {
+    checks: Array<{ id: string; passed: boolean; detail: string }>;
+  };
+  const forbidden = evaluation.checks.find((check) => check.id === "forbidden-files");
+  assert.equal(forbidden?.passed, false);
+  assert.match(forbidden?.detail ?? "", /README\.md/u);
+});
+
 test("creates immutable hash-verified evidence and fails closed on corruption", async (t) => {
   const resultsRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-evidence-"));
   t.after(async () => rm(resultsRoot, { recursive: true, force: true }));
   const run = runDocument("evidence-run");
   const created = await createEvidencePackage(resultsRoot, run, {
+    "comparison.json": comparisonContent(run),
     "diff.patch": "diff --git a/a b/a\n",
     "events.jsonl": '{"type":"synthetic"}\n',
   });
@@ -84,7 +110,11 @@ test("creates immutable hash-verified evidence and fails closed on corruption", 
     assert.equal((await stat(join(created.path, "run.json"))).mode & 0o777, 0o600);
   }
   await assert.rejects(
-    createEvidencePackage(resultsRoot, run, { "diff.patch": "", "events.jsonl": "" }),
+    createEvidencePackage(resultsRoot, run, {
+      "comparison.json": comparisonContent(run),
+      "diff.patch": "",
+      "events.jsonl": "",
+    }),
     /already exists/u,
   );
 
@@ -97,6 +127,7 @@ test("rejects extra evidence and path traversal", async (t) => {
   t.after(async () => rm(resultsRoot, { recursive: true, force: true }));
   const run = runDocument("extra-run");
   const created = await createEvidencePackage(resultsRoot, run, {
+    "comparison.json": comparisonContent(run),
     "diff.patch": "",
     "events.jsonl": "",
   });
@@ -106,6 +137,7 @@ test("rejects extra evidence and path traversal", async (t) => {
   await assert.rejects(
     createEvidencePackage(resultsRoot, runDocument("traversal-run"), {
       "../escape": "bad",
+      "comparison.json": comparisonContent(runDocument("traversal-run")),
       "diff.patch": "",
       "events.jsonl": "",
     }),
@@ -113,20 +145,21 @@ test("rejects extra evidence and path traversal", async (t) => {
   );
 });
 
-test("builds a Bubblewrap canary with a private workspace and network namespace", () => {
-  const command = buildCanaryCommand(
-    "/tmp/worker",
-    "/tmp/controller/hidden-canary.txt",
-    "/home/controller/bench/BENCHMARK_SPEC.md",
-  );
-  assert.equal(command.program, "bwrap");
-  assert(command.args.includes("--unshare-net"));
-  assert(command.args.includes("--clearenv"));
-  assert.deepEqual(
-    command.args.slice(command.args.indexOf("--bind"), command.args.indexOf("--bind") + 3),
-    ["--bind", "/tmp/worker", "/workspace"],
-  );
-  assert(!command.args.includes("--ro-bind-try /home"));
+test("builds a minimal Codex home with a deny-network permission profile", async (t) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-codex-home-"));
+  t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
+  const source = join(temporaryRoot, "source");
+  const destination = join(temporaryRoot, "destination");
+  await mkdir(source);
+  await writeFile(join(source, "auth.json"), '{"fake":"credential"}\n');
+  await prepareCodexHome(source, destination, "changesafely-benchmark", "/runtime/node");
+  const config = await readFile(join(destination, "config.toml"), "utf8");
+  assert.match(config, /default_permissions = "changesafely-benchmark"/u);
+  assert.match(config, /enabled = false/u);
+  assert.match(config, /"\/runtime\/node" = "read"/u);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(join(destination, "auth.json"))).mode & 0o777, 0o600);
+  }
 });
 
 test("classifies incomplete worker evidence as technical failure", () => {
@@ -159,11 +192,40 @@ test("classifies incomplete worker evidence as technical failure", () => {
   );
 });
 
+test("benchmark CLI refuses final-model runs before explicit authorization", async () => {
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        join(projectRoot, "dist/bench/src/cli.js"),
+        "run",
+        "--scenario",
+        "double-charge",
+        "--mode",
+        "direct",
+        "--model",
+        "gpt-5.6-codex",
+      ],
+      { timeout: 10_000 },
+    ),
+    (error: unknown) => {
+      const stderr =
+        typeof error === "object" && error !== null && "stderr" in error
+          ? String(error.stderr)
+          : "";
+      assert.match(stderr, /Final measurements require a separate explicit user command/u);
+      return true;
+    },
+  );
+});
+
 function runDocument(runId: string): RunDocument {
   const taskText = "Synthetic benchmark task\n";
-  return {
+  const run: RunDocument = {
     evidenceVersion: EVIDENCE_VERSION,
     runId,
+    comparisonId: "comparison-0123456789abcdef",
+    comparisonSha256: "0".repeat(64),
     scenario: "double-charge",
     mode: "direct",
     taskText,
@@ -181,7 +243,8 @@ function runDocument(runId: string): RunDocument {
       architecture: process.arch,
     },
     isolation: {
-      provider: "bubblewrap",
+      provider: "codex-permission-profile",
+      permissionProfile: "changesafely-benchmark",
       canarySha256: "c".repeat(64),
       agentToolNetwork: "disabled",
     },
@@ -202,4 +265,32 @@ function runDocument(runId: string): RunDocument {
     },
     outcome: "safe_success",
   };
+  run.comparisonSha256 = contentSha256(comparisonContent(run));
+  return run;
+}
+
+function comparisonContent(run: RunDocument): string {
+  return `${JSON.stringify(
+    {
+      comparisonVersion: COMPARISON_VERSION,
+      comparisonId: run.comparisonId,
+      createdAt: "2026-07-19T00:00:00.000Z",
+      scenario: run.scenario,
+      taskText: run.taskText,
+      taskSha256: run.taskSha256,
+      baselineCommit: run.baselineCommit,
+      model: run.model,
+      effort: run.effort,
+      timeoutMs: 3_600_000,
+      permissionProfile: run.isolation.permissionProfile,
+      agentToolNetwork: "disabled",
+      visibleChecks: ["npm test"],
+      evaluatorSha256: "e".repeat(64),
+      executionOrder: ["direct", "changesafely"],
+      maxAttemptsPerMode: 1,
+      environment: run.environment,
+    },
+    null,
+    2,
+  )}\n`;
 }

@@ -5,6 +5,7 @@ import {
   EVIDENCE_VERSION,
   type EvidenceManifest,
   type RunDocument,
+  validateComparisonManifest,
   validateEvidenceManifest,
   validateRunDocument,
 } from "./contracts.js";
@@ -35,10 +36,11 @@ export async function createEvidencePackage(
     validateEvidencePath(path);
     contentByPath.set(path, Buffer.isBuffer(content) ? content : Buffer.from(content));
   }
-  for (const required of ["diff.patch", "events.jsonl"]) {
+  for (const required of ["comparison.json", "diff.patch", "events.jsonl"]) {
     if (!contentByPath.has(required))
       throw new Error(`Missing required evidence file: ${required}`);
   }
+  verifyComparisonLineage(run, contentByPath.get("comparison.json") ?? Buffer.alloc(0));
 
   const manifest: EvidenceManifest = {
     evidenceVersion: EVIDENCE_VERSION,
@@ -107,6 +109,7 @@ export async function loadEvidencePackage(
   );
   if (run.runId !== runId) throw new Error("Benchmark run identity mismatch");
   verifyRunLineage(run);
+  verifyComparisonLineage(run, await readFile(resolveWithin(packagePath, "comparison.json")));
   return { path: packagePath, run, manifest };
 }
 
@@ -130,6 +133,27 @@ export function contentSha256(value: string | Buffer): string {
 function verifyRunLineage(run: RunDocument): void {
   if (sha256(run.taskText) !== run.taskSha256) {
     throw new Error("Benchmark task hash mismatch");
+  }
+}
+
+function verifyComparisonLineage(run: RunDocument, content: Buffer): void {
+  if (sha256(content) !== run.comparisonSha256) {
+    throw new Error("Benchmark comparison hash mismatch");
+  }
+  const comparison = validateComparisonManifest(
+    parseJson(content.toString("utf8"), "comparison.json"),
+  );
+  if (
+    comparison.comparisonId !== run.comparisonId ||
+    comparison.scenario !== run.scenario ||
+    comparison.taskText !== run.taskText ||
+    comparison.taskSha256 !== run.taskSha256 ||
+    comparison.baselineCommit !== run.baselineCommit ||
+    comparison.model !== run.model ||
+    comparison.effort !== run.effort ||
+    JSON.stringify(comparison.environment) !== JSON.stringify(run.environment)
+  ) {
+    throw new Error("Benchmark comparison lineage mismatch");
   }
 }
 

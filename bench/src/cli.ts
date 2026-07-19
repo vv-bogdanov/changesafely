@@ -1,21 +1,26 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
+import { resolveCodexCommand } from "./comparison.js";
+import type { BenchmarkMode } from "./contracts.js";
 import { loadEvidencePackage } from "./evidence.js";
-import { proveIsolation } from "./isolation.js";
+import { prepareCodexHome, proveIsolation } from "./isolation.js";
 import { materializeAttempt, scenarioDefinition } from "./repository.js";
+import { runBenchmarkAttempt } from "./run.js";
 
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const benchRoot = join(projectRoot, "bench");
+const SPARK_MODEL = "gpt-5.3-codex-spark";
 
 const help = `ChangeSafely Risk Suite
 
 Usage:
+  npm run benchmark -- run --scenario double-charge --mode direct|changesafely --model ${SPARK_MODEL}
   npm run benchmark -- validate --scenario double-charge
   npm run benchmark -- canary --scenario double-charge
   npm run benchmark -- replay --run <run-id> [--results <path>]
@@ -32,9 +37,13 @@ export async function main(argv: string[]): Promise<number> {
       strict: true,
       options: {
         help: { type: "boolean", short: "h" },
+        effort: { type: "string", default: "medium" },
+        mode: { type: "string" },
+        model: { type: "string" },
         results: { type: "string" },
         run: { type: "string" },
         scenario: { type: "string" },
+        timeout: { type: "string", default: "3600" },
       },
     });
     if (parsed.values.help || parsed.positionals.length === 0) {
@@ -67,11 +76,68 @@ export async function main(argv: string[]): Promise<number> {
         const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"), {
           installDependencies: false,
         });
-        const proof = await proveIsolation(projectRoot, attempt.workspace);
+        const codexHome = join(temporaryRoot, "codex-home");
+        const permissionProfile = "changesafely-benchmark";
+        await prepareCodexHome(
+          process.env.CODEX_HOME ?? join(homedir(), ".codex"),
+          codexHome,
+          permissionProfile,
+        );
+        const proof = await proveIsolation(
+          await resolveCodexCommand(projectRoot),
+          codexHome,
+          attempt.workspace,
+          join(projectRoot, "bench", "BENCHMARK_SPEC.md"),
+          permissionProfile,
+        );
         process.stdout.write(`${JSON.stringify(proof, null, 2)}\n`);
       } finally {
         await rm(temporaryRoot, { recursive: true, force: true });
       }
+      return 0;
+    }
+
+    if (command === "run") {
+      const scenario = required(parsed.values.scenario, "--scenario");
+      const mode = benchmarkMode(required(parsed.values.mode, "--mode"));
+      const model = required(parsed.values.model, "--model");
+      if (model !== SPARK_MODEL) {
+        throw new Error(
+          `Development runs are locked to ${SPARK_MODEL}. Final measurements require a separate explicit user command after Spark evaluation.`,
+        );
+      }
+      const effort = required(parsed.values.effort, "--effort");
+      if (effort !== "medium") {
+        throw new Error("--effort must be medium for a fair paired comparison");
+      }
+      const timeoutSeconds = Number(parsed.values.timeout);
+      if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 3_600) {
+        throw new Error("--timeout must be an integer from 1 to 3600 seconds");
+      }
+      const evidence = await runBenchmarkAttempt({
+        projectRoot,
+        benchRoot,
+        resultsRoot: resolve(parsed.values.results ?? join(benchRoot, "results")),
+        scenario,
+        mode,
+        model,
+        effort,
+        timeoutMs: timeoutSeconds * 1_000,
+        codexCommand: await resolveCodexCommand(projectRoot),
+      });
+      process.stdout.write(
+        `${JSON.stringify(
+          {
+            runId: evidence.run.runId,
+            comparisonId: evidence.run.comparisonId,
+            mode: evidence.run.mode,
+            outcome: evidence.run.outcome,
+            evidencePath: evidence.path,
+          },
+          null,
+          2,
+        )}\n`,
+      );
       return 0;
     }
 
@@ -85,7 +151,7 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    if (["evaluate", "report", "run"].includes(command ?? "")) {
+    if (["evaluate", "report"].includes(command ?? "")) {
       throw new Error(`${command} is not available until its STEP.md implementation phase`);
     }
     throw new Error(`Unknown benchmark command: ${command}`);
@@ -93,6 +159,11 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 2;
   }
+}
+
+function benchmarkMode(value: string): BenchmarkMode {
+  if (value === "direct" || value === "changesafely") return value;
+  throw new Error("--mode must be direct or changesafely");
 }
 
 function required(value: string | undefined, option: string): string {

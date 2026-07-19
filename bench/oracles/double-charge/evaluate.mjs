@@ -155,13 +155,24 @@ async function runScopeChecks(checks, root) {
   });
 
   await check(checks, "forbidden-files", "scope", async () => {
+    const rootCommit = run("git", ["rev-list", "--max-parents=0", "HEAD"], root);
+    assert(rootCommit.status === 0, commandFailure(rootCommit));
+    const committed = run(
+      "git",
+      ["diff", "--name-only", "-z", rootCommit.stdout.trim(), "HEAD"],
+      root,
+    );
+    assert(committed.status === 0, commandFailure(committed));
     const status = run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], root);
     assert(status.status === 0, commandFailure(status));
-    const files = status.stdout
-      .split("\0")
-      .filter(Boolean)
-      .map((entry) => entry.slice(3));
-    const forbidden = files.filter((file) => !/^(src|test)\//u.test(file));
+    const files = new Set([
+      ...committed.stdout.split("\0").filter(Boolean),
+      ...status.stdout
+        .split("\0")
+        .filter(Boolean)
+        .map((entry) => entry.slice(3)),
+    ]);
+    const forbidden = [...files].filter((file) => !/^(src|test)\//u.test(file));
     assert(forbidden.length === 0, `forbidden changed files: ${forbidden.join(", ")}`);
   });
 }

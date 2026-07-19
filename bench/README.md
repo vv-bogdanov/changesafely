@@ -36,3 +36,24 @@ This is an open pilot evaluation, not a universal industry benchmark.
   the Spark results have been evaluated;
 - the worker receives only the selected baseline and verbatim public task, never this
   controller directory or the hidden oracle.
+
+## Development commands
+
+Validate the fixture and prove the Linux permission boundary without a model call:
+
+```sh
+npm run benchmark -- validate --scenario double-charge
+npm run benchmark -- canary --scenario double-charge
+```
+
+Run the opt-in Spark comparison sequentially. The controller rejects ChangeSafely
+until the matching Direct attempt exists, and refuses a second attempt in either mode:
+
+```sh
+npm run benchmark -- run --scenario double-charge --mode direct --model gpt-5.3-codex-spark
+npm run benchmark -- run --scenario double-charge --mode changesafely --model gpt-5.3-codex-spark
+```
+
+Attempts are stored under ignored `bench/results/` directories as immutable,
+hash-verified evidence packages. A non-Spark model is intentionally rejected until
+Spark results are evaluated and a separate user command authorizes final measurements.

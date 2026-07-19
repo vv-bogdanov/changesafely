@@ -2,8 +2,9 @@ import Type from "typebox";
 import { Compile } from "typebox/compile";
 
 export const EVIDENCE_VERSION = 1;
+export const COMPARISON_VERSION = 1;
 
-type BenchmarkMode = "changesafely" | "direct";
+export type BenchmarkMode = "changesafely" | "direct";
 export type BenchmarkOutcome =
   | "safe_success"
   | "unsafe_green"
@@ -23,6 +24,8 @@ interface WorkerResult {
 export interface RunDocument {
   evidenceVersion: typeof EVIDENCE_VERSION;
   runId: string;
+  comparisonId: string;
+  comparisonSha256: string;
   scenario: string;
   mode: BenchmarkMode;
   taskText: string;
@@ -40,7 +43,8 @@ export interface RunDocument {
     architecture: string;
   };
   isolation: {
-    provider: "bubblewrap";
+    provider: "codex-permission-profile";
+    permissionProfile: string;
     canarySha256: string;
     agentToolNetwork: "disabled";
   };
@@ -53,6 +57,51 @@ export interface RunDocument {
     reasoningTokens: number | null;
   };
   outcome: BenchmarkOutcome;
+}
+
+export interface ComparisonManifest {
+  comparisonVersion: typeof COMPARISON_VERSION;
+  comparisonId: string;
+  createdAt: string;
+  scenario: string;
+  taskText: string;
+  taskSha256: string;
+  baselineCommit: string;
+  model: string;
+  effort: string;
+  timeoutMs: number;
+  permissionProfile: string;
+  agentToolNetwork: "disabled";
+  visibleChecks: ["npm test"];
+  evaluatorSha256: string;
+  executionOrder: ["direct", "changesafely"];
+  maxAttemptsPerMode: 1;
+  environment: {
+    nodeVersion: string;
+    gitVersion: string;
+    codexVersion: string;
+    changesafelyVersion: string;
+    platform: string;
+    architecture: string;
+  };
+}
+
+export interface EvaluationDocument {
+  schemaVersion: 1;
+  scenario: string;
+  checks: Array<{
+    id: string;
+    category: "acceptance" | "preservation" | "scope" | "visible";
+    passed: boolean;
+    detail: string;
+  }>;
+  summary: {
+    visible: boolean;
+    acceptance: boolean;
+    preservation: boolean;
+    scope: boolean;
+  };
+  passed: boolean;
 }
 
 interface EvidenceFile {
@@ -84,10 +133,24 @@ const workerResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const environmentSchema = Type.Object(
+  {
+    nodeVersion: Type.String({ minLength: 1, maxLength: 100 }),
+    gitVersion: Type.String({ minLength: 1, maxLength: 500 }),
+    codexVersion: Type.String({ minLength: 1, maxLength: 500 }),
+    changesafelyVersion: Type.String({ minLength: 1, maxLength: 100 }),
+    platform: Type.String({ minLength: 1, maxLength: 100 }),
+    architecture: Type.String({ minLength: 1, maxLength: 100 }),
+  },
+  { additionalProperties: false },
+);
+
 const runDocumentSchema = Type.Object(
   {
     evidenceVersion: Type.Literal(EVIDENCE_VERSION),
     runId: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
+    comparisonId: Type.String({ pattern: "^comparison-[a-f0-9]{16}$" }),
+    comparisonSha256: sha256,
     scenario: Type.String({ minLength: 1, maxLength: 100 }),
     mode: Type.Union([Type.Literal("changesafely"), Type.Literal("direct")]),
     taskText: Type.String({ minLength: 1, maxLength: 20_000 }),
@@ -96,20 +159,11 @@ const runDocumentSchema = Type.Object(
     snapshotCommit: commit,
     model: Type.String({ minLength: 1, maxLength: 255 }),
     effort: Type.String({ minLength: 1, maxLength: 100 }),
-    environment: Type.Object(
-      {
-        nodeVersion: Type.String({ minLength: 1, maxLength: 100 }),
-        gitVersion: Type.String({ minLength: 1, maxLength: 500 }),
-        codexVersion: Type.String({ minLength: 1, maxLength: 500 }),
-        changesafelyVersion: Type.String({ minLength: 1, maxLength: 100 }),
-        platform: Type.String({ minLength: 1, maxLength: 100 }),
-        architecture: Type.String({ minLength: 1, maxLength: 100 }),
-      },
-      { additionalProperties: false },
-    ),
+    environment: environmentSchema,
     isolation: Type.Object(
       {
-        provider: Type.Literal("bubblewrap"),
+        provider: Type.Literal("codex-permission-profile"),
+        permissionProfile: Type.String({ minLength: 1, maxLength: 100 }),
         canarySha256: sha256,
         agentToolNetwork: Type.Literal("disabled"),
       },
@@ -137,6 +191,29 @@ const runDocumentSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const comparisonManifestSchema = Type.Object(
+  {
+    comparisonVersion: Type.Literal(COMPARISON_VERSION),
+    comparisonId: Type.String({ pattern: "^comparison-[a-f0-9]{16}$" }),
+    createdAt: timestamp,
+    scenario: Type.String({ minLength: 1, maxLength: 100 }),
+    taskText: Type.String({ minLength: 1, maxLength: 20_000 }),
+    taskSha256: sha256,
+    baselineCommit: commit,
+    model: Type.String({ minLength: 1, maxLength: 255 }),
+    effort: Type.String({ minLength: 1, maxLength: 100 }),
+    timeoutMs: Type.Integer({ minimum: 1 }),
+    permissionProfile: Type.String({ minLength: 1, maxLength: 100 }),
+    agentToolNetwork: Type.Literal("disabled"),
+    visibleChecks: Type.Tuple([Type.Literal("npm test")]),
+    evaluatorSha256: sha256,
+    executionOrder: Type.Tuple([Type.Literal("direct"), Type.Literal("changesafely")]),
+    maxAttemptsPerMode: Type.Literal(1),
+    environment: environmentSchema,
+  },
+  { additionalProperties: false },
+);
+
 const evidenceManifestSchema = Type.Object(
   {
     evidenceVersion: Type.Literal(EVIDENCE_VERSION),
@@ -156,8 +233,45 @@ const evidenceManifestSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const evaluationDocumentSchema = Type.Object(
+  {
+    schemaVersion: Type.Literal(1),
+    scenario: Type.String({ minLength: 1, maxLength: 100 }),
+    checks: Type.Array(
+      Type.Object(
+        {
+          id: Type.String({ minLength: 1, maxLength: 100 }),
+          category: Type.Union([
+            Type.Literal("acceptance"),
+            Type.Literal("preservation"),
+            Type.Literal("scope"),
+            Type.Literal("visible"),
+          ]),
+          passed: Type.Boolean(),
+          detail: Type.String({ maxLength: 10_000 }),
+        },
+        { additionalProperties: false },
+      ),
+      { minItems: 1, maxItems: 100 },
+    ),
+    summary: Type.Object(
+      {
+        visible: Type.Boolean(),
+        acceptance: Type.Boolean(),
+        preservation: Type.Boolean(),
+        scope: Type.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+    passed: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
 const validateRunDocumentSchema = Compile(runDocumentSchema);
 const validateEvidenceManifestSchema = Compile(evidenceManifestSchema);
+const validateComparisonManifestSchema = Compile(comparisonManifestSchema);
+const validateEvaluationDocumentSchema = Compile(evaluationDocumentSchema);
 
 export function validateRunDocument(value: unknown): RunDocument {
   if (!validateRunDocumentSchema.Check(value)) throw new Error("Invalid benchmark run document");
@@ -169,4 +283,18 @@ export function validateEvidenceManifest(value: unknown): EvidenceManifest {
     throw new Error("Invalid benchmark evidence manifest");
   }
   return value as EvidenceManifest;
+}
+
+export function validateComparisonManifest(value: unknown): ComparisonManifest {
+  if (!validateComparisonManifestSchema.Check(value)) {
+    throw new Error("Invalid benchmark comparison manifest");
+  }
+  return value as ComparisonManifest;
+}
+
+export function validateEvaluationDocument(value: unknown): EvaluationDocument {
+  if (!validateEvaluationDocumentSchema.Check(value)) {
+    throw new Error("Invalid benchmark evaluation document");
+  }
+  return value as EvaluationDocument;
 }
