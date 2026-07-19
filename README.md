@@ -227,5 +227,6 @@ npm run package:smoke
 ```
 
 Default tests use a local fake App Server. Live Codex checks remain opt-in. See
-[`CONTRIBUTING.md`](CONTRIBUTING.md), [`CHANGELOG.md`](CHANGELOG.md), and the
-original [`SAFECHANGE_SPEC.md`](SAFECHANGE_SPEC.md) for more detail.
+[`CONTRIBUTING.md`](CONTRIBUTING.md), the
+[`prerelease checklist`](docs/PRERELEASE_CHECKLIST.md), [`CHANGELOG.md`](CHANGELOG.md),
+and the original [`SAFECHANGE_SPEC.md`](SAFECHANGE_SPEC.md) for more detail.

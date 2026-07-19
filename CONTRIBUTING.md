@@ -16,6 +16,10 @@ The generated App Server protocol is pinned to the Codex version recorded in
 `src/app-server/generated/protocol-version.json`. Use `npm run protocol:generate`
 only for an intentional protocol upgrade and commit the generated diff separately.
 
+Branch protection is intentionally deferred during rapid MVP development. Before a
+public prerelease, maintainers must apply the rules and release gates in
+[`docs/PRERELEASE_CHECKLIST.md`](docs/PRERELEASE_CHECKLIST.md).
+
 ## Pull requests
 
 - Keep changes minimal and explain user-visible behavior.
