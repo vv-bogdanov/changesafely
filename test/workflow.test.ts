@@ -150,6 +150,28 @@ test("creates a failing-first safety harness on a branch and commits T1", async 
   assert.equal(testAuthor?.parentThreadId, contract?.threadId);
 });
 
+test("accepts language-neutral nonempty failure output for a red harness", async (t) => {
+  const testScript =
+    "node -e \"const fs=require('node:fs'); const harness=fs.existsSync('test/value.test.ts'); const implemented=fs.readFileSync('src/value.ts','utf8').includes('= 2'); if(harness && !implemented){console.error('custom domain mismatch');process.exit(1)}\"";
+  const repoPath = await fixtureRepo(t, testScript);
+  const clientFactory = fakeAppServerFactory(repoPath);
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value.",
+    plannerCount: 1,
+    clientFactory,
+  });
+
+  const harness = await runHarness({ repoPath, runId: planning.runId, clientFactory });
+  assert.equal(harness.harness.expectedBaselineOutcome, "fail");
+  const result = await runImplementationAndVerification({
+    repoPath,
+    runId: planning.runId,
+    clientFactory,
+  });
+  assert.equal(result.accepted, true);
+});
+
 test("stops when the baseline repository test script changes protected configuration", async (t) => {
   const repoPath = await fixtureRepo(
     t,

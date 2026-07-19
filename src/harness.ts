@@ -280,6 +280,12 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       state.baselineProtectedConfiguration ?? {},
     );
     const combinedOutput = `${command.stdout}\n${command.stderr}`;
+    if (command.timedOut || command.signal || command.exitCode === null) {
+      throw harnessError(
+        "HARNESS_COMMAND_TECHNICAL_FAILURE",
+        `Harness command did not complete normally: exit ${command.exitCode}, signal ${command.signal}, timedOut ${command.timedOut}`,
+      );
+    }
     const expectedPass = harness.expectedBaselineOutcome === "pass";
     if ((command.exitCode === 0) !== expectedPass) {
       throw harnessError(
@@ -287,13 +293,10 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
         `Harness baseline outcome mismatch: expected ${harness.expectedBaselineOutcome}, exit ${command.exitCode}; output: ${combinedOutput.slice(-1000)}`,
       );
     }
-    if (
-      harness.expectedBaselineOutcome === "fail" &&
-      !/(?:failing tests|not ok|AssertionError|Error \[|fail\s+[1-9])/i.test(combinedOutput)
-    ) {
+    if (harness.expectedBaselineOutcome === "fail" && combinedOutput.trim().length === 0) {
       throw harnessError(
         "HARNESS_FAILURE_SIGNAL_MISSING",
-        `Harness exited non-zero without an observable test-failure signal: ${combinedOutput.slice(-1000)}`,
+        "Harness exited non-zero without observable failure output",
       );
     }
 

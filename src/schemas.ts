@@ -128,7 +128,7 @@ export const harnessArtifactSchema = strictObject({
   fixturePaths: stringArraySchema,
   targetedCommand: commandSchema,
   expectedBaselineOutcome: stringEnum("fail", "pass"),
-  expectedFailure: Type.String(),
+  expectedFailure: Type.String({ minLength: 1, maxLength: 400 }),
   protectedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: 12 }),
 });
 
@@ -342,7 +342,6 @@ export type ChangeContract = Mutable<Type.Static<typeof changeContractSchema>>;
 export type DetailedPlan = Mutable<Type.Static<typeof detailedPlanSchema>>;
 export type DecisionArtifact = Mutable<Type.Static<typeof decisionArtifactSchema>>;
 export type HarnessArtifact = Mutable<Type.Static<typeof harnessArtifactSchema>>;
-type ImplementationArtifact = Mutable<Type.Static<typeof implementationArtifactSchema>>;
 export type VerificationArtifact = Mutable<Type.Static<typeof verificationArtifactSchema>>;
 export type ContextEntry = Mutable<Type.Static<typeof contextEntrySchema>>;
 export type RunState = Mutable<Type.Static<typeof runStateSchema>>;
