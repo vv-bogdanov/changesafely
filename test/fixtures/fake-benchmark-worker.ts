@@ -57,6 +57,7 @@ if (mode === "direct") {
     option("--permission-profile") === "changesafely-benchmark",
     "ChangeSafely permission profile differs",
   );
+  requireValue(args.includes("--diagnostics"), "ChangeSafely diagnostics flag is missing");
   await writeCandidate("changesafely");
   const runPath = join(process.cwd(), ".changesafely", "runs", "fake-run");
   await mkdir(runPath, { recursive: true });

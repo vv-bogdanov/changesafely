@@ -84,6 +84,7 @@ export function changeSafelyInvocation(options: AdapterOptions): ProcessInvocati
       options.model,
       "--permission-profile",
       options.permissionProfile,
+      "--diagnostics",
       "--timeout",
       String(Math.ceil(options.timeoutMs / 1000)),
       "--repo",

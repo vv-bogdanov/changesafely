@@ -234,7 +234,9 @@ model, reasoning effort, runtime limit, sandbox, network policy, controller-owne
 argv/cwd visible checks, target-toolchain version commands and results, environment, and
 execution order. Reject the pair if either mode differs. Comparison manifest v2 stores these
 structured commands. Evidence carrying the npm-only v1 contract remains readable and is never
-rewritten or evaluated against newer scenario assets.
+rewritten or evaluated against newer scenario assets. ChangeSafely attempts enable bounded
+diagnostics because benchmark repositories are public, controller-owned fixtures; the product
+default remains diagnostics-off.
 
 The pilot defaults are:
 
