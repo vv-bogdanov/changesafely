@@ -52,9 +52,9 @@ function parseOutcome(result: ProcessResult): JsonOutcome {
 }
 
 test("packed CLI preserves its functional workflow contracts", { timeout: 180_000 }, async (t) => {
-  const temporaryRoot = await mkdtemp(join(tmpdir(), "safechange-cli-functional-"));
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-cli-functional-"));
   t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
-  const { safechange } = await installPackedCli(root, temporaryRoot);
+  const { changesafely } = await installPackedCli(root, temporaryRoot);
   const codexVersion = await protocolVersion(root);
 
   const environment = async (mode = "default"): Promise<NodeJS.ProcessEnv> =>
@@ -93,7 +93,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
   await t.test("plan emits clean JSON and accepts an explicit Spark model", async () => {
     const repoPath = await repository("plan-json");
     const result = await spawnCaptured(
-      safechange,
+      changesafely,
       [
         "plan",
         "--task",
@@ -120,19 +120,19 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
   await t.test("full run reports human progress on stderr", async () => {
     const repoPath = await repository("full-run");
     const result = await spawnCaptured(
-      safechange,
+      changesafely,
       ["run", "--task", "Change the fixture value.", "--plans", "1", "--repo", repoPath],
       temporaryRoot,
       await environment(),
     ).result;
     assert.equal(result.exitCode, 0);
     assert.match(result.stdout, /Status: VERIFIED/);
-    assert.match(result.stderr, /\[safechange\].*discovery/);
-    assert.match(result.stderr, /\[safechange\].*verified/);
+    assert.match(result.stderr, /\[changesafely\].*discovery/);
+    assert.match(result.stderr, /\[changesafely\].*verified/);
     assert.equal(await runSuccessful("git", ["rev-list", "--count", "HEAD"], repoPath), "3");
     const runId = result.stdout.match(/^Run: (.+)$/m)?.[1];
     assert.ok(runId);
-    const state = await readState(join(repoPath, ".safechange", "runs", runId, "state.json"));
+    const state = await readState(join(repoPath, ".changesafely", "runs", runId, "state.json"));
     assert.equal(await runSuccessful("git", ["branch", "--show-current"], repoPath), state.branch);
     assert.equal(
       await runSuccessful(
@@ -147,7 +147,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     assert.ok(harness.payload.protectedHashes["test/value.test.ts"]);
     assert.equal(verification.payload.verdict, "accept");
     assert.match(
-      await readFile(join(repoPath, ".safechange", "runs", runId, "report.md"), "utf8"),
+      await readFile(join(repoPath, ".changesafely", "runs", runId, "report.md"), "utf8"),
       /VERIFIED/,
     );
   });
@@ -158,7 +158,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     const alias = join(temporaryRoot, "repository-alias");
     await symlink(repoPath, alias, "dir");
     const result = await spawnCaptured(
-      safechange,
+      changesafely,
       ["run", "--task", "Change the fixture value.", "--plans", "1", "--repo", alias, "--json"],
       temporaryRoot,
       await environment(),
@@ -171,7 +171,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
   await t.test("resume continues from planning and harness boundaries", async () => {
     const planningRepo = await repository("resume-planning");
     const plan = await spawnCaptured(
-      safechange,
+      changesafely,
       [
         "plan",
         "--task",
@@ -187,7 +187,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     ).result;
     const planned = parseOutcome(plan);
     const planningResume = await spawnCaptured(
-      safechange,
+      changesafely,
       ["resume", "--run", planned.runId, "--repo", planningRepo, "--json"],
       temporaryRoot,
       await environment(),
@@ -197,7 +197,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
 
     const harness = await prepareHarness("resume-harness");
     const harnessResume = await spawnCaptured(
-      safechange,
+      changesafely,
       ["resume", "--run", harness.runId, "--repo", harness.repoPath, "--json"],
       temporaryRoot,
       await environment(),
@@ -209,7 +209,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
   await t.test("verifier rejection is explicit and persisted", async () => {
     const repoPath = await repository("verifier-reject");
     const result = await spawnCaptured(
-      safechange,
+      changesafely,
       ["run", "--task", "Change the fixture value.", "--plans", "1", "--repo", repoPath, "--json"],
       temporaryRoot,
       await environment("verifier-reject"),
@@ -224,7 +224,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
   await t.test("status rejects corrupt and incompatible state without mutating it", async () => {
     const repoPath = await repository("incompatible-state");
     const plan = await spawnCaptured(
-      safechange,
+      changesafely,
       ["plan", "--task", "Change the fixture value.", "--plans", "1", "--repo", repoPath, "--json"],
       temporaryRoot,
       await environment(),
@@ -233,7 +233,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     const incompatible = `${JSON.stringify({ ...(await readState(outcome.statePath)), stateVersion: 2 }, null, 2)}\n`;
     await writeFile(outcome.statePath, incompatible, "utf8");
     const status = await spawnCaptured(
-      safechange,
+      changesafely,
       ["status", "--run", outcome.runId, "--repo", repoPath, "--json"],
       temporaryRoot,
       await environment(),
@@ -247,7 +247,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
 
     await writeFile(outcome.statePath, "{\n", "utf8");
     const corrupt = await spawnCaptured(
-      safechange,
+      changesafely,
       ["status", "--run", outcome.runId, "--repo", repoPath, "--json"],
       temporaryRoot,
       await environment(),
@@ -268,12 +268,12 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       if (process.platform === "win32") return;
       const harness = await prepareHarness(`interrupt-${signal.toLowerCase()}`);
       const processRun = spawnCaptured(
-        safechange,
+        changesafely,
         ["resume", "--run", harness.runId, "--repo", harness.repoPath, "--json"],
         temporaryRoot,
         await environment("delay-implementer"),
       );
-      await waitFor(join(harness.repoPath, ".safechange", "test-implementer-started"));
+      await waitFor(join(harness.repoPath, ".changesafely", "test-implementer-started"));
       processRun.child.kill(signal);
       const interrupted = await processRun.result;
       assert.equal(interrupted.exitCode, expectedExit);
@@ -287,10 +287,10 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
         state.testCommit,
       );
       assert.equal(await runSuccessful("git", ["status", "--porcelain=v1"], harness.repoPath), "");
-      await assert.rejects(access(join(harness.repoPath, ".git", "safechange.lock")));
+      await assert.rejects(access(join(harness.repoPath, ".git", "changesafely.lock")));
 
       const resumed = await spawnCaptured(
-        safechange,
+        changesafely,
         ["resume", "--run", harness.runId, "--repo", harness.repoPath, "--json"],
         temporaryRoot,
         await environment(),
@@ -303,7 +303,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
   await t.test("total timeout preserves T1 and permits a safe resume", async () => {
     const harness = await prepareHarness("timeout");
     const timed = await spawnCaptured(
-      safechange,
+      changesafely,
       ["resume", "--run", harness.runId, "--repo", harness.repoPath, "--timeout", "1", "--json"],
       temporaryRoot,
       await environment("delay-implementer"),
@@ -314,7 +314,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     assert.equal(outcome.phase, "harness-complete");
     assert.equal(outcome.reasonCode, "WORKFLOW_TIMEOUT");
     const resumed = await spawnCaptured(
-      safechange,
+      changesafely,
       ["resume", "--run", harness.runId, "--repo", harness.repoPath, "--json"],
       temporaryRoot,
       await environment(),

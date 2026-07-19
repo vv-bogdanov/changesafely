@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   acquireRepositoryLock,
-  createSafeChangeBranch,
+  createChangeSafelyBranch,
   inspectBaseline,
   PreflightError,
 } from "../src/git.js";
@@ -16,13 +16,13 @@ test("blocks a write phase when non-ignored untracked files exist", async (t) =>
   await writeFile(join(repoPath, "user-notes.txt"), "do not commit\n", "utf8");
 
   await assert.rejects(
-    createSafeChangeBranch(baseline, "test-run"),
+    createChangeSafelyBranch(baseline, "test-run"),
     (error: unknown) =>
       error instanceof PreflightError && error.reasonCode === "UNTRACKED_FILES_PRESENT",
   );
 });
 
-test("allows only one SafeChange writer per repository", async (t) => {
+test("allows only one ChangeSafely writer per repository", async (t) => {
   const repoPath = await createTestRepo(t, { files: { "tracked.txt": "baseline\n" } });
 
   const lock = await acquireRepositoryLock(repoPath, "run-1");

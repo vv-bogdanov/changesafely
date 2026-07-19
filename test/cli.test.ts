@@ -14,15 +14,15 @@ import { createTestRepo, git } from "./support/repository.js";
 const execFileAsync = promisify(execFile);
 
 test("runs the CLI through an npm-style symlink", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "safechange-cli-"));
+  const directory = await mkdtemp(join(tmpdir(), "changesafely-cli-"));
   t.after(async () => rm(directory, { recursive: true, force: true }));
-  const link = join(directory, "safechange");
+  const link = join(directory, "changesafely");
   await symlink(join(process.cwd(), "dist", "src", "cli.js"), link);
 
   const { stdout: version } = await execFileAsync(process.execPath, [link, "--version"]);
   const { stdout: help } = await execFileAsync(process.execPath, [link, "--help"]);
   assert.equal(version, "0.1.0\n");
-  assert.match(help, /safechange run --task/);
+  assert.match(help, /changesafely run --task/);
 });
 
 test("implements help, version, and invalid CLI contracts", async (t) => {
@@ -44,8 +44,8 @@ test("implements help, version, and invalid CLI contracts", async (t) => {
   assert.equal(await main(["resume"]), 1);
 
   assert.match(stdout.join(""), /0\.1\.0/);
-  assert.match(stdout.join(""), /safechange resume/);
-  assert.match(stdout.join(""), /safechange status/);
+  assert.match(stdout.join(""), /changesafely resume/);
+  assert.match(stdout.join(""), /changesafely status/);
   assert.match(stderr.join(""), /Unknown command: unknown/);
   assert.match(stderr.join(""), /--plans must be an integer from 1 to 5/);
   assert.match(stderr.join(""), /--run is required/);
@@ -72,9 +72,9 @@ test("prints one JSON document for errors", async (t) => {
 
 test("reads persisted status as JSON without changing repository or artifacts", async (t) => {
   const repoPath = await createTestRepo(t, {
-    prefix: "safechange-cli-status-",
+    prefix: "changesafely-cli-status-",
     files: {
-      ".gitignore": ".safechange/\n",
+      ".gitignore": ".changesafely/\n",
       "package.json": '{"name":"fixture"}\n',
     },
   });

@@ -77,7 +77,7 @@ export async function runSuccessful(
 export async function installPackedCli(
   projectRoot: string,
   temporaryRoot: string,
-): Promise<{ safechange: string; setupDemo: string }> {
+): Promise<{ changesafely: string; setupDemo: string }> {
   const packOutput = await runSuccessful(
     executable("npm"),
     ["pack", "--json", "--ignore-scripts", "--pack-destination", temporaryRoot],
@@ -102,20 +102,20 @@ export async function installPackedCli(
   );
   const binRoot = join(installRoot, "node_modules", ".bin");
   return {
-    safechange: join(binRoot, executable("safechange")),
-    setupDemo: join(binRoot, executable("safechange-demo")),
+    changesafely: join(binRoot, executable("changesafely")),
+    setupDemo: join(binRoot, executable("changesafely-demo")),
   };
 }
 
 export async function createFunctionalRepository(path: string): Promise<void> {
   await mkdir(join(path, "src"), { recursive: true });
-  await writeFile(join(path, ".gitignore"), ".safechange/\n", "utf8");
+  await writeFile(join(path, ".gitignore"), ".changesafely/\n", "utf8");
   await writeFile(join(path, "AGENTS.md"), "# Package functional fixture\n", "utf8");
   await writeFile(
     join(path, "package.json"),
     `${JSON.stringify(
       {
-        name: "safechange-package-functional-fixture",
+        name: "changesafely-package-functional-fixture",
         private: true,
         type: "module",
         scripts: { test: "node --test" },
@@ -127,8 +127,8 @@ export async function createFunctionalRepository(path: string): Promise<void> {
   );
   await writeFile(join(path, "src", "value.ts"), "export const value = 1;\n", "utf8");
   await runSuccessful("git", ["init", "-b", "main"], path);
-  await runSuccessful("git", ["config", "user.name", "SafeChange Package Test"], path);
-  await runSuccessful("git", ["config", "user.email", "package-test@safechange.local"], path);
+  await runSuccessful("git", ["config", "user.name", "ChangeSafely Package Test"], path);
+  await runSuccessful("git", ["config", "user.email", "package-test@changesafely.local"], path);
   await runSuccessful("git", ["add", "."], path);
   await runSuccessful("git", ["commit", "-m", "fixture baseline"], path);
 }

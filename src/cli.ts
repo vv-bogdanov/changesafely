@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
-import { errorExitCode, errorNextAction, errorReasonCode, SafeChangeError } from "./errors.js";
+import { ChangeSafelyError, errorExitCode, errorNextAction, errorReasonCode } from "./errors.js";
 import { resumeRun, runFullWorkflow } from "./orchestrator.js";
 import {
   exitCodeForOutcome,
@@ -20,14 +20,14 @@ import { captureFailure } from "./telemetry.js";
 import { VERSION } from "./version.js";
 import { runPlanning } from "./workflow.js";
 
-const HELP = `SafeChange ${VERSION}
+const HELP = `ChangeSafely ${VERSION}
 
 Usage:
-  safechange plan --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
-  safechange run --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
-  safechange resume --run <run-id> [--timeout <seconds>] [--repo <path>] [--json]
-  safechange status --run <run-id> [--repo <path>] [--json]
-  safechange doctor [--repo <path>] [--json]
+  changesafely plan --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
+  changesafely run --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--repo <path>] [--json]
+  changesafely resume --run <run-id> [--timeout <seconds>] [--repo <path>] [--json]
+  changesafely status --run <run-id> [--repo <path>] [--json]
+  changesafely doctor [--repo <path>] [--json]
 
 Commands:
   plan      Compare plans without changing tracked repository state
@@ -41,13 +41,13 @@ Options:
   --timeout <seconds>  Bound the complete plan/run/resume command
   --json               Emit one machine-readable outcome on stdout
   -h, --help           Show this help
-  -v, --version        Show the SafeChange version
+  -v, --version        Show the ChangeSafely version
 `;
 
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim() === "") {
-    throw new SafeChangeError("INVALID_ARGUMENTS", `${name} is required`, {
-      nextAction: "Run safechange --help and provide the required argument.",
+    throw new ChangeSafelyError("INVALID_ARGUMENTS", `${name} is required`, {
+      nextAction: "Run changesafely --help and provide the required argument.",
     });
   }
   return value;
@@ -57,9 +57,9 @@ function printOutcome(outcome: RunOutcome, json: boolean): void {
   process.stdout.write(json ? formatJsonOutcome(outcome) : formatRunOutcome(outcome));
 }
 
-function usageError(message: string): SafeChangeError {
-  return new SafeChangeError("INVALID_ARGUMENTS", message, {
-    nextAction: "Run safechange --help and correct the command arguments.",
+function usageError(message: string): ChangeSafelyError {
+  return new ChangeSafelyError("INVALID_ARGUMENTS", message, {
+    nextAction: "Run changesafely --help and correct the command arguments.",
   });
 }
 
@@ -72,16 +72,18 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const onSigint = () => {
     interruptedExitCode = 130;
     abortController.abort(
-      new SafeChangeError("INTERRUPTED", "Interrupted by SIGINT", {
-        nextAction: "Inspect the persisted boundary and resume when SafeChange reports it is safe.",
+      new ChangeSafelyError("INTERRUPTED", "Interrupted by SIGINT", {
+        nextAction:
+          "Inspect the persisted boundary and resume when ChangeSafely reports it is safe.",
       }),
     );
   };
   const onSigterm = () => {
     interruptedExitCode = 143;
     abortController.abort(
-      new SafeChangeError("INTERRUPTED", "Interrupted by SIGTERM", {
-        nextAction: "Inspect the persisted boundary and resume when SafeChange reports it is safe.",
+      new ChangeSafelyError("INTERRUPTED", "Interrupted by SIGTERM", {
+        nextAction:
+          "Inspect the persisted boundary and resume when ChangeSafely reports it is safe.",
       }),
     );
   };
@@ -148,10 +150,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       workflowTimer = setTimeout(
         () =>
           abortController.abort(
-            new SafeChangeError("WORKFLOW_TIMEOUT", `Workflow exceeded ${timeoutSeconds} seconds`, {
-              nextAction:
-                "Inspect the persisted boundary and resume or retry with a larger timeout.",
-            }),
+            new ChangeSafelyError(
+              "WORKFLOW_TIMEOUT",
+              `Workflow exceeded ${timeoutSeconds} seconds`,
+              {
+                nextAction:
+                  "Inspect the persisted boundary and resume or retry with a larger timeout.",
+              },
+            ),
           ),
         timeoutSeconds * 1_000,
       );
@@ -204,7 +210,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return interruptedExitCode ?? exitCodeForOutcome(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`SafeChange failed: ${message}\n`);
+    process.stderr.write(`ChangeSafely failed: ${message}\n`);
     if (json) {
       process.stdout.write(
         formatJsonOutcome({

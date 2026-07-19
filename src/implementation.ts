@@ -9,7 +9,7 @@ import {
   loadVerifiedArtifact,
   type RunState,
 } from "./artifacts.js";
-import { abortReason, SafeChangeError } from "./errors.js";
+import { abortReason, ChangeSafelyError } from "./errors.js";
 import {
   assertNoUntrackedFiles,
   assertProtectedConfigurationUnchanged,
@@ -64,8 +64,12 @@ export interface ImplementationResult {
   reportPath: string;
 }
 
-function implementationError(code: string, message: string, exitCode: 1 | 2 = 1): SafeChangeError {
-  return new SafeChangeError(code, message, {
+function implementationError(
+  code: string,
+  message: string,
+  exitCode: 1 | 2 = 1,
+): ChangeSafelyError {
+  return new ChangeSafelyError(code, message, {
     exitCode,
     nextAction: "Inspect implementation and verification evidence before starting a new run.",
   });
@@ -321,7 +325,7 @@ export async function runImplementationAndVerification(
     implementationCommit = await commitPaths(
       repoPath,
       actualPaths,
-      "feat: implement selected SafeChange plan",
+      "feat: implement selected ChangeSafely plan",
     );
     state.implementationCommit = implementationCommit;
     const implementationStored = await store.writeArtifact(
@@ -480,7 +484,7 @@ export async function runImplementationAndVerification(
       implementationCommit = await commitPaths(
         repoPath,
         actualPaths,
-        "fix: repair selected SafeChange implementation",
+        "fix: repair selected ChangeSafely implementation",
       );
       state.implementationCommit = implementationCommit;
       const repairStored = await store.writeArtifact(

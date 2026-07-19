@@ -4,11 +4,11 @@
 > документация для пользователей находится в [`README.md`](./README.md), а для
 > участников разработки в [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
-Ты реализуешь **SafeChange** — TypeScript CLI для контролируемого внесения изменений с помощью Codex.
+Ты реализуешь **ChangeSafely** — TypeScript CLI для контролируемого внесения изменений с помощью Codex.
 
 Прочитай документы в порядке:
 
-1. [`SAFECHANGE_SPEC.md`](./SAFECHANGE_SPEC.md) — проблема, продукт, workflow и критерии готовности.
+1. [`CHANGESAFELY_SPEC.md`](./CHANGESAFELY_SPEC.md) — проблема, продукт, workflow и критерии готовности.
 2. [`ARCHITECTURE_DECISIONS.md`](./ARCHITECTURE_DECISIONS.md) — уже принятые решения и причины.
 3. [`AGENTS.md`](./AGENTS.md) — ежедневные инженерные ограничения.
 

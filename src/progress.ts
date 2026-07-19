@@ -20,5 +20,5 @@ export function reportProgress(
 }
 
 export function formatProgress(event: ProgressEvent): string {
-  return `[safechange] ${event.runId} ${event.phase}: ${event.action} (${(event.elapsedMs / 1000).toFixed(1)}s)\n`;
+  return `[changesafely] ${event.runId} ${event.phase}: ${event.action} (${(event.elapsedMs / 1000).toFixed(1)}s)\n`;
 }

@@ -9,7 +9,7 @@ publishing the first public prerelease.
 
 - [ ] Select the generated Codex protocol baseline and regenerate artifacts if it
   changed.
-- [ ] Run `safechange doctor --json` with the standard Codex executable on `PATH`;
+- [ ] Run `changesafely doctor --json` with the standard Codex executable on `PATH`;
   every check must pass without a test-only shim.
 - [ ] Repeat the golden demo twice from fresh setup on the generated Codex baseline
   and once on the current standard Codex when it differs.
@@ -22,7 +22,7 @@ publishing the first public prerelease.
 - [ ] Confirm `npm pack --dry-run` contains no test fixtures, local artifacts,
   credentials, `.idea`, source maps outside the declared package surface, or
   generated protocol files unused at runtime.
-- [ ] Verify the `safechange` npm name is still available. It was available on
+- [ ] Verify the `changesafely` npm name is still available. It was available on
   2026-07-19, but registry state is not a reservation.
 - [ ] Exercise the release workflow without publishing, then inspect the tarball,
   CycloneDX SBOM, checksums, and provenance statement.
@@ -58,5 +58,5 @@ Create a `main` ruleset only at the prerelease boundary:
 - [ ] Add a tag ruleset for `v*` that blocks tag updates and deletion.
 
 After the first release, enable immutable GitHub releases, verify installation with
-`npx safechange@<version> doctor`, and keep branch/tag rules enabled for subsequent
+`npx changesafely@<version> doctor`, and keep branch/tag rules enabled for subsequent
 development.

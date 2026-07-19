@@ -1,5 +1,5 @@
 name: Feature proposal
-description: Propose a concrete SafeChange workflow improvement.
+description: Propose a concrete ChangeSafely workflow improvement.
 title: "proposal: "
 labels: [enhancement]
 body:

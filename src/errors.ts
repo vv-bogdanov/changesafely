@@ -1,39 +1,39 @@
-export type SafeChangeExitCode = 1 | 2;
+export type ChangeSafelyExitCode = 1 | 2;
 
-export interface SafeChangeErrorOptions {
+export interface ChangeSafelyErrorOptions {
   nextAction: string;
   cause?: unknown;
-  exitCode?: SafeChangeExitCode;
+  exitCode?: ChangeSafelyExitCode;
 }
 
-export class SafeChangeError extends Error {
-  readonly exitCode: SafeChangeExitCode;
+export class ChangeSafelyError extends Error {
+  readonly exitCode: ChangeSafelyExitCode;
   readonly nextAction: string;
 
   constructor(
     public readonly code: string,
     message: string,
-    options: SafeChangeErrorOptions,
+    options: ChangeSafelyErrorOptions,
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = "SafeChangeError";
+    this.name = "ChangeSafelyError";
     this.exitCode = options.exitCode ?? 1;
     this.nextAction = options.nextAction;
   }
 }
 
 export function errorReasonCode(error: unknown): string {
-  return error instanceof SafeChangeError ? error.code : "UNEXPECTED_ERROR";
+  return error instanceof ChangeSafelyError ? error.code : "UNEXPECTED_ERROR";
 }
 
 export function errorNextAction(error: unknown): string {
-  return error instanceof SafeChangeError
+  return error instanceof ChangeSafelyError
     ? error.nextAction
     : "Inspect the error and persisted run state, then retry after fixing the cause.";
 }
 
-export function errorExitCode(error: unknown): SafeChangeExitCode {
-  return error instanceof SafeChangeError ? error.exitCode : 1;
+export function errorExitCode(error: unknown): ChangeSafelyExitCode {
+  return error instanceof ChangeSafelyError ? error.exitCode : 1;
 }
 
 export function abortReason(signal: AbortSignal | undefined, fallback: unknown): unknown {

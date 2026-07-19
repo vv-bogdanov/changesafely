@@ -167,7 +167,7 @@ export async function runCommand(
     ? ["sandbox", "-P", ":workspace", "--sandbox-state-disable-network", "-C", cwd, "--", ...argv]
     : argv.slice(1);
 
-  const commandHome = await mkdtemp(join(tmpdir(), "safechange-command-"));
+  const commandHome = await mkdtemp(join(tmpdir(), "changesafely-command-"));
   const stdout = boundedTail(maxOutputBytes);
   const stderr = boundedTail(maxOutputBytes);
 

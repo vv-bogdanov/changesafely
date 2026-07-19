@@ -17,13 +17,13 @@ function runIdFrom(output: string): string {
 }
 
 const root = process.cwd();
-const temporaryRoot = await mkdtemp(join(tmpdir(), "safechange-package-smoke-"));
+const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-package-smoke-"));
 
 try {
-  const { safechange, setupDemo } = await installPackedCli(root, temporaryRoot);
-  await Promise.all([access(safechange), access(setupDemo)]);
+  const { changesafely, setupDemo } = await installPackedCli(root, temporaryRoot);
+  await Promise.all([access(changesafely), access(setupDemo)]);
 
-  const version = await runSuccessful(safechange, ["--version"], temporaryRoot);
+  const version = await runSuccessful(changesafely, ["--version"], temporaryRoot);
   const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
     version: string;
   };
@@ -44,7 +44,7 @@ try {
   const functionalEnvironment = cliEnvironment(fakeBin);
 
   const planOutput = await runSuccessful(
-    safechange,
+    changesafely,
     [
       "plan",
       "--task",
@@ -68,7 +68,7 @@ try {
 
   const doctorOutput = JSON.parse(
     await runSuccessful(
-      safechange,
+      changesafely,
       ["doctor", "--json", "--repo", functionalRepo],
       temporaryRoot,
       functionalEnvironment,
@@ -77,7 +77,7 @@ try {
   if (doctorOutput.ok !== true) throw new Error("Installed CLI doctor reported not ready");
 
   const runOutput = await runSuccessful(
-    safechange,
+    changesafely,
     [
       "run",
       "--task",
@@ -97,7 +97,7 @@ try {
     throw new Error(`Installed CLI run did not verify: ${runOutput}`);
   }
   const resumeOutput = await runSuccessful(
-    safechange,
+    changesafely,
     ["resume", "--run", runId, "--repo", functionalRepo],
     temporaryRoot,
     functionalEnvironment,
@@ -114,7 +114,7 @@ try {
   const status = await runSuccessful("git", ["status", "--porcelain=v1"], demoRoot);
   if (status !== "") throw new Error(`Packaged demo is dirty after its baseline test: ${status}`);
 
-  process.stdout.write(`Package smoke passed for safechange ${version}\n`);
+  process.stdout.write(`Package smoke passed for changesafely ${version}\n`);
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
 }

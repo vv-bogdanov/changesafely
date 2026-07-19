@@ -1,6 +1,6 @@
 # Architecture
 
-SafeChange is an explicit TypeScript orchestration pipeline around one long-lived
+ChangeSafely is an explicit TypeScript orchestration pipeline around one long-lived
 Codex App Server process. It avoids a generic workflow engine: each phase is an
 async function with a persisted boundary and a schema-validated artifact.
 
@@ -37,7 +37,7 @@ the actual diff and deterministic results and cannot inherit Implementer history
 
 1. `workflow.ts` checks the baseline, runs D0 and C0, forks planners, applies pure
    eligibility rules, and asks the Judge to select one eligible plan.
-2. `harness.ts` revalidates B0, creates the SafeChange branch, forks Test Author,
+2. `harness.ts` revalidates B0, creates the ChangeSafely branch, forks Test Author,
    validates its test-only diff, proves the baseline signal, commits T1, and stores
    hashes of every protected path.
 3. `implementation.ts` forks Implementer, validates actual paths, commits I1, runs
@@ -68,7 +68,7 @@ Every completed command is represented by one `RunOutcome`. Human text and the
 versioned `--json` document are renderings of that same value, and one status table
 defines exit codes. `status` reconstructs the outcome from verified persisted state
 without changing Git or artifacts. Expected operational failures use bounded
-`SafeChangeError` codes; unexpected exceptions are not converted into successful or
+`ChangeSafelyError` codes; unexpected exceptions are not converted into successful or
 blocked workflow results.
 
 ## Runtime boundary
@@ -86,15 +86,15 @@ environment. See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the limits of this bou
 
 ## Persistence and recovery
 
-`.safechange/runs/<run-id>/state.json` records the last completed boundary. Resume is
+`.changesafely/runs/<run-id>/state.json` records the last completed boundary. Resume is
 allowed only after planning, T1, or independent verification. Before reuse,
-SafeChange checks persisted-format versions before full schema validation, the closed
+ChangeSafely checks persisted-format versions before full schema validation, the closed
 phase/status contract, named artifact inputs, artifact hashes and schemas, role
 lineage, Git branch and HEAD, baseline ancestry, protected configuration metadata,
 and T1 hashes. Unknown state or artifact versions fail closed; migrations are added
 only when a second supported persisted format exists.
 
-Failures keep the branch, working tree, and artifacts inspectable. SafeChange does
+Failures keep the branch, working tree, and artifacts inspectable. ChangeSafely does
 not claim automatic rollback or clean up user state.
 
 ## Extension rule

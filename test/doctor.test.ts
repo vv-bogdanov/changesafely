@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { formatDoctorReport, runDoctor } from "../src/doctor.js";
 
-test("reports a ready local SafeChange environment", async () => {
+test("reports a ready local ChangeSafely environment", async () => {
   let appServerClosed = false;
   const report = await runDoctor({
     repoPath: "/workspace",
@@ -36,8 +36,8 @@ test("reports stable actions without exposing command output", async () => {
   const report = await runDoctor({
     repoPath: "/private/workspace",
     env: {
-      SAFECHANGE_TELEMETRY: "1",
-      SAFECHANGE_SENTRY_DSN: "https://public_key@o1.ingest.sentry.io/42",
+      CHANGESAFELY_TELEMETRY: "1",
+      CHANGESAFELY_SENTRY_DSN: "https://public_key@o1.ingest.sentry.io/42",
     },
     execute: async (command, args) => {
       if (command === "git" && args[0] === "--version") return "git version 2.50.0";

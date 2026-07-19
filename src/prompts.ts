@@ -11,8 +11,8 @@ function data(value: unknown): string {
 }
 
 export function discoveryPrompt(task: string): string {
-  return `[SAFECHANGE_ROLE:discovery]
-You are SafeChange Scratch Discovery D0. Work read-only. Do not edit files, use network, read .env/secret files, or expose credentials.
+  return `[CHANGESAFELY_ROLE:discovery]
+You are ChangeSafely Scratch Discovery D0. Work read-only. Do not edit files, use network, read .env/secret files, or expose credentials.
 
 User task:
 ${task}
@@ -21,8 +21,8 @@ Inspect only the relevant repository surface. Read package scripts to report the
 }
 
 export function contractPrompt(task: string, evidence: EvidenceArtifact): string {
-  return `[SAFECHANGE_ROLE:contract]
-You are SafeChange Canonical Contract C0 in a clean root thread. Work read-only and network-off. Do not inherit discovery speculation: use only the user intent and validated evidence below, and re-check a fact only when essential.
+  return `[CHANGESAFELY_ROLE:contract]
+You are ChangeSafely Canonical Contract C0 in a clean root thread. Work read-only and network-off. Do not inherit discovery speculation: use only the user intent and validated evidence below, and re-check a fact only when essential.
 
 User task:
 ${task}
@@ -34,7 +34,7 @@ Create a concise Change Contract. Give every acceptance criterion and protected 
 }
 
 export function plannerPrompt(planId: string, lens: string, contract: ChangeContract): string {
-  return `[SAFECHANGE_ROLE:planner]
+  return `[CHANGESAFELY_ROLE:planner]
 You are independent planner ${planId}, forked directly from C0. Your lens is: ${lens}.
 
 Produce one self-contained detailed plan grounded in the repository. Set planId exactly to ${planId} and lens exactly to ${lens}. Cover contract ids exactly, declare every file path, dependency, migration, approval-sensitive change, risk, assumption, and unknown. Commands must be non-interactive argv arrays. For this npm MVP, every safetyTests argv must call an existing npm test script: npm test, npm run test, or npm run test:*; targeted arguments may follow --. Do not target TypeScript source files directly. The dependencies array contains only actual new package names, migrations contains only actual migrations, and approvalRequiredChanges contains only sensitive changes this plan really performs. Use an empty array when there are none; never put "none", policy reminders, or negative sentences in those three arrays. Keep each prose field to one concise sentence, avoid repeating contract text, and materially express the assigned lens without adding needless scope. Acknowledge rejection reasons when this lens is unsuitable. Do not edit files. Return only the schema-constrained JSON object.
@@ -50,8 +50,8 @@ export function plannerCorrectionPrompt(
   plan: DetailedPlan,
   gate: PlanEligibility,
 ): string {
-  return `[SAFECHANGE_ROLE:planner]
-[SAFECHANGE_CORRECTION]
+  return `[CHANGESAFELY_ROLE:planner]
+[CHANGESAFELY_CORRECTION]
 You are independent planner ${planId} with lens is: ${lens}. Your first artifact failed deterministic pre-Judge gates. Correct the artifact once without editing files or broadening scope.
 
 Gate feedback:
@@ -71,8 +71,8 @@ export function judgePrompt(
   plans: DetailedPlan[],
   eligibility: PlanEligibility[],
 ): string {
-  return `[SAFECHANGE_ROLE:judge]
-You are SafeChange Judge, forked directly from C0. Compare only the validated eligible plans and deterministic gate results below. Choose the simplest admissible plan that fully meets the contract. Do not use numerical scores. Explain the winner, concrete rejection reasons, tradeoffs, and residual risks. winnerPlanId must name one supplied eligible plan. Return only the schema-constrained JSON object.
+  return `[CHANGESAFELY_ROLE:judge]
+You are ChangeSafely Judge, forked directly from C0. Compare only the validated eligible plans and deterministic gate results below. Choose the simplest admissible plan that fully meets the contract. Do not use numerical scores. Explain the winner, concrete rejection reasons, tradeoffs, and residual risks. winnerPlanId must name one supplied eligible plan. Return only the schema-constrained JSON object.
 
 Contract:
 ${data(contract)}
@@ -90,9 +90,9 @@ export function judgeCorrectionPrompt(
   eligibility: PlanEligibility[],
   decision: DecisionArtifact,
 ): string {
-  return `[SAFECHANGE_ROLE:judge]
-[SAFECHANGE_CORRECTION]
-You are the same SafeChange Judge correcting one decision artifact. Every supplied plan already passed deterministic scope and approval gates. Distinguish a residual risk or future policy question from an approval that is actually required before this selected plan can run. Keep humanDecisionRequired true only when a concrete unresolved choice changes the selected implementation now; otherwise set it false and retain the concern under residualRisks. Keep winnerPlanId limited to the supplied eligible plans. Return only the complete corrected schema-constrained JSON object.
+  return `[CHANGESAFELY_ROLE:judge]
+[CHANGESAFELY_CORRECTION]
+You are the same ChangeSafely Judge correcting one decision artifact. Every supplied plan already passed deterministic scope and approval gates. Distinguish a residual risk or future policy question from an approval that is actually required before this selected plan can run. Keep humanDecisionRequired true only when a concrete unresolved choice changes the selected implementation now; otherwise set it false and retain the concern under residualRisks. Keep winnerPlanId limited to the supplied eligible plans. Return only the complete corrected schema-constrained JSON object.
 
 Contract:
 ${data(contract)}
@@ -113,8 +113,8 @@ export function testAuthorPrompt(
   decision: DecisionArtifact,
   allowedTestPaths: string[],
 ): string {
-  return `[SAFECHANGE_ROLE:test-author]
-You are SafeChange Test Author, forked directly from C0. Work as the only writer with network off. Create the minimum meaningful safety harness before production implementation.
+  return `[CHANGESAFELY_ROLE:test-author]
+You are ChangeSafely Test Author, forked directly from C0. Work as the only writer with network off. Create the minimum meaningful safety harness before production implementation.
 
 You may change only these repository-relative test or fixture paths/prefixes:
 ${data(allowedTestPaths)}
@@ -138,8 +138,8 @@ export function implementerPrompt(
   testCommit: string,
   protectedPaths: string[],
 ): string {
-  return `[SAFECHANGE_ROLE:implementer]
-You are SafeChange Implementer, forked directly from C0 rather than from any Planner or Test Author transcript. Work as the only writer with network off. Implement exactly one selected plan.
+  return `[CHANGESAFELY_ROLE:implementer]
+You are ChangeSafely Implementer, forked directly from C0 rather than from any Planner or Test Author transcript. Work as the only writer with network off. Implement exactly one selected plan.
 
 The protected safety harness is commit ${testCommit}. These paths are immutable and must not be edited, deleted, renamed, staged differently, or weakened:
 ${data(protectedPaths)}
@@ -166,8 +166,8 @@ export function verifierPrompt(input: {
   diff: string;
   commandResults: unknown;
 }): string {
-  return `[SAFECHANGE_ROLE:verifier]
-You are SafeChange independent Verifier, forked directly from C0. Work read-only and network-off. You do not have the Implementer transcript or self-assessment.
+  return `[CHANGESAFELY_ROLE:verifier]
+You are ChangeSafely independent Verifier, forked directly from C0. Work read-only and network-off. You do not have the Implementer transcript or self-assessment.
 
 Decide from the original contract, selected plan, actual B0/T1/I1 diff, protected harness, and deterministic command results. Reject when any contract item is unmet, invariant lacks available evidence, actual scope exceeds the plan, a protected test changed after T1, or any required command failed. Findings must be concrete. Use an empty path only for repository-wide findings. Return only the schema-constrained Verification Artifact.
 
@@ -181,8 +181,8 @@ export function repairPrompt(input: {
   verification: unknown;
   protectedPaths: string[];
 }): string {
-  return `[SAFECHANGE_ROLE:repair]
-You are the same SafeChange Implementer resumed for one bounded repair. Work as the only writer with network off. Fix only the concrete local Verifier findings below, within the already selected plan.
+  return `[CHANGESAFELY_ROLE:repair]
+You are the same ChangeSafely Implementer resumed for one bounded repair. Work as the only writer with network off. Fix only the concrete local Verifier findings below, within the already selected plan.
 
 Protected T1 paths remain immutable:
 ${data(input.protectedPaths)}

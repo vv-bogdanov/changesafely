@@ -1,6 +1,6 @@
 # Contributing
 
-SafeChange accepts focused fixes that preserve its test-first, fail-closed workflow.
+ChangeSafely accepts focused fixes that preserve its test-first, fail-closed workflow.
 Discuss broad architectural changes when coordination is useful; a separate proposal
 is not required for a small, evidence-backed decision update.
 

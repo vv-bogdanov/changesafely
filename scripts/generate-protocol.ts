@@ -70,7 +70,7 @@ async function checkProtocol(): Promise<void> {
     );
   }
 
-  const temporaryRoot = await mkdtemp(join(tmpdir(), "safechange-protocol-"));
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-protocol-"));
   const regeneratedRoot = join(temporaryRoot, "generated");
   try {
     await generateProtocol(regeneratedRoot);

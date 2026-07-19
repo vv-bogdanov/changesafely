@@ -44,10 +44,10 @@ function validState(repoPath: string): RunState {
 }
 
 test("rejects unsafe run ids and artifact paths", async (t) => {
-  const repoPath = await mkdtemp(join(tmpdir(), "safechange-artifacts-"));
+  const repoPath = await mkdtemp(join(tmpdir(), "changesafely-artifacts-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
 
-  assert.throws(() => validateRunId("../../outside"), /Invalid SafeChange run id/);
+  assert.throws(() => validateRunId("../../outside"), /Invalid ChangeSafely run id/);
   assert.throws(() => new ArtifactStore(repoPath, "../outside", "baseline"));
 
   const store = new ArtifactStore(repoPath, "safe-run", "baseline");
@@ -56,7 +56,7 @@ test("rejects unsafe run ids and artifact paths", async (t) => {
 });
 
 test("validates run state on write and load", async (t) => {
-  const repoPath = await mkdtemp(join(tmpdir(), "safechange-state-"));
+  const repoPath = await mkdtemp(join(tmpdir(), "changesafely-state-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
@@ -68,18 +68,18 @@ test("validates run state on write and load", async (t) => {
 
   await assert.rejects(
     store.writeState({ ...state, repairCount: 2 }),
-    /Invalid SafeChange run state/,
+    /Invalid ChangeSafely run state/,
   );
   await assert.rejects(
     store.writeState({ ...state, phase: "verified", status: "RUNNING" }),
     RunStateInvariantError,
   );
   await store.writeText("state.json", `{"stateVersion":${RUN_STATE_VERSION}}\n`);
-  await assert.rejects(loadRunState(repoPath, "safe-run"), /Invalid SafeChange run state/);
+  await assert.rejects(loadRunState(repoPath, "safe-run"), /Invalid ChangeSafely run state/);
 });
 
 test("reports unsupported state versions before full schema validation", async (t) => {
-  const repoPath = await mkdtemp(join(tmpdir(), "safechange-state-version-"));
+  const repoPath = await mkdtemp(join(tmpdir(), "changesafely-state-version-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
@@ -97,7 +97,7 @@ test("reports unsupported state versions before full schema validation", async (
 });
 
 test("validates artifact payloads, hashes, and run identity", async (t) => {
-  const repoPath = await mkdtemp(join(tmpdir(), "safechange-envelope-"));
+  const repoPath = await mkdtemp(join(tmpdir(), "changesafely-envelope-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
@@ -143,7 +143,7 @@ test("validates artifact payloads, hashes, and run identity", async (t) => {
 });
 
 test("reports unsupported artifact versions before envelope validation", async (t) => {
-  const repoPath = await mkdtemp(join(tmpdir(), "safechange-envelope-version-"));
+  const repoPath = await mkdtemp(join(tmpdir(), "changesafely-envelope-version-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();
@@ -168,7 +168,7 @@ test("reports unsupported artifact versions before envelope validation", async (
 });
 
 test("binds artifact lineage to named predecessors", async (t) => {
-  const repoPath = await mkdtemp(join(tmpdir(), "safechange-input-lineage-"));
+  const repoPath = await mkdtemp(join(tmpdir(), "changesafely-input-lineage-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
   await store.initialize();

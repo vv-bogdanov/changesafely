@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible SafeChange defect or unsafe stop.
+description: Report a reproducible ChangeSafely defect or unsafe stop.
 title: "bug: "
 labels: [bug]
 body:
@@ -9,15 +9,15 @@ body:
   - type: input
     id: version
     attributes:
-      label: SafeChange and Codex versions
-      placeholder: safechange 0.1.0; codex-cli 0.144.5
+      label: ChangeSafely and Codex versions
+      placeholder: changesafely 0.1.0; codex-cli 0.144.5
     validations:
       required: true
   - type: dropdown
     id: command
     attributes:
       label: Command
-      options: [plan, run, resume, doctor, safechange-demo, installation]
+      options: [plan, run, resume, doctor, changesafely-demo, installation]
     validations:
       required: true
   - type: textarea

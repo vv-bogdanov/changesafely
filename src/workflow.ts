@@ -3,7 +3,7 @@ import { AppServerClient } from "./app-server/client.js";
 import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artifact-key.js";
 import { ArtifactStore, artifactInputs, createRunId, type RunState } from "./artifacts.js";
 import { evaluatePlan, evaluatePlans, type PlanEligibility } from "./eligibility.js";
-import { abortReason, SafeChangeError } from "./errors.js";
+import { abortReason, ChangeSafelyError } from "./errors.js";
 import { assertBaselineUnchanged, canonicalRepositoryPath, inspectBaseline } from "./git.js";
 import { createRunOutcome, type RunOutcome } from "./outcome.js";
 import { type ProgressReporter, reportProgress } from "./progress.js";
@@ -61,8 +61,8 @@ export interface PlanningResult extends RunOutcome {
   decision?: DecisionArtifact;
 }
 
-function planningError(code: string, message: string): SafeChangeError {
-  return new SafeChangeError(code, message, {
+function planningError(code: string, message: string): ChangeSafelyError {
+  return new ChangeSafelyError(code, message, {
     nextAction: "Inspect planning artifacts and start a new run after fixing the cause.",
   });
 }
@@ -375,7 +375,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         state.status = "PLANNED";
         state.reason = `Selected ${decision.winnerPlanId}: ${decision.reason}`;
         state.nextAction =
-          "Run SafeChange with the approved selected plan to create the safety harness.";
+          "Run ChangeSafely with the approved selected plan to create the safety harness.";
       }
     }
 
@@ -404,7 +404,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       "report.md",
       planningReport(state, plans, eligibility, decision),
     );
-    if (!(failure instanceof SafeChangeError)) throw failure;
+    if (!(failure instanceof ChangeSafelyError)) throw failure;
     return {
       ...(await createRunOutcome(repoPath, state, reportPath, failure.code)),
       ...(decision ? { decision } : {}),

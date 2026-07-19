@@ -61,7 +61,7 @@ function completeTurn({ threadId, turnId, text }: PendingCompletion): void {
 }
 
 async function structuredOutput(prompt: string): Promise<unknown> {
-  if (prompt.includes("[SAFECHANGE_ROLE:discovery]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:discovery]")) {
     if (mode === "malformed") return { summary: "missing required fields" };
     return validEvidence({
       summary: "Small TypeScript fixture with one source file.",
@@ -78,7 +78,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       assumptions: [],
     });
   }
-  if (prompt.includes("[SAFECHANGE_ROLE:contract]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:contract]")) {
     return validContract({
       goal: "Add the requested behavior with a minimal verified change.",
       acceptanceCriteria: [{ id: "AC1", statement: "Requested behavior is observable." }],
@@ -89,7 +89,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       risks: ["Behavioral regression."],
     });
   }
-  if (prompt.includes("[SAFECHANGE_ROLE:planner]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:planner]")) {
     const planId = prompt.match(/planner (plan-\d+)/)?.[1] ?? "plan-1";
     const lens = prompt.match(/lens is: ([a-z-]+)/)?.[1] ?? "minimal-change";
     if (mode === "out-of-order") {
@@ -107,7 +107,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
           name: "acceptance",
           proves: "AC1 and INV1",
           argv:
-            mode === "planner-correction" && !prompt.includes("[SAFECHANGE_CORRECTION]")
+            mode === "planner-correction" && !prompt.includes("[CHANGESAFELY_CORRECTION]")
               ? ["npm", "run", "typecheck"]
               : ["npm", "test"],
         },
@@ -124,8 +124,8 @@ async function structuredOutput(prompt: string): Promise<unknown> {
           : [{ name: "test", argv: ["npm", "test"], purpose: "Verify behavior" }],
     });
   }
-  if (prompt.includes("[SAFECHANGE_ROLE:judge]")) {
-    if (mode === "judge-correction" && !prompt.includes("[SAFECHANGE_CORRECTION]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:judge]")) {
+    if (mode === "judge-correction" && !prompt.includes("[CHANGESAFELY_CORRECTION]")) {
       return {
         winnerPlanId: "plan-1",
         reason: "The plan is eligible but a residual policy question remains.",
@@ -149,7 +149,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       humanDecisionReason: "",
     };
   }
-  if (prompt.includes("[SAFECHANGE_ROLE:test-author]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:test-author]")) {
     await mkdir("test", { recursive: true });
     await writeFile(
       "test/value.test.ts",
@@ -170,10 +170,10 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       protectedPaths: ["test/value.test.ts"],
     };
   }
-  if (prompt.includes("[SAFECHANGE_ROLE:implementer]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:implementer]")) {
     if (mode === "delay-implementer") {
-      await mkdir(".safechange", { recursive: true });
-      await writeFile(".safechange/test-implementer-started", "ready\n", "utf8");
+      await mkdir(".changesafely", { recursive: true });
+      await writeFile(".changesafely/test-implementer-started", "ready\n", "utf8");
       await new Promise((resolve) => setTimeout(resolve, 30_000));
     }
     const source =
@@ -190,7 +190,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       await writeFile("unexpected.ts", "export {};\n", "utf8");
     }
     if (mode === "protected-config") {
-      await writeFile(".env", "SAFECHANGE_TEST_VALUE=changed\n", "utf8");
+      await writeFile(".env", "CHANGESAFELY_TEST_VALUE=changed\n", "utf8");
     }
     return {
       summary: "Changed the existing value implementation within selected scope.",
@@ -200,7 +200,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       residualRisks: [],
     };
   }
-  if (prompt.includes("[SAFECHANGE_ROLE:repair]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:repair]")) {
     await writeFile("src/value.ts", "export const value = 2;\n", "utf8");
     return {
       summary: "Removed the concrete local defect reported by the Verifier.",
@@ -210,7 +210,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       residualRisks: [],
     };
   }
-  if (prompt.includes("[SAFECHANGE_ROLE:verifier]")) {
+  if (prompt.includes("[CHANGESAFELY_ROLE:verifier]")) {
     verifierNumber += 1;
     if (mode === "verifier-reject") {
       return {

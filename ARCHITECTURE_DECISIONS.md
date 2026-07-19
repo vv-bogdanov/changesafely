@@ -1,4 +1,4 @@
-# SafeChange — зафиксированные архитектурные решения
+# ChangeSafely — зафиксированные архитектурные решения
 
 **Статус:** действующие решения MVP. Это пересматриваемые defaults, а не неизменяемые запреты.
 
@@ -6,7 +6,7 @@
 
 ## AD-01. Продукт: orchestration и verification, а не новый coding agent
 
-**Решение:** SafeChange управляет процессом вокруг Codex: contract, competing plans, safety harness, implementation и independent verification.
+**Решение:** ChangeSafely управляет процессом вокруг Codex: contract, competing plans, safety harness, implementation и independent verification.
 
 **Почему:** ценность проекта находится в безопасной организации изменения, а не в повторении возможностей Codex по написанию кода.
 
@@ -26,7 +26,7 @@
 
 **Решение:** использовать `codex app-server` через `stdio` JSON-RPC.
 
-**Почему:** SafeChange требует точного `thread/fork` до checkpoint, session trees, per-turn output schemas и явных sandbox policies. Прямой CLI требует слишком много process/protocol glue, а публичная поверхность SDK не является основой для требуемого fork graph.
+**Почему:** ChangeSafely требует точного `thread/fork` до checkpoint, session trees, per-turn output schemas и явных sandbox policies. Прямой CLI требует слишком много process/protocol glue, а публичная поверхность SDK не является основой для требуемого fork graph.
 
 **Ограничение:** реализовать тонкий runtime client, а не универсальный SDK.
 
@@ -104,13 +104,13 @@
 
 ## AD-17. Текущий checkout + отдельная branch
 
-**Решение:** SafeChange работает в текущем checkout и создаёт branch перед первым write; worktrees не управляются ядром MVP.
+**Решение:** ChangeSafely работает в текущем checkout и создаёт branch перед первым write; worktrees не управляются ядром MVP.
 
 **Почему:** сохраняется настроенная среда, `.env`, dependencies и локальные services. Worktree setup добавляет лишние проблемы с ignored files, ports, volumes и dependencies.
 
 ## AD-18. Чистый tracked baseline
 
-**Решение:** dirty tracked/staged state блокирует запуск; SafeChange не делает автоматический stash/reset/clean.
+**Решение:** dirty tracked/staged state блокирует запуск; ChangeSafely не делает автоматический stash/reset/clean.
 
 **Почему:** инструмент безопасности не должен самовольно управлять пользовательскими незакоммиченными изменениями.
 
@@ -128,7 +128,7 @@
 
 ## AD-21. Persisted run state без БД
 
-**Решение:** сохранять state и artifacts в `.safechange/runs/<run-id>/`.
+**Решение:** сохранять state и artifacts в `.changesafely/runs/<run-id>/`.
 
 **Почему:** workflow длинный и может прерываться; обычных JSON/Markdown достаточно для MVP.
 

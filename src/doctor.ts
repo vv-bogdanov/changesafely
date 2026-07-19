@@ -100,7 +100,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
       return "Git repository has a clean tracked state";
     },
     "Repository is unavailable or has tracked changes",
-    "Use a Git repository and commit tracked or staged changes before SafeChange.",
+    "Use a Git repository and commit tracked or staged changes before ChangeSafely.",
   );
 
   const codexReady = await attempt(
@@ -189,7 +189,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
 }
 
 export function formatDoctorReport(report: DoctorReport): string {
-  const lines = ["SafeChange doctor", ""];
+  const lines = ["ChangeSafely doctor", ""];
   for (const check of report.checks) {
     lines.push(`[${check.status.toUpperCase()}] ${check.name}: ${check.detail}`);
     if (check.action) lines.push(`  Action: ${check.action}`);

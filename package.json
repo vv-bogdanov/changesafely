@@ -1,5 +1,5 @@
 {
-  "name": "safechange",
+  "name": "changesafely",
   "version": "0.1.0",
   "description": "A Codex-powered CLI for planned, test-first, independently verified code changes.",
   "keywords": [
@@ -11,19 +11,19 @@
     "test-driven-development",
     "typescript"
   ],
-  "homepage": "https://github.com/vv-bogdanov/safechange#readme",
+  "homepage": "https://github.com/vv-bogdanov/changesafely#readme",
   "bugs": {
-    "url": "https://github.com/vv-bogdanov/safechange/issues"
+    "url": "https://github.com/vv-bogdanov/changesafely/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vv-bogdanov/safechange.git"
+    "url": "git+https://github.com/vv-bogdanov/changesafely.git"
   },
   "author": "vv-bogdanov",
   "type": "module",
   "bin": {
-    "safechange": "dist/src/cli.js",
-    "safechange-demo": "dist/scripts/setup-demo.js"
+    "changesafely": "dist/src/cli.js",
+    "changesafely-demo": "dist/scripts/setup-demo.js"
   },
   "files": [
     "dist/src",

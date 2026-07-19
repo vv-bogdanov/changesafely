@@ -2,7 +2,7 @@ import Type from "typebox";
 import { Compile } from "typebox/compile";
 import type { TLocalizedValidationError } from "typebox/error";
 import { ARTIFACT_KEY_PATTERN } from "./artifact-key.js";
-import { SafeChangeError } from "./errors.js";
+import { ChangeSafelyError } from "./errors.js";
 
 export const RUN_STATE_VERSION = 1;
 export const ARTIFACT_VERSION = 1;
@@ -316,7 +316,7 @@ export type PlanEligibility = Mutable<Type.Static<typeof planEligibilitySchema>>
 export type CommandEvidence = Mutable<Type.Static<typeof commandEvidenceSchema>>;
 export type StoredHarnessArtifact = Mutable<Type.Static<typeof storedHarnessArtifactSchema>>;
 
-export class ArtifactValidationError extends SafeChangeError {
+export class ArtifactValidationError extends ChangeSafelyError {
   constructor(
     public readonly artifactName: string,
     public readonly validationErrors: TLocalizedValidationError[],
@@ -376,11 +376,11 @@ const RUN_STATE_STATUSES_BY_PHASE = {
   "release-gate-blocked": ["BLOCKED"],
 } as const satisfies Record<RunPhase, readonly RunStatus[]>;
 
-export class RunStateInvariantError extends SafeChangeError {
+export class RunStateInvariantError extends ChangeSafelyError {
   constructor(state: Pick<RunState, "phase" | "status">) {
     super(
       "RUN_STATE_INVARIANT_FAILED",
-      `Invalid SafeChange phase/status combination: ${state.phase}/${state.status}`,
+      `Invalid ChangeSafely phase/status combination: ${state.phase}/${state.status}`,
       {
         exitCode: 2,
         nextAction: "Inspect the persisted run state and start a new run if it is stale.",
@@ -426,7 +426,7 @@ export const validateVerificationArtifact = compileArtifactValidator(
   "verification artifact",
   verificationArtifactSchema,
 );
-const validateRunStateSchema = compileArtifactValidator("SafeChange run state", runStateSchema);
+const validateRunStateSchema = compileArtifactValidator("ChangeSafely run state", runStateSchema);
 export function validateRunState(value: unknown): RunState {
   const state = validateRunStateSchema(value);
   if (!(RUN_STATE_STATUSES_BY_PHASE[state.phase] as readonly RunStatus[]).includes(state.status)) {
@@ -435,7 +435,7 @@ export function validateRunState(value: unknown): RunState {
   return state;
 }
 export const validateArtifactEnvelope = compileArtifactValidator(
-  "SafeChange artifact envelope",
+  "ChangeSafely artifact envelope",
   artifactEnvelopeSchema,
 );
 export const validatePlanEligibilityList = compileArtifactValidator(

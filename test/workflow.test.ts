@@ -16,7 +16,7 @@ async function fixtureRepo(
   scripts: Record<string, string> = {},
 ): Promise<string> {
   return createTestRepo(t, {
-    prefix: "safechange-plan-",
+    prefix: "changesafely-plan-",
     files: {
       "AGENTS.md": "# Fixture\n",
       "package.json": `${JSON.stringify({ name: "fixture", scripts: { test: testScript, ...scripts } }, null, 2)}\n`,
@@ -129,7 +129,7 @@ test("creates a failing-first safety harness on a branch and commits T1", async 
     clientFactory,
   });
 
-  assert.match(harness.branch, /^safechange\//);
+  assert.match(harness.branch, /^changesafely\//);
   assert.equal(harness.command.exitCode, 1);
   assert.deepEqual(Object.keys(harness.protectedHashes), ["test/value.test.ts"]);
   assert.equal(
@@ -137,7 +137,7 @@ test("creates a failing-first safety harness on a branch and commits T1", async 
     "test/value.test.ts",
   );
   const log = await git(repoPath, ["log", "--format=%s", "--reverse"]);
-  assert.deepEqual(log.split("\n"), ["fixture baseline", "test: add SafeChange safety harness"]);
+  assert.deepEqual(log.split("\n"), ["fixture baseline", "test: add ChangeSafely safety harness"]);
   const state = await readRunState(planning.runPath);
   assert.equal(state.testCommit, harness.testCommit);
   assert.equal(state.phase, "harness-complete");
@@ -218,8 +218,8 @@ test("creates I1, preserves T1, runs commands, and verifies from a fresh C0 fork
   const log = await git(repoPath, ["log", "--format=%s", "--reverse"]);
   assert.deepEqual(log.split("\n"), [
     "fixture baseline",
-    "test: add SafeChange safety harness",
-    "feat: implement selected SafeChange plan",
+    "test: add ChangeSafely safety harness",
+    "feat: implement selected ChangeSafely plan",
   ]);
 });
 
@@ -280,9 +280,9 @@ test("resumes the same Implementer once for a local repair and forks a fresh Ver
   const log = await git(repoPath, ["log", "--format=%s", "--reverse"]);
   assert.deepEqual(log.split("\n"), [
     "fixture baseline",
-    "test: add SafeChange safety harness",
-    "feat: implement selected SafeChange plan",
-    "fix: repair selected SafeChange implementation",
+    "test: add ChangeSafely safety harness",
+    "feat: implement selected ChangeSafely plan",
+    "fix: repair selected ChangeSafely implementation",
   ]);
 });
 

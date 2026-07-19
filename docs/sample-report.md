@@ -1,4 +1,4 @@
-# SafeChange verification report
+# ChangeSafely verification report
 
 ## Task
 
@@ -11,7 +11,7 @@ Retry a payment once after a transient timeout without allowing a duplicate char
 - Baseline B0: `<baseline-commit>`
 - Safety harness T1: `<test-commit>`
 - Implementation I1: `<implementation-commit>`
-- Branch: `safechange/<run-id>`
+- Branch: `changesafely/<run-id>`
 - Selected plan: `plan-2`
 
 ## Deterministic commands
@@ -32,8 +32,8 @@ No findings.
 
 ## Rollback boundary
 
-Discarding this branch returns tracked source code to B0. SafeChange does not roll back ignored files, local services, databases, queues, volumes, or external systems.
+Discarding this branch returns tracked source code to B0. ChangeSafely does not roll back ignored files, local services, databases, queues, volumes, or external systems.
 
 ## Next action
 
-Review the SafeChange branch and merge it through the normal repository process.
+Review the ChangeSafely branch and merge it through the normal repository process.

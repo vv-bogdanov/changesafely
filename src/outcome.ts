@@ -41,10 +41,10 @@ function reasonCode(state: Pick<RunState, "phase" | "status">): string {
 export async function createRunOutcome(
   repoPath: string,
   state: RunState,
-  reportPath = resolve(repoPath, ".safechange", "runs", state.runId, "report.md"),
+  reportPath = resolve(repoPath, ".changesafely", "runs", state.runId, "report.md"),
   reasonCodeOverride?: string,
 ): Promise<RunOutcome> {
-  const runPath = resolve(repoPath, ".safechange", "runs", state.runId);
+  const runPath = resolve(repoPath, ".changesafely", "runs", state.runId);
   const artifactPaths: Partial<Record<ArtifactKey, string>> = {};
   for (const key of Object.keys(state.artifacts)) {
     if (isArtifactKey(key)) artifactPaths[key] = resolve(runPath, artifactDefinition(key).path);

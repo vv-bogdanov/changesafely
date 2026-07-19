@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { isArtifactKey } from "./artifact-key.js";
 import { ArtifactStore, loadRunState, loadVerifiedArtifact, type RunState } from "./artifacts.js";
-import { SafeChangeError } from "./errors.js";
+import { ChangeSafelyError } from "./errors.js";
 import {
   acquireRepositoryLock,
   canonicalRepositoryPath,
@@ -33,22 +33,22 @@ export interface FullRunOptions {
 
 export type FullRunResult = RunOutcome;
 
-function lineageError(message: string): SafeChangeError {
-  return new SafeChangeError("INVALID_ROLE_LINEAGE", message, {
+function lineageError(message: string): ChangeSafelyError {
+  return new ChangeSafelyError("INVALID_ROLE_LINEAGE", message, {
     exitCode: 2,
     nextAction: "Inspect persisted role contexts and start a new run if lineage is stale.",
   });
 }
 
-function resumeError(message: string): SafeChangeError {
-  return new SafeChangeError("INVALID_RESUME_BOUNDARY", message, {
+function resumeError(message: string): ChangeSafelyError {
+  return new ChangeSafelyError("INVALID_RESUME_BOUNDARY", message, {
     exitCode: 2,
     nextAction: "Inspect the persisted run boundary and start a new run if it is stale.",
   });
 }
 
-function releaseGateError(message: string): SafeChangeError {
-  return new SafeChangeError("RELEASE_GATE_FAILED", message, {
+function releaseGateError(message: string): ChangeSafelyError {
+  return new ChangeSafelyError("RELEASE_GATE_FAILED", message, {
     exitCode: 2,
     nextAction: "Inspect release-gate evidence and start a new run if artifacts are stale.",
   });
@@ -246,7 +246,7 @@ async function finalizeVerifiedRun(
     state.phase = "verified";
     state.reason = verification.reason;
     state.nextAction =
-      "Review the SafeChange branch and merge it through the normal repository process.";
+      "Review the ChangeSafely branch and merge it through the normal repository process.";
     await store.writeState(state);
     reportProgress(onProgress, runId, state.phase, "Final release gate passed", startedAt);
     const reportPath = await store.writeText(
@@ -283,7 +283,7 @@ async function continueFromPlanning(
     });
     return await continueFromHarness(repoPath, runId, model, signal, onProgress);
   } catch (error) {
-    if (!(error instanceof SafeChangeError)) throw error;
+    if (!(error instanceof ChangeSafelyError)) throw error;
     return persistedResult(repoPath, runId, undefined, error.code);
   }
 }
@@ -309,7 +309,7 @@ async function continueFromHarness(
     }
     return await finalizeVerifiedRun(repoPath, runId, onProgress);
   } catch (error) {
-    if (!(error instanceof SafeChangeError)) throw error;
+    if (!(error instanceof ChangeSafelyError)) throw error;
     return persistedResult(repoPath, runId, undefined, error.code);
   }
 }
@@ -317,7 +317,7 @@ async function continueFromHarness(
 async function persistedResult(
   repoPath: string,
   runId: string,
-  reportPath = resolve(repoPath, ".safechange", "runs", runId, "report.md"),
+  reportPath = resolve(repoPath, ".changesafely", "runs", runId, "report.md"),
   reasonCode?: string,
 ): Promise<FullRunResult> {
   const state = await loadRunState(repoPath, runId);
@@ -383,7 +383,7 @@ export async function resumeRun(
       try {
         return await finalizeVerifiedRun(repoPath, runId, onProgress);
       } catch (error) {
-        if (!(error instanceof SafeChangeError)) throw error;
+        if (!(error instanceof ChangeSafelyError)) throw error;
         return persistedResult(repoPath, runId, undefined, error.code);
       }
     }

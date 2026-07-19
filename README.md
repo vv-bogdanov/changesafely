@@ -1,18 +1,18 @@
-# SafeChange
+# ChangeSafely
 
-[![CI](https://github.com/vv-bogdanov/safechange/actions/workflows/ci.yml/badge.svg)](https://github.com/vv-bogdanov/safechange/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/vv-bogdanov/safechange/actions/workflows/codeql.yml/badge.svg)](https://github.com/vv-bogdanov/safechange/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/vv-bogdanov/safechange/badge)](https://scorecard.dev/viewer/?uri=github.com/vv-bogdanov/safechange)
+[![CI](https://github.com/vv-bogdanov/changesafely/actions/workflows/ci.yml/badge.svg)](https://github.com/vv-bogdanov/changesafely/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/vv-bogdanov/changesafely/actions/workflows/codeql.yml/badge.svg)](https://github.com/vv-bogdanov/changesafely/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/vv-bogdanov/changesafely/badge)](https://scorecard.dev/viewer/?uri=github.com/vv-bogdanov/changesafely)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-SafeChange is a local TypeScript CLI that compares independent implementation
+ChangeSafely is a local TypeScript CLI that compares independent implementation
 plans, creates a protected failing-first safety harness, implements one selected
 plan, and verifies the resulting Git branch from a clean Codex context.
 
 It is deliberately narrow: one prepared npm/TypeScript repository, one branch,
 one plan, real command exits, inspectable artifacts, and explicit safe stops.
 
-## Why SafeChange
+## Why ChangeSafely
 
 - **Alternatives before edits.** Independent planners fork from one canonical
   contract; deterministic eligibility gates run before the Judge.
@@ -26,22 +26,22 @@ one plan, real command exits, inspectable artifacts, and explicit safe stops.
 Until the first npm registry release, install from the repository:
 
 ```sh
-git clone https://github.com/vv-bogdanov/safechange.git
-cd safechange
+git clone https://github.com/vv-bogdanov/changesafely.git
+cd changesafely
 npm ci --ignore-scripts
 npm run build
 npm link
-safechange --help
+changesafely --help
 ```
 
 The package is prepared for tokenless, provenance-backed npm releases. Once
 `0.1.0` is published, the CLI will run without a checkout:
 
 ```sh
-npx safechange@0.1.0 --help
+npx changesafely@0.1.0 --help
 ```
 
-SafeChange uses the authenticated `codex` executable on `PATH`. It does not
+ChangeSafely uses the authenticated `codex` executable on `PATH`. It does not
 override the user's default model.
 
 ## Compatibility
@@ -56,7 +56,7 @@ override the user's default model.
 
 The App Server protocol is generated reproducibly from the pinned development
 dependency. Runtime Codex versions are accepted when the App Server handshake and
-the messages SafeChange actually uses pass fail-closed validation.
+the messages ChangeSafely actually uses pass fail-closed validation.
 
 ## Workflow
 
@@ -93,33 +93,33 @@ schema-validated artifacts rather than hidden role transcripts. See
 Compare plans without changing tracked target state:
 
 ```sh
-safechange plan --repo /path/to/repo --task "Describe the requested change" --plans 3
+changesafely plan --repo /path/to/repo --task "Describe the requested change" --plans 3
 ```
 
 Run the full test-first workflow:
 
 ```sh
-safechange run --repo /path/to/repo --task "Describe the requested change" --plans 3
+changesafely run --repo /path/to/repo --task "Describe the requested change" --plans 3
 ```
 
 Omit `--model` to use the current Codex default, or select one explicitly. Bound the
 whole command, including all roles and deterministic checks, with `--timeout`:
 
 ```sh
-safechange run --model gpt-5.3-codex-spark --timeout 900 \
+changesafely run --model gpt-5.3-codex-spark --timeout 900 \
   --repo /path/to/repo --task "Describe the requested change" --plans 3
 ```
 
 Resume only from a validated persisted boundary:
 
 ```sh
-safechange resume --repo /path/to/repo --run <run-id>
+changesafely resume --repo /path/to/repo --run <run-id>
 ```
 
 Inspect a persisted run without changing Git or artifacts:
 
 ```sh
-safechange status --repo /path/to/repo --run <run-id>
+changesafely status --repo /path/to/repo --run <run-id>
 ```
 
 `plan`, `run`, `resume`, `status`, and `doctor` accept `--json`. Run commands emit
@@ -128,26 +128,26 @@ exit code remains authoritative. Without `--json`, phase progress is written to
 stderr while the final outcome remains on stdout:
 
 ```sh
-safechange status --repo /path/to/repo --run <run-id> --json
+changesafely status --repo /path/to/repo --run <run-id> --json
 ```
 
 Check local readiness without starting an AI turn or repository script:
 
 ```sh
-safechange doctor --repo /path/to/repo
-safechange doctor --repo /path/to/repo --json
+changesafely doctor --repo /path/to/repo
+changesafely doctor --repo /path/to/repo --json
 ```
 
-SafeChange never stashes, cleans, resets, amends, or rewrites user history.
+ChangeSafely never stashes, cleans, resets, amends, or rewrites user history.
 
 ## Golden Demo
 
 Prepare a disposable payment-retry repository:
 
 ```sh
-safechange-demo --target /tmp/safechange-payment-demo
-safechange run \
-  --repo /tmp/safechange-payment-demo \
+changesafely-demo --target /tmp/changesafely-payment-demo
+changesafely run \
+  --repo /tmp/changesafely-payment-demo \
   --plans 3 \
   --task "Retry a payment once after a transient timeout without allowing a duplicate charge"
 ```
@@ -157,8 +157,8 @@ and one implementation. An optional bounded repair adds one commit without
 rewriting history.
 
 ```sh
-git -C /tmp/safechange-payment-demo log --oneline --reverse
-cat /tmp/safechange-payment-demo/.safechange/runs/<run-id>/report.md
+git -C /tmp/changesafely-payment-demo log --oneline --reverse
+cat /tmp/changesafely-payment-demo/.changesafely/runs/<run-id>/report.md
 ```
 
 Two fresh live rehearsals completed in 118.90 and 122.30 seconds. The sanitized
@@ -168,15 +168,15 @@ evidence is in [`docs/RELEASE_REHEARSAL.md`](docs/RELEASE_REHEARSAL.md) and
 Live performance tests can opt into Spark without changing the product default:
 
 ```sh
-safechange run --model gpt-5.3-codex-spark \
-  --repo /tmp/safechange-payment-demo \
+changesafely run --model gpt-5.3-codex-spark \
+  --repo /tmp/changesafely-payment-demo \
   --plans 3 \
   --task "Retry a payment once after a transient timeout without allowing a duplicate charge"
 ```
 
 ## Artifacts
 
-Runs are stored under `.safechange/runs/<run-id>/`:
+Runs are stored under `.changesafely/runs/<run-id>/`:
 
 - `state.json`: versioned phase/status, Git state, hashes, and role lineage.
 - `evidence.json`, `contract.json`, `plans/*.json`, `eligibility.json`, and
@@ -209,16 +209,16 @@ expected branch and commits, baseline ancestry, and protected T1 files.
 - AI roles and repository commands use network-disabled sandbox policies.
 - Repository commands use structured argv, `shell: false`, a sanitized
   non-interactive environment, timeouts, real exit codes, and bounded logs.
-- SafeChange core does not add `.env`, `.env.local`, or `.npmrc` contents to
+- ChangeSafely core does not add `.env`, `.env.local`, or `.npmrc` contents to
   prompts. Repository scripts can still read files available to local developer
   tools and may print them into persisted command output.
-- SafeChange protects tracked Git changes. It does not roll back ignored files,
+- ChangeSafely protects tracked Git changes. It does not roll back ignored files,
   services, databases, queues, containers, volumes, or external systems.
 - Production credentials, deployments, destructive migrations, external writes,
   worktree management, web UI, GitHub App, and MCP are outside this release.
 
 Read [`SECURITY.md`](SECURITY.md) and the full
-[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) before using SafeChange on
+[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) before using ChangeSafely on
 sensitive code.
 
 ### Optional Error Telemetry
@@ -227,16 +227,16 @@ Telemetry is disabled by default. To send sanitized CLI failure codes to a Sentr
 project, explicitly set both variables:
 
 ```sh
-SAFECHANGE_TELEMETRY=1 SAFECHANGE_SENTRY_DSN=https://<public-key>@<host>/<project-id> \
-  safechange run --repo /path/to/repo --task "Describe the requested change"
+CHANGESAFELY_TELEMETRY=1 CHANGESAFELY_SENTRY_DSN=https://<public-key>@<host>/<project-id> \
+  changesafely run --repo /path/to/repo --task "Describe the requested change"
 ```
 
-The event payload contains only the SafeChange version, command name, and a bounded
+The event payload contains only the ChangeSafely version, command name, and a bounded
 stable reason code. It excludes exception objects, stack traces, paths, task text,
 prompts, artifacts, Git data, command output, environment values, and user fields.
 Delivery uses an HTTPS Sentry envelope with a two-second timeout and never changes
 the CLI exit code. As with any HTTPS request, the Sentry host and network provider
-can observe the source IP. This opt-in is the only SafeChange core network request
+can observe the source IP. This opt-in is the only ChangeSafely core network request
 outside Codex.
 
 ## Development
@@ -256,4 +256,4 @@ npm run package:smoke
 Default tests use a local fake App Server. Live Codex checks remain opt-in. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md), the
 [`prerelease checklist`](docs/PRERELEASE_CHECKLIST.md), [`CHANGELOG.md`](CHANGELOG.md),
-and the original [`SAFECHANGE_SPEC.md`](SAFECHANGE_SPEC.md) for more detail.
+and the original [`CHANGESAFELY_SPEC.md`](CHANGESAFELY_SPEC.md) for more detail.

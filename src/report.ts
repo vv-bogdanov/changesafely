@@ -21,7 +21,7 @@ export function planningReport(
     return `- **${plan.planId}: ${plan.title}** (${plan.lens}) - ${result}`;
   });
 
-  return `# SafeChange report
+  return `# ChangeSafely report
 
 ## Task
 
@@ -70,7 +70,7 @@ export function implementationReport(
     (finding) =>
       `- **${finding.severity} ${finding.code}**${finding.path ? ` \`${finding.path}\`` : ""}: ${finding.message}`,
   );
-  return `# SafeChange verification report
+  return `# ChangeSafely verification report
 
 ## Task
 
@@ -102,7 +102,7 @@ ${verification.residualRisks.map((risk) => `- ${risk}`).join("\n") || "- None re
 
 ## Rollback boundary
 
-Discarding this branch returns tracked source code to B0. SafeChange does not roll back ignored files, local services, databases, queues, volumes, or external systems.
+Discarding this branch returns tracked source code to B0. ChangeSafely does not roll back ignored files, local services, databases, queues, volumes, or external systems.
 
 ## Next action
 

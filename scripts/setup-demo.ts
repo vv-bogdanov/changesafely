@@ -20,7 +20,7 @@ function run(command: string, args: string[], cwd: string, timeout: number): voi
   }
 }
 
-const defaultTarget = join(tmpdir(), "safechange-payment-demo");
+const defaultTarget = join(tmpdir(), "changesafely-payment-demo");
 const parsed = parseArgs({
   options: { target: { type: "string", default: defaultTarget } },
 });
@@ -30,15 +30,15 @@ const template = join(packageRoot, "demo", "payment-retry-template");
 
 await mkdir(dirname(target), { recursive: true });
 await cp(template, target, { recursive: true, errorOnExist: true, force: false });
-await writeFile(join(target, ".gitignore"), "node_modules/\ndist/\n.safechange/\n", "utf8");
+await writeFile(join(target, ".gitignore"), "node_modules/\ndist/\n.changesafely/\n", "utf8");
 run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], target, 120_000);
 run("git", ["init", "-b", "main"], target, 10_000);
-run("git", ["config", "user.name", "SafeChange Demo"], target, 10_000);
-run("git", ["config", "user.email", "demo@safechange.local"], target, 10_000);
+run("git", ["config", "user.name", "ChangeSafely Demo"], target, 10_000);
+run("git", ["config", "user.email", "demo@changesafely.local"], target, 10_000);
 run("git", ["add", "."], target, 10_000);
 run("git", ["commit", "-m", "demo baseline"], target, 10_000);
 
 const task = "Retry a payment once after a transient timeout without allowing a duplicate charge";
 process.stdout.write(
-  `Demo: ${target}\nRun: safechange run --repo ${JSON.stringify(target)} --plans 3 --task ${JSON.stringify(task)}\n`,
+  `Demo: ${target}\nRun: changesafely run --repo ${JSON.stringify(target)} --plans 3 --task ${JSON.stringify(task)}\n`,
 );

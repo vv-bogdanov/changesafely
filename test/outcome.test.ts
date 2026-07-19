@@ -24,9 +24,9 @@ function outcome(status: RunStatus): RunOutcome {
     branch: null,
     testCommit: null,
     implementationCommit: null,
-    runPath: "/repo/.safechange/runs/run-1",
-    statePath: "/repo/.safechange/runs/run-1/state.json",
-    reportPath: "/repo/.safechange/runs/run-1/report.md",
+    runPath: "/repo/.changesafely/runs/run-1",
+    statePath: "/repo/.changesafely/runs/run-1/state.json",
+    reportPath: "/repo/.changesafely/runs/run-1/report.md",
     artifactPaths: {},
   };
 }

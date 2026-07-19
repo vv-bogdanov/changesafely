@@ -18,7 +18,7 @@ export async function createTestRepo(
   t: TestContext,
   options: TestRepositoryOptions,
 ): Promise<string> {
-  const repoPath = await mkdtemp(join(tmpdir(), options.prefix ?? "safechange-test-"));
+  const repoPath = await mkdtemp(join(tmpdir(), options.prefix ?? "changesafely-test-"));
   t.after(async () => rm(repoPath, { recursive: true, force: true }));
   for (const [path, content] of Object.entries(options.files)) {
     const absolutePath = join(repoPath, path);
@@ -26,8 +26,8 @@ export async function createTestRepo(
     await writeFile(absolutePath, content, "utf8");
   }
   await git(repoPath, ["init", "-b", "main"]);
-  await git(repoPath, ["config", "user.name", "SafeChange Test"]);
-  await git(repoPath, ["config", "user.email", "test@safechange.local"]);
+  await git(repoPath, ["config", "user.name", "ChangeSafely Test"]);
+  await git(repoPath, ["config", "user.email", "test@changesafely.local"]);
   await git(repoPath, ["add", "."]);
   await git(repoPath, ["commit", "-m", options.commitMessage ?? "fixture baseline"]);
   return repoPath;

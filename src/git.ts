@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { access, open, readFile, realpath, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { SafeChangeError } from "./errors.js";
+import { ChangeSafelyError } from "./errors.js";
 import { REPOSITORY_CONTROL_FILE_NAMES } from "./repository-policy.js";
 import { hashRecordsEqual } from "./verification.js";
 
@@ -19,7 +19,7 @@ export interface BaselineSnapshot {
   fingerprint: string;
 }
 
-export class PreflightError extends SafeChangeError {
+export class PreflightError extends ChangeSafelyError {
   constructor(
     public readonly reasonCode: string,
     message: string,
@@ -89,7 +89,7 @@ export async function assertProtectedConfigurationUnchanged(
   if (!hashRecordsEqual(expected, actual)) {
     throw new PreflightError(
       "PROTECTED_CONFIGURATION_CHANGED",
-      "Protected configuration metadata changed during the SafeChange run",
+      "Protected configuration metadata changed during the ChangeSafely run",
     );
   }
 }
@@ -99,14 +99,14 @@ export async function inspectBaseline(repoPath: string): Promise<BaselineSnapsho
   const commit = await git(root, ["rev-parse", "HEAD"]);
   const branch = await git(root, ["branch", "--show-current"]);
   if (!branch) {
-    throw new PreflightError("DETACHED_HEAD", "SafeChange requires a named current branch");
+    throw new PreflightError("DETACHED_HEAD", "ChangeSafely requires a named current branch");
   }
 
   const trackedStatus = await git(root, ["status", "--porcelain=v1", "--untracked-files=no"]);
   if (trackedStatus) {
     throw new PreflightError(
       "DIRTY_TRACKED_STATE",
-      "Tracked or staged changes must be committed before SafeChange planning",
+      "Tracked or staged changes must be committed before ChangeSafely planning",
     );
   }
 
@@ -174,7 +174,7 @@ async function untrackedPaths(repoPath: string): Promise<string[]> {
   const output = await git(repoPath, ["ls-files", "--others", "--exclude-standard"]);
   return output
     .split("\n")
-    .filter((path) => path && !path.startsWith(".safechange/"))
+    .filter((path) => path && !path.startsWith(".changesafely/"))
     .sort();
 }
 
@@ -203,7 +203,7 @@ export async function acquireRepositoryLock(
 ): Promise<RepositoryLock> {
   const lockPath = resolve(
     repoPath,
-    await git(repoPath, ["rev-parse", "--git-path", "safechange.lock"]),
+    await git(repoPath, ["rev-parse", "--git-path", "changesafely.lock"]),
   );
   const token = randomUUID();
   const content = `${JSON.stringify({ pid: process.pid, runId, token, createdAt: new Date().toISOString() })}\n`;
@@ -239,14 +239,14 @@ export async function acquireRepositoryLock(
         if (metadata && Date.now() - metadata.mtimeMs < 60_000) {
           throw new PreflightError(
             "REPOSITORY_LOCKED",
-            "Repository has a recently created SafeChange writer lock",
+            "Repository has a recently created ChangeSafely writer lock",
           );
         }
       }
       if (typeof owner.pid === "number" && processIsAlive(owner.pid)) {
         throw new PreflightError(
           "REPOSITORY_LOCKED",
-          `Repository is already being written by SafeChange run ${String(owner.runId ?? "unknown")} (PID ${owner.pid})`,
+          `Repository is already being written by ChangeSafely run ${String(owner.runId ?? "unknown")} (PID ${owner.pid})`,
         );
       }
       await unlink(lockPath).catch((unlinkError: NodeJS.ErrnoException) => {
@@ -254,16 +254,19 @@ export async function acquireRepositoryLock(
       });
     }
   }
-  throw new PreflightError("REPOSITORY_LOCKED", "Could not acquire the SafeChange repository lock");
+  throw new PreflightError(
+    "REPOSITORY_LOCKED",
+    "Could not acquire the ChangeSafely repository lock",
+  );
 }
 
-export async function createSafeChangeBranch(
+export async function createChangeSafelyBranch(
   baseline: BaselineSnapshot,
   runId: string,
 ): Promise<string> {
   await assertBaselineUnchanged(baseline);
   await assertNoUntrackedFiles(baseline.repoPath);
-  const branch = `safechange/${runId}`;
+  const branch = `changesafely/${runId}`;
   await git(baseline.repoPath, ["switch", "-c", branch, baseline.commit]);
   return branch;
 }
@@ -275,7 +278,7 @@ export async function changedPaths(repoPath: string, from = "HEAD"): Promise<str
     ...new Set(
       `${tracked}\n${untracked}`
         .split("\n")
-        .filter((path) => path && !path.startsWith(".safechange/")),
+        .filter((path) => path && !path.startsWith(".changesafely/")),
     ),
   ].sort();
 }

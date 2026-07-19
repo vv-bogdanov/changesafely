@@ -8,13 +8,13 @@ import {
   loadRunState,
   loadSelectedPlanArtifacts,
 } from "./artifacts.js";
-import { abortReason, SafeChangeError } from "./errors.js";
+import { abortReason, ChangeSafelyError } from "./errors.js";
 import {
   assertProtectedConfigurationUnchanged,
   canonicalRepositoryPath,
   changedPaths,
   commitPaths,
-  createSafeChangeBranch,
+  createChangeSafelyBranch,
   diffFrom,
   hashFiles,
   inspectBaseline,
@@ -59,8 +59,8 @@ export interface HarnessResult {
   harness: HarnessArtifact;
 }
 
-function harnessError(code: string, message: string, exitCode: 1 | 2 = 1): SafeChangeError {
-  return new SafeChangeError(code, message, {
+function harnessError(code: string, message: string, exitCode: 1 | 2 = 1): ChangeSafelyError {
+  return new ChangeSafelyError(code, message, {
     exitCode,
     nextAction: "Inspect the Test Author evidence and start a new run after fixing the cause.",
   });
@@ -119,12 +119,12 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
   let branch: string;
   try {
-    branch = await createSafeChangeBranch(baseline, state.runId);
+    branch = await createChangeSafelyBranch(baseline, state.runId);
   } catch (error) {
     state.status = "BLOCKED";
     state.phase = "write-preflight-blocked";
     state.reason = error instanceof Error ? error.message : String(error);
-    state.nextAction = "Move or commit pre-existing files, then start a new SafeChange run.";
+    state.nextAction = "Move or commit pre-existing files, then start a new ChangeSafely run.";
     await store.writeState(state);
     reportProgress(options.onProgress, state.runId, state.phase, state.reason, startedAt);
     throw error;
@@ -252,7 +252,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       );
     }
 
-    const testCommit = await commitPaths(repoPath, paths, "test: add SafeChange safety harness");
+    const testCommit = await commitPaths(repoPath, paths, "test: add ChangeSafely safety harness");
     const protectedHashes = await hashFiles(repoPath, paths);
     const harnessStored = await store.writeArtifact(
       "harness",
@@ -300,7 +300,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     state.phase = "test-author-failed";
     state.reason = failure instanceof Error ? failure.message : String(failure);
     state.nextAction =
-      "Inspect the SafeChange branch and Test Author diff; no cleanup was performed.";
+      "Inspect the ChangeSafely branch and Test Author diff; no cleanup was performed.";
     await store.writeState(state);
     reportProgress(
       options.onProgress,

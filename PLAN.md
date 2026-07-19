@@ -1,4 +1,4 @@
-# SafeChange MVP implementation plan
+# ChangeSafely MVP implementation plan
 
 > **Status:** completed on 2026-07-18. This file is the implementation record for
 > the MVP checkpoints. See [`README.md`](./README.md) for current usage and
@@ -36,7 +36,7 @@ Implementation proceeded in the stages below. Each stage ended with a runnable, 
 - From 1 to 5 planner forks from C0, with 3 standard lenses by default.
 - Schema-constrained model output plus local schema validation.
 - Deterministic plan gates before the Judge.
-- One SafeChange branch, one safety-harness commit, and one implementation commit.
+- One ChangeSafely branch, one safety-harness commit, and one implementation commit.
 - Deterministic command, Git diff, scope, manifest, and protected-file checks.
 - An independent Verifier forked from C0.
 - One bounded repair attempt for an in-scope implementation defect.
@@ -80,9 +80,9 @@ The following are product-defining and must hold from the first relevant vertica
 
 ### Instructions for the coding agent: development commits
 
-- This subsection governs development of the SafeChange repository by the coding agent. It is not functionality to implement inside the SafeChange CLI.
+- This subsection governs development of the ChangeSafely repository by the coding agent. It is not functionality to implement inside the ChangeSafely CLI.
 - Before writing application code, review the current Git status and create an explicit baseline commit containing only the agreed project documents. Do not mix bootstrap code into that baseline.
-- After every completed development stage below, the coding agent must run its stage gate and create a separate commit containing only that stage's SafeChange changes. Do not wait until the end of MVP to create the first implementation commit and do not batch multiple stages into one commit.
+- After every completed development stage below, the coding agent must run its stage gate and create a separate commit containing only that stage's ChangeSafely changes. Do not wait until the end of MVP to create the first implementation commit and do not batch multiple stages into one commit.
 - Within a larger stage, also commit a completed runnable vertical checkpoint before starting a risky rewrite. Prefer small revertable commits over a single cross-stage commit.
 - Never include unrelated or pre-existing user changes. Do not use automatic `stash`, `reset`, `clean`, amend, or history rewriting.
 - If a stage is not runnable or its relevant checks fail, do not mark it complete. Keep the work visible and fix it before making the stage checkpoint commit.
@@ -98,7 +98,7 @@ D4  Implementer/I1 and straight independent verification
 D5  sandbox, recovery, negative gates, packaging, and demo hardening
 ```
 
-These commits are mandatory checkpoints made by the coding agent while implementing SafeChange. They do not change runtime history in a target repository: D0, C0, planners, and Judge remain read-only there, and the SafeChange runtime creates only T1 and I1 after B0.
+These commits are mandatory checkpoints made by the coding agent while implementing ChangeSafely. They do not change runtime history in a target repository: D0, C0, planners, and Judge remain read-only there, and the ChangeSafely runtime creates only T1 and I1 after B0.
 
 ## 3. Concrete implementation choices
 
@@ -107,20 +107,20 @@ These commits are mandatory checkpoints made by the coding agent while implement
 - **Tests:** start with `node:test` and `node:assert`; change only if real test ergonomics justify it.
 - **Schema validation:** JSON Schemas are the canonical role-output contracts and are also passed as `turn/start.outputSchema`. The MVP started with `ajv`; hardening replaced the duplicated TypeScript interfaces and handwritten schemas with TypeBox as one source for types and compiled validation.
 - **Codex defaults:** invoke the standard `codex` executable from `PATH` and do not override the user's default model. Generate protocol TypeScript and JSON Schema from the exact dev/CI dependency and record it in `src/app-server/generated/protocol-version.json`. Runtime accepts another Codex build when the App Server handshake and every used message pass fail-closed validation.
-- **Transport:** one long-lived App Server child process per SafeChange run; JSONL on stdin/stdout; stderr captured separately.
+- **Transport:** one long-lived App Server child process per ChangeSafely run; JSONL on stdin/stdout; stderr captured separately.
 - **Orchestration:** explicit async functions and a persisted phase enum, not a state-machine library.
 - **Commands:** start with fixed structured argv and timeouts against the trusted demo. Before a run may report `VERIFIED`, require `shell: false`, a non-interactive sanitized environment, bounded output, and network disabled through the Codex sandbox wrapper. If the host cannot prove that setup works, stop with `BLOCKED` before repository scripts run.
 - **Protected harness:** all files created or changed in T1 are immutable during I1 in the MVP. The Implementer may add separate test files, but may not edit T1 files. This is deliberately stricter and more reliable than attempting semantic assertion comparison.
-- **Artifacts during planning:** `.safechange/runs/<run-id>/` is the only tool-owned write before the Git branch is created. Planning must not change tracked target files, the index, refs, or `HEAD`.
+- **Artifacts during planning:** `.changesafely/runs/<run-id>/` is the only tool-owned write before the Git branch is created. Planning must not change tracked target files, the index, refs, or `HEAD`.
 
 ## 4. CLI contract
 
 Initial commands:
 
 ```text
-safechange plan --task <text> [--plans 1..5] [--repo <path>]
-safechange run  --task <text> [--plans 1..5] [--repo <path>]
-safechange resume --run <run-id> [--repo <path>]
+changesafely plan --task <text> [--plans 1..5] [--repo <path>]
+changesafely run  --task <text> [--plans 1..5] [--repo <path>]
+changesafely resume --run <run-id> [--repo <path>]
 ```
 
 - `--repo` defaults to the current directory; `--plans` defaults to `3`.
@@ -164,7 +164,7 @@ Treat this layout as provisional. Keep modules small, but prefer a working verti
 ## 6. Persistent run model
 
 ```text
-.safechange/runs/<run-id>/
+.changesafely/runs/<run-id>/
   state.json
   evidence.json
   contract.json
@@ -200,7 +200,7 @@ Every role artifact ultimately has a common envelope with run id, baseline commi
 5. Implement the smallest JSONL client that completes one real thread/turn: handshake (`initialize`, then `initialized`), request-id correlation, notifications, turn completion, timeout/interrupt, and process-exit handling. Add concurrent requests only when planner parallelism is enabled later.
 6. Add focused fake-server tests and one opt-in live smoke test. Do not build the exhaustive protocol failure suite before the first successful turn.
 
-**Stage gate:** `npm run build`, `npm run typecheck`, and `npm test` pass; `safechange --help` works; one live opt-in App Server turn completes or reports a concrete environment/authentication error.
+**Stage gate:** `npm run build`, `npm run typecheck`, and `npm test` pass; `changesafely --help` works; one live opt-in App Server turn completes or reports a concrete environment/authentication error.
 
 **Development checkpoint:** commit D1 before starting the planning workflow.
 
@@ -228,7 +228,7 @@ Every role artifact ultimately has a common envelope with run id, baseline commi
    - approval-required changes cause `HUMAN_DECISION_REQUIRED`, not silent eligibility.
 8. Fork Judge from C0 and give it only eligible validated plans plus gate results. Require a winner, concrete rejections/trade-offs, remaining risk, and no numerical score. If no plan is eligible, stop with `BLOCKED`.
 9. Persist every phase and produce `report.md` plus a short terminal summary.
-10. Recheck that `HEAD`, index, refs, and tracked files equal preflight state. Tool-owned `.safechange` output is allowed.
+10. Recheck that `HEAD`, index, refs, and tracked files equal preflight state. Tool-owned `.changesafely` output is allowed.
 
 **Stage gate:** a live opt-in smoke test produces materially different plans from one C0 checkpoint, selects or explicitly blocks, leaves tracked repository state unchanged, and makes all lineage and artifacts inspectable.
 
@@ -237,9 +237,9 @@ Every role artifact ultimately has a common envelope with run id, baseline commi
 ### Stage 2: Golden demo and safety-harness write path
 
 1. Create `demo/payment-retry-template` with a small npm/TypeScript service, deterministic fake payment provider, public API contract, and baseline tests. The missing behavior is retry after a transient timeout without a duplicate charge.
-2. `scripts/setup-demo.ts` copies the template to a disposable directory, initializes a repository, creates B0, and prints the exact SafeChange command. This is demo setup, not core worktree management.
+2. `scripts/setup-demo.ts` copies the template to a disposable directory, initializes a repository, creates B0, and prints the exact ChangeSafely command. This is demo setup, not core worktree management.
 3. Before any write, recompute the currently supported baseline fingerprint. Any difference produces `BASELINE_CHANGED`.
-4. Create `safechange/<run-id>` from B0 in the current checkout. Verify the new branch and clean tracked state before starting the writer.
+4. Create `changesafely/<run-id>` from B0 in the current checkout. Verify the new branch and clean tracked state before starting the writer.
 5. Fork Test Author from C0 with workspace-write/network-off policy and the validated contract, selected plan, evidence gaps, and test-only scope.
 6. Validate its actual diff before commit:
    - only approved test/fixture paths changed;
@@ -251,7 +251,7 @@ Every role artifact ultimately has a common envelope with run id, baseline commi
 
 **Stage gate:** the demo history is exactly B0 -> T1; T1 contains meaningful failing-first safety coverage and only approved test/fixture changes.
 
-**Development checkpoint:** commit D3 in the SafeChange repository before implementing production changes in the demo flow.
+**Development checkpoint:** commit D3 in the ChangeSafely repository before implementing production changes in the demo flow.
 
 ### Stage 3: One implementation and straight independent verification
 
@@ -340,9 +340,9 @@ At this gate, and not earlier, the full passing workflow may emit `VERIFIED`.
 - **Repository scripts are hostile or require network/secrets:** sandbox smoke test, sanitized environment, command allowlist, and `BLOCKED` when the proof environment is insufficient.
 - **Protected-test semantic comparison is unreliable:** make every T1 path immutable during I1.
 - **Model requests a broader change:** stop with `REPLAN_REQUIRED`; do not widen scope inside the repair loop.
-- **Current repository has no baseline commit:** create the project's initial commit as a deliberate human/development action before implementation work that depends on Git history. SafeChange itself must never auto-commit pre-existing user files.
+- **Current repository has no baseline commit:** create the project's initial commit as a deliberate human/development action before implementation work that depends on Git history. ChangeSafely itself must never auto-commit pre-existing user files.
 - **Three-minute demo latency:** parallelize only planner turns, keep prompts/artifacts compact, reuse one App Server process, and optimize only after a repeatable correct run exists.
 
 ## 11. Completion definition
 
-The MVP is complete only when the packaged CLI repeatedly drives the prepared demo from B0 to a runnable SafeChange branch with separate T1 and I1 commits, preserved protected tests, real recorded command exits, an independent Verifier verdict, and a concise report. Every failure path must leave inspectable state and name a concrete next action; no model statement alone may produce `VERIFIED`.
+The MVP is complete only when the packaged CLI repeatedly drives the prepared demo from B0 to a runnable ChangeSafely branch with separate T1 and I1 commits, preserved protected tests, real recorded command exits, an independent Verifier verdict, and a concise report. Every failure path must leave inspectable state and name a concrete next action; no model statement alone may produce `VERIFIED`.

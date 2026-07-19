@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to SafeChange are documented here. The project follows
+All notable changes to ChangeSafely are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
@@ -30,10 +30,10 @@ All notable changes to SafeChange are documented here. The project follows
 - Schema-validated artifacts, deterministic eligibility gates, atomic persistence,
   lineage and hash verification, and concise Markdown reports.
 - Protected failing-first T1, scoped I1, one bounded repair, and independent release
-  verification on a SafeChange branch.
+  verification on a ChangeSafely branch.
 - Structured network-disabled command runner with sanitized environment, timeouts,
   bounded output, and real exit evidence.
-- Payment-retry golden demo and installable `safechange-demo` binary.
+- Payment-retry golden demo and installable `changesafely-demo` binary.
 - Node 22/24 CI, Biome, coverage thresholds, protocol drift checks, npm audit,
   registry signature verification, package smoke tests, CodeQL, dependency review,
   Dependabot, and OpenSSF Scorecard.
@@ -48,4 +48,4 @@ All notable changes to SafeChange are documented here. The project follows
 - Replaced duplicated Ajv schemas and TypeScript interfaces with pinned TypeBox
   contracts, reducing runtime dependencies and schema maintenance.
 
-[0.1.0]: https://github.com/vv-bogdanov/safechange/releases/tag/v0.1.0
+[0.1.0]: https://github.com/vv-bogdanov/changesafely/releases/tag/v0.1.0

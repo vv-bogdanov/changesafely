@@ -2,7 +2,7 @@
 
 ## Scope
 
-SafeChange is a local developer tool for prepared npm-based TypeScript repositories.
+ChangeSafely is a local developer tool for prepared npm-based TypeScript repositories.
 It compares plans, creates a protected safety harness, implements one selected plan,
 and verifies the resulting Git branch. It is not a deployment or rollback system.
 
@@ -11,7 +11,7 @@ and verifies the resulting Git branch. It is not a deployment or rollback system
 - The target repository, Git history, index, and protected safety tests.
 - Local Codex authentication and configuration.
 - Ignored files and local configuration such as `.env` and `.npmrc`.
-- Persisted run artifacts under `.safechange/runs/`.
+- Persisted run artifacts under `.changesafely/runs/`.
 - The integrity of the published npm package and generated App Server protocol.
 - Optional Sentry configuration and sanitized failure-code events.
 
@@ -22,12 +22,12 @@ output are treated as untrusted. Git state, schema-validated artifacts, file has
 and deterministic command exit codes are the workflow's sources of truth.
 
 The authenticated Codex runtime and the local host remain inside the user's trust
-boundary. SafeChange does not protect a compromised host, Codex binary, Git binary,
+boundary. ChangeSafely does not protect a compromised host, Codex binary, Git binary,
 package manager, or operating-system sandbox.
 
 ## Enforced controls
 
-- A valid, clean tracked baseline is required; SafeChange never stashes, resets,
+- A valid, clean tracked baseline is required; ChangeSafely never stashes, resets,
   cleans, amends, or rewrites user history.
 - D0 and C0 are separate roots; decision and write roles fork from C0 and exchange
   schema-validated artifacts rather than hidden transcripts.
@@ -41,15 +41,15 @@ package manager, or operating-system sandbox.
 - Resume validates artifact hashes, lineage, Git branch, commits, ancestry, protected
   files, and phase boundaries.
 - Sentry telemetry is disabled unless both opt-in variables are set. It sends only a
-  stable reason code, command, and SafeChange version over HTTPS, with no exception,
+  stable reason code, command, and ChangeSafely version over HTTPS, with no exception,
   stack, path, task, prompt, artifact, Git, environment, or command-output fields.
 
 ## Known limitations
 
-- AI roles and repository scripts need read access to the checkout. SafeChange does
+- AI roles and repository scripts need read access to the checkout. ChangeSafely does
   not provide a deny-read boundary around ignored files. Core prompts do not include
   `.env`, `.env.local`, or `.npmrc` contents, but a malicious repository script could
-  read local files and print them into captured command output. Do not run SafeChange
+  read local files and print them into captured command output. Do not run ChangeSafely
   in a checkout containing credentials that local development tools must not read.
 - A Git branch only protects tracked source. Ignored files, databases, services,
   queues, containers, volumes, and external APIs are not rolled back.

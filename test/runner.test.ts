@@ -58,7 +58,7 @@ test("runner fuzz gate rejects shell operators at every argv position", () => {
 });
 
 test("runner sanitizes environment and records a real successful exit", async (t) => {
-  const cwd = await mkdtemp(join(tmpdir(), "safechange-runner-"));
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-runner-"));
   t.after(async () => rm(cwd, { recursive: true, force: true }));
   const path = join(cwd, "env.test.js");
   await writeFile(
@@ -66,7 +66,7 @@ test("runner sanitizes environment and records a real successful exit", async (t
     `import test from "node:test";
 import assert from "node:assert/strict";
 test("env", () => {
-  assert.equal(process.env.SAFECHANGE_SECRET, undefined);
+  assert.equal(process.env.CHANGESAFELY_SECRET, undefined);
   assert.equal(process.env.CODEX_HOME, undefined);
   assert.equal(process.env.HTTP_PROXY, undefined);
   assert.notEqual(process.env.HOME, ${JSON.stringify(process.env.HOME)});
@@ -75,7 +75,7 @@ test("env", () => {
     "utf8",
   );
   const result = await runCommand(["node", "--test", path], cwd, {
-    env: { ...process.env, SAFECHANGE_SECRET: "must-not-leak" },
+    env: { ...process.env, CHANGESAFELY_SECRET: "must-not-leak" },
   });
   assert.equal(result.exitCode, 0);
   assert.equal(result.timedOut, false);
@@ -83,7 +83,7 @@ test("env", () => {
 });
 
 test("runner keeps only a bounded output tail and emits private evidence", async (t) => {
-  const cwd = await mkdtemp(join(tmpdir(), "safechange-output-"));
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-output-"));
   t.after(async () => rm(cwd, { recursive: true, force: true }));
   const path = join(cwd, "output.js");
   await writeFile(
@@ -111,7 +111,7 @@ test("runner keeps only a bounded output tail and emits private evidence", async
 });
 
 test("runner terminates a timed-out command and records the timeout", async (t) => {
-  const cwd = await mkdtemp(join(tmpdir(), "safechange-timeout-"));
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-timeout-"));
   t.after(async () => rm(cwd, { recursive: true, force: true }));
   const path = join(cwd, "slow.test.js");
   await writeFile(
@@ -125,7 +125,7 @@ test("runner terminates a timed-out command and records the timeout", async (t) 
 });
 
 test("runner terminates descendants when a command times out", async (t) => {
-  const cwd = await mkdtemp(join(tmpdir(), "safechange-tree-"));
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-tree-"));
   t.after(async () => rm(cwd, { recursive: true, force: true }));
   const marker = join(cwd, "descendant-survived.txt");
   const path = join(cwd, "tree.test.js");
@@ -148,7 +148,7 @@ test("tree", async () => {
 });
 
 test("runner stops when its abort signal fires", async (t) => {
-  const cwd = await mkdtemp(join(tmpdir(), "safechange-abort-"));
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-abort-"));
   t.after(async () => rm(cwd, { recursive: true, force: true }));
   const path = join(cwd, "abort.test.js");
   await writeFile(

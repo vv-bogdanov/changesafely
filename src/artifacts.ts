@@ -8,7 +8,7 @@ import {
   validateArtifactInputKeys,
 } from "./artifact-catalog.js";
 import { type ArtifactKey, isArtifactKey, parsePlanArtifactKey } from "./artifact-key.js";
-import { SafeChangeError } from "./errors.js";
+import { ChangeSafelyError } from "./errors.js";
 import {
   ARTIFACT_VERSION,
   RUN_STATE_VERSION,
@@ -37,7 +37,7 @@ export type PersistedVersionErrorCode =
   | "UNSUPPORTED_STATE_VERSION"
   | "UNSUPPORTED_ARTIFACT_VERSION";
 
-export class PersistedVersionError extends SafeChangeError {
+export class PersistedVersionError extends ChangeSafelyError {
   constructor(
     public readonly code: PersistedVersionErrorCode,
     actual: unknown,
@@ -45,7 +45,7 @@ export class PersistedVersionError extends SafeChangeError {
   ) {
     super(code, `${code}: expected ${expected}, received ${String(actual)}`, {
       exitCode: 2,
-      nextAction: "Start a new SafeChange run with the installed CLI version.",
+      nextAction: "Start a new ChangeSafely run with the installed CLI version.",
     });
     this.name = "PersistedVersionError";
   }
@@ -64,7 +64,7 @@ export function createRunId(): string {
 
 export function validateRunId(runId: string): string {
   if (runId === "." || runId === ".." || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runId)) {
-    throw new Error(`Invalid SafeChange run id: ${runId}`);
+    throw new Error(`Invalid ChangeSafely run id: ${runId}`);
   }
   return runId;
 }
@@ -72,13 +72,13 @@ export function validateRunId(runId: string): string {
 function resolveWithin(root: string, relativePath: string): string {
   const path = resolve(root, relativePath);
   if (path !== root && !path.startsWith(`${root}${sep}`)) {
-    throw new Error(`Path escapes the SafeChange run directory: ${relativePath}`);
+    throw new Error(`Path escapes the ChangeSafely run directory: ${relativePath}`);
   }
   return path;
 }
 
 function runPath(repoPath: string, runId: string): string {
-  return resolve(repoPath, ".safechange", "runs", validateRunId(runId));
+  return resolve(repoPath, ".changesafely", "runs", validateRunId(runId));
 }
 
 function hashContent(content: string): string {
@@ -89,9 +89,9 @@ function parseJson(content: string, description: string): unknown {
   try {
     return JSON.parse(content);
   } catch {
-    throw new SafeChangeError("INVALID_PERSISTED_JSON", `Invalid JSON in ${description}`, {
+    throw new ChangeSafelyError("INVALID_PERSISTED_JSON", `Invalid JSON in ${description}`, {
       exitCode: 2,
-      nextAction: "Inspect the damaged run data and start a new SafeChange run.",
+      nextAction: "Inspect the damaged run data and start a new ChangeSafely run.",
     });
   }
 }
@@ -200,7 +200,7 @@ export class ArtifactStore {
 export async function loadRunState(repoPath: string, runId: string): Promise<RunState> {
   const value = parseJson(
     await readFile(resolveWithin(runPath(repoPath, runId), "state.json"), "utf8"),
-    "SafeChange run state",
+    "ChangeSafely run state",
   );
   assertStateVersion(value);
   const validated = validateRunState(value);
@@ -224,7 +224,7 @@ export async function loadVerifiedArtifact<Key extends ArtifactKey>(
   if (!expectedHash || hashContent(content) !== expectedHash) {
     throw new Error(`Artifact hash mismatch: ${definition.path}`);
   }
-  const value = parseJson(content, `SafeChange artifact ${definition.path}`);
+  const value = parseJson(content, `ChangeSafely artifact ${definition.path}`);
   assertArtifactVersion(value);
   const envelope = validateArtifactEnvelope(value);
   if (

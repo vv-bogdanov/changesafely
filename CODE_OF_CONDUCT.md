@@ -1,6 +1,6 @@
 # Code of conduct
 
-We want SafeChange collaboration to be technically rigorous, respectful, and safe.
+We want ChangeSafely collaboration to be technically rigorous, respectful, and safe.
 
 Contributors must communicate constructively, critique work rather than people,
 respect differing experience and perspectives, and avoid harassment, threats,

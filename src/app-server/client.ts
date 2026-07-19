@@ -11,7 +11,7 @@ import {
   JSONRPCServerAndClient,
 } from "json-rpc-2.0";
 import { safeEnvironment } from "../environment.js";
-import { SafeChangeError } from "../errors.js";
+import { ChangeSafelyError } from "../errors.js";
 import { VERSION } from "../version.js";
 import type { InitializeParams } from "./generated/types/InitializeParams.js";
 import type { InitializeResponse } from "./generated/types/InitializeResponse.js";
@@ -66,7 +66,7 @@ export interface TurnResult {
   message: string;
 }
 
-export class AppServerError extends SafeChangeError {
+export class AppServerError extends ChangeSafelyError {
   constructor(
     message: string,
     public readonly rpcError?: RpcError,
@@ -247,8 +247,8 @@ export class AppServerClient {
 
     const params: InitializeParams = {
       clientInfo: {
-        name: "safechange",
-        title: "SafeChange",
+        name: "changesafely",
+        title: "ChangeSafely",
         version: VERSION,
       },
       capabilities: null,

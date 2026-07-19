@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { VERSION } from "./version.js";
 
-const TELEMETRY_FLAG = "SAFECHANGE_TELEMETRY";
-const SENTRY_DSN = "SAFECHANGE_SENTRY_DSN";
+const TELEMETRY_FLAG = "CHANGESAFELY_TELEMETRY";
+const SENTRY_DSN = "CHANGESAFELY_SENTRY_DSN";
 
 export interface TelemetryOptions {
   env?: NodeJS.ProcessEnv;
@@ -45,7 +45,7 @@ export function createSentryEnvelopeRequest(
     !/^[A-Za-z0-9_-]+$/.test(dsn.username) ||
     !/^[A-Za-z0-9_-]+$/.test(projectId)
   ) {
-    throw new Error("Invalid SafeChange Sentry DSN");
+    throw new Error("Invalid ChangeSafely Sentry DSN");
   }
 
   const basePath = segments.length > 0 ? `/${segments.join("/")}` : "";
@@ -54,25 +54,25 @@ export function createSentryEnvelopeRequest(
   const envelopeHeader = {
     event_id: eventId,
     sent_at: sentAt,
-    sdk: { name: "safechange", version: VERSION },
+    sdk: { name: "changesafely", version: VERSION },
   };
   const event = {
     event_id: eventId,
     timestamp: sentAt,
     platform: "node",
     level: "error",
-    logger: "safechange",
-    release: `safechange@${VERSION}`,
-    message: `SafeChange ${safeReasonCode(reasonCode)}`,
+    logger: "changesafely",
+    release: `changesafely@${VERSION}`,
+    message: `ChangeSafely ${safeReasonCode(reasonCode)}`,
     tags: {
       reason_code: safeReasonCode(reasonCode),
       command: safeCommand(command),
-      safechange_version: VERSION,
+      changesafely_version: VERSION,
     },
   };
   return {
     endpoint,
-    authorization: `Sentry sentry_version=7, sentry_client=safechange/${VERSION}, sentry_key=${dsn.username}`,
+    authorization: `Sentry sentry_version=7, sentry_client=changesafely/${VERSION}, sentry_key=${dsn.username}`,
     body: `${JSON.stringify(envelopeHeader)}\n${JSON.stringify({ type: "event" })}\n${JSON.stringify(event)}\n`,
   };
 }
