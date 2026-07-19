@@ -165,6 +165,16 @@ try {
     throw new Error(`Installed CLI plan did not complete as expected: ${planOutput}`);
   }
 
+  const doctorOutput = JSON.parse(
+    await run(
+      safechange,
+      ["doctor", "--json", "--repo", functionalRepo],
+      temporaryRoot,
+      functionalEnvironment,
+    ),
+  ) as { ok?: boolean };
+  if (doctorOutput.ok !== true) throw new Error("Installed CLI doctor reported not ready");
+
   const runOutput = await run(
     safechange,
     ["run", "--task", "Change the fixture value.", "--plans", "1", "--repo", functionalRepo],

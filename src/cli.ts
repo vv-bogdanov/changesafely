@@ -5,9 +5,11 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { loadArtifact, loadRunState } from "./artifacts.js";
+import { formatDoctorReport, runDoctor } from "./doctor.js";
 import { PreflightError } from "./git.js";
 import { resumeRun, runFullWorkflow } from "./orchestrator.js";
 import type { DecisionArtifact } from "./schemas.js";
+import { captureFailure } from "./telemetry.js";
 import { VERSION } from "./version.js";
 import { runPlanning } from "./workflow.js";
 
@@ -17,11 +19,13 @@ Usage:
   safechange plan --task <text> [--plans 1..5] [--repo <path>]
   safechange run --task <text> [--plans 1..5] [--repo <path>]
   safechange resume --run <run-id> [--repo <path>]
+  safechange doctor [--repo <path>] [--json]
 
 Commands:
   plan      Compare plans without changing tracked repository state
   run       Execute the complete test-first change workflow
   resume    Continue a persisted run from a validated phase boundary
+  doctor    Check local Git, Codex, App Server, and sandbox readiness
 
 Options:
   -h, --help       Show this help
@@ -72,6 +76,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       plans: { type: "string", default: "3" },
       repo: { type: "string", default: process.cwd() },
       run: { type: "string" },
+      json: { type: "boolean" },
     },
   });
 
@@ -85,7 +90,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   const command = parsed.positionals[0];
-  if (command !== "plan" && command !== "run" && command !== "resume") {
+  if (command !== "plan" && command !== "run" && command !== "resume" && command !== "doctor") {
     process.stderr.write(`Unknown command: ${command ?? ""}\n\n${HELP}`);
     return 1;
   }
@@ -103,6 +108,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   process.once("SIGTERM", onSigterm);
   try {
     const repoPath = resolve(requiredString(parsed.values.repo, "--repo"));
+    if (command === "doctor") {
+      const report = await runDoctor({ repoPath });
+      process.stdout.write(
+        parsed.values.json ? `${JSON.stringify(report, null, 2)}\n` : formatDoctorReport(report),
+      );
+      return report.ok ? 0 : 2;
+    }
     if (command === "resume") {
       const runId = requiredString(parsed.values.run, "--run");
       const result = await resumeRun(repoPath, runId, abortController.signal);
@@ -148,6 +160,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`SafeChange failed: ${message}\n`);
+    await captureFailure(
+      error instanceof PreflightError ? error.reasonCode : "UNEXPECTED_ERROR",
+      command,
+    );
     return interruptedExitCode ?? (error instanceof PreflightError ? 2 : 1);
   } finally {
     process.removeListener("SIGINT", onSigint);

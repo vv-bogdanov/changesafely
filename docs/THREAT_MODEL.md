@@ -13,6 +13,7 @@ and verifies the resulting Git branch. It is not a deployment or rollback system
 - Ignored files and local configuration such as `.env` and `.npmrc`.
 - Persisted run artifacts under `.safechange/runs/`.
 - The integrity of the published npm package and generated App Server protocol.
+- Optional Sentry configuration and sanitized failure-code events.
 
 ## Trust boundaries
 
@@ -38,6 +39,9 @@ package manager, or operating-system sandbox.
 - Protocol generation and runtime Codex versions must match exactly.
 - Resume validates artifact hashes, lineage, Git branch, commits, ancestry, protected
   files, and phase boundaries.
+- Sentry telemetry is disabled unless both opt-in variables are set. It sends only a
+  stable reason code, command, and SafeChange version over HTTPS, with no exception,
+  stack, path, task, prompt, artifact, Git, environment, or command-output fields.
 
 ## Known limitations
 
@@ -49,7 +53,9 @@ package manager, or operating-system sandbox.
 - A Git branch only protects tracked source. Ignored files, databases, services,
   queues, containers, volumes, and external APIs are not rolled back.
 - Network denial applies to AI role policies and deterministic command sandboxes; it
-  does not make a compromised host or runtime safe.
+  does not make a compromised host or runtime safe. Explicitly enabled Sentry error
+  telemetry performs a separate outbound HTTPS request after a CLI failure. Its
+  event has no user fields, but the receiving host can observe the source IP.
 - The MVP supports a bounded npm/TypeScript command contract. Other ecosystems and
   production workflows have not been security-qualified.
 - Availability attacks remain possible through CPU, disk, or process exhaustion by

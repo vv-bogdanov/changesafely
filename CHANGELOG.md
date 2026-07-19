@@ -7,7 +7,7 @@ All notable changes to SafeChange are documented here. The project follows
 
 ### Added
 
-- Complete `plan`, `run`, and boundary-validated `resume` CLI workflows.
+- Complete `plan`, `run`, boundary-validated `resume`, and local `doctor` CLI workflows.
 - Separate D0 and C0 roots with independent C0 planner, Judge, Test Author,
   Implementer, and Verifier forks.
 - Schema-validated artifacts, deterministic eligibility gates, atomic persistence,
@@ -21,12 +21,14 @@ All notable changes to SafeChange are documented here. The project follows
   registry signature verification, package smoke tests, CodeQL, dependency review,
   Dependabot, and OpenSSF Scorecard.
 - Property-based command allowlist fuzzing with generated shell-operator positions.
+- Opt-in, allowlisted Sentry failure-code telemetry with no automatic instrumentation.
+- TypeBox single-source artifact contracts plus Knip and publint CI gates.
 
 ### Security
 
 - Documented the local checkout, secret-file, ignored-state, external-state, and
   resource-exhaustion boundaries.
-- Updated Ajv to `8.20.0`, resolving the published `$data` ReDoS advisory affecting
-  earlier versions.
+- Replaced duplicated Ajv schemas and TypeScript interfaces with pinned TypeBox
+  contracts, reducing runtime dependencies and schema maintenance.
 
 [0.1.0]: https://github.com/vv-bogdanov/safechange/releases/tag/v0.1.0

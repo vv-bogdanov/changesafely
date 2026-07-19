@@ -21,3 +21,8 @@ after the issue is reproduced and a fix is available.
 SafeChange executes AI roles and repository scripts locally. Read
 [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) before using it on sensitive code.
 SafeChange is not a deployment tool and does not claim to roll back external state.
+
+Optional Sentry error telemetry is disabled by default and requires both
+`SAFECHANGE_TELEMETRY=1` and `SAFECHANGE_SENTRY_DSN`. It sends only allowlisted
+failure metadata described in the threat model. Never place a private credential in
+the DSN variable.

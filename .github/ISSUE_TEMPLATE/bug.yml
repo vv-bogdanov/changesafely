@@ -17,7 +17,7 @@ body:
     id: command
     attributes:
       label: Command
-      options: [plan, run, resume, safechange-demo, installation]
+      options: [plan, run, resume, doctor, safechange-demo, installation]
     validations:
       required: true
   - type: textarea

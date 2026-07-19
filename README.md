@@ -107,6 +107,13 @@ Resume only from a validated persisted boundary:
 safechange resume --repo /path/to/repo --run <run-id>
 ```
 
+Check local readiness without starting an AI turn or repository script:
+
+```sh
+safechange doctor --repo /path/to/repo
+safechange doctor --repo /path/to/repo --json
+```
+
 SafeChange never stashes, cleans, resets, amends, or rewrites user history.
 
 ## Golden Demo
@@ -186,6 +193,24 @@ version, expected branch and commits, baseline ancestry, and protected T1 files.
 Read [`SECURITY.md`](SECURITY.md) and the full
 [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) before using SafeChange on
 sensitive code.
+
+### Optional Error Telemetry
+
+Telemetry is disabled by default. To send sanitized CLI failure codes to a Sentry
+project, explicitly set both variables:
+
+```sh
+SAFECHANGE_TELEMETRY=1 SAFECHANGE_SENTRY_DSN=https://<public-key>@<host>/<project-id> \
+  safechange run --repo /path/to/repo --task "Describe the requested change"
+```
+
+The event payload contains only the SafeChange version, command name, and a bounded
+stable reason code. It excludes exception objects, stack traces, paths, task text,
+prompts, artifacts, Git data, command output, environment values, and user fields.
+Delivery uses an HTTPS Sentry envelope with a two-second timeout and never changes
+the CLI exit code. As with any HTTPS request, the Sentry host and network provider
+can observe the source IP. This opt-in is the only SafeChange core network request
+outside Codex.
 
 ## Development
 
