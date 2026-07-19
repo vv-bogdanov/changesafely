@@ -59,7 +59,14 @@ test("rejects a safety check that does not execute tests", () => {
     contract,
     {
       ...plan,
-      safetyTests: [{ name: "not a test", proves: "AC1", argv: ["npm", "run", "typecheck"] }],
+      safetyTests: [
+        {
+          name: "not a test",
+          proves: "AC1",
+          argv: ["npm", "run", "typecheck"],
+          cwd: ".",
+        },
+      ],
     },
     capabilities,
   );
@@ -97,6 +104,7 @@ test("rejects a direct source test command outside the npm MVP contract", () => 
           name: "direct source test",
           proves: "AC1",
           argv: ["node", "--test", "test/value.test.ts"],
+          cwd: ".",
         },
       ],
     },

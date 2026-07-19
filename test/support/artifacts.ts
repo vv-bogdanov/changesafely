@@ -49,8 +49,10 @@ export function validPlan(overrides: Partial<DetailedPlan> = {}): DetailedPlan {
       },
       { id: "S2", description: "Implement the behavior.", paths: ["src/value.ts"] },
     ],
-    safetyTests: [{ name: "acceptance", proves: "AC1", argv: ["npm", "test"] }],
-    verificationCommands: [{ name: "test", argv: ["npm", "test"], purpose: "Verify behavior" }],
+    safetyTests: [{ name: "acceptance", proves: "AC1", argv: ["npm", "test"], cwd: "." }],
+    verificationCommands: [
+      { name: "test", argv: ["npm", "test"], cwd: ".", purpose: "Verify behavior" },
+    ],
     dependencies: [],
     migrations: [],
     approvalRequiredChanges: [],

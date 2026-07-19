@@ -139,6 +139,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         {
           name: "test",
           argv: python ? ["python", "-m", "pytest"] : ["npm", "test"],
+          cwd: ".",
           purpose: "Run tests",
         },
       ],
@@ -197,6 +198,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
             : mode === "planner-correction" && !prompt.includes("[CHANGESAFELY_CORRECTION]")
               ? ["npm", "run", "typecheck"]
               : ["npm", "test"],
+          cwd: ".",
         },
       ],
       verificationCommands:
@@ -205,6 +207,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
               {
                 name: "selected plan check",
                 argv: ["npm", "run", "check:plan"],
+                cwd: ".",
                 purpose: "Verify the selected plan contract",
               },
             ]
@@ -212,6 +215,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
               {
                 name: "test",
                 argv: python ? ["python", "-m", "pytest"] : ["npm", "test"],
+                cwd: ".",
                 purpose: "Verify behavior",
               },
             ],
@@ -257,6 +261,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         targetedCommand: {
           name: "targeted acceptance",
           argv: ["python", "-m", "pytest"],
+          cwd: ".",
           purpose: "Prove the requested behavior is missing on baseline",
         },
         expectedBaselineOutcome: "fail",
@@ -277,6 +282,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       targetedCommand: {
         name: "targeted acceptance",
         argv: ["npm", "test"],
+        cwd: ".",
         purpose: "Prove the requested behavior is missing on baseline",
       },
       expectedBaselineOutcome: "fail",

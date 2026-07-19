@@ -68,6 +68,7 @@ test("evaluates candidate tests against reference and mutants, then replays one 
           targetedCommand: {
             name: "test",
             argv: ["npm", "test"],
+            cwd: ".",
             purpose: "Run candidate tests",
           },
           expectedBaselineOutcome: "fail",

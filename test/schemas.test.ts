@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ArtifactValidationError,
+  changeContractSchema,
+  decisionArtifactSchema,
+  detailedPlanSchema,
+  evidenceArtifactSchema,
+  harnessArtifactSchema,
+  implementationArtifactSchema,
+  smokeArtifactSchema,
   validateCommandEvidenceList,
   validatePlanEligibilityList,
   validateSmokeArtifact,
+  verificationArtifactSchema,
 } from "../src/schemas.js";
 
 test("accepts a valid structured artifact", () => {
@@ -19,6 +27,21 @@ test("rejects malformed structured artifacts", () => {
     () => validateSmokeArtifact({ kind: "smoke", message: "" }),
     ArtifactValidationError,
   );
+});
+
+test("role output schemas satisfy strict Structured Outputs", () => {
+  for (const schema of [
+    smokeArtifactSchema,
+    evidenceArtifactSchema,
+    changeContractSchema,
+    detailedPlanSchema,
+    decisionArtifactSchema,
+    harnessArtifactSchema,
+    implementationArtifactSchema,
+    verificationArtifactSchema,
+  ]) {
+    assertStrictObjectPropertiesRequired(schema);
+  }
 });
 
 test("validates persisted deterministic evidence", () => {
@@ -59,3 +82,23 @@ test("validates persisted deterministic evidence", () => {
     ArtifactValidationError,
   );
 });
+
+function assertStrictObjectPropertiesRequired(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) assertStrictObjectPropertiesRequired(item);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  const schema = value as Record<string, unknown>;
+  if (schema.type === "object" && isRecord(schema.properties)) {
+    assert.deepEqual(
+      new Set(Array.isArray(schema.required) ? schema.required : []),
+      new Set(Object.keys(schema.properties)),
+    );
+  }
+  for (const nested of Object.values(schema)) assertStrictObjectPropertiesRequired(nested);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

@@ -30,7 +30,7 @@ const referenceSchema = strictObject({
 const commandSchema = strictObject({
   name: stringSchema,
   argv: Type.Array(stringSchema, { minItems: 1 }),
-  cwd: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+  cwd: Type.String({ minLength: 1, maxLength: 4096 }),
   purpose: stringSchema,
 });
 const contractItemSchema = strictObject({ id: stringSchema, statement: stringSchema });
@@ -80,7 +80,7 @@ const safetyTestSchema = strictObject({
   name: stringSchema,
   proves: stringSchema,
   argv: Type.Array(stringSchema, { minItems: 1 }),
-  cwd: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+  cwd: Type.String({ minLength: 1, maxLength: 4096 }),
 });
 const planUnknownSchema = strictObject({
   description: stringSchema,
