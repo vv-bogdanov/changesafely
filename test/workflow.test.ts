@@ -6,6 +6,7 @@ import { PreflightError } from "../src/git.js";
 import { runHarness } from "../src/harness.js";
 import { runImplementationAndVerification } from "../src/implementation.js";
 import { validateResumeBoundary } from "../src/orchestrator.js";
+import { REPOSITORY_CONFIG_PATH } from "../src/repository-capabilities.js";
 import { loadTrace } from "../src/trace.js";
 import { runPlanning } from "../src/workflow.js";
 import { fakeAppServerFactory } from "./support/app-server.js";
@@ -328,6 +329,40 @@ test("refuses resume when the persisted capability catalog is tampered", async (
   await assert.rejects(
     validateResumeBoundary(repoPath, planning.runId),
     /capability catalog changed|capability catalog is missing or invalid/u,
+  );
+});
+
+test("refuses resume when the tracked repository config changes", async (t) => {
+  const config = {
+    version: 1,
+    checks: [{ id: "configured-test", kind: "test", argv: ["npm", "test"], cwd: "." }],
+    testPathPrefixes: ["test"],
+    testFilePatterns: ["*.test.ts"],
+    controlFiles: [],
+  };
+  const repoPath = await createTestRepo(t, {
+    prefix: "changesafely-config-resume-",
+    files: {
+      [REPOSITORY_CONFIG_PATH]: `${JSON.stringify(config, null, 2)}\n`,
+      "src/value.ts": "export const value = 1;\n",
+    },
+  });
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value.",
+    plannerCount: 1,
+    clientFactory: fakeAppServerFactory(repoPath),
+  });
+  config.testFilePatterns.push("*.spec.ts");
+  await writeFile(
+    join(repoPath, REPOSITORY_CONFIG_PATH),
+    `${JSON.stringify(config, null, 2)}\n`,
+    "utf8",
+  );
+
+  await assert.rejects(
+    validateResumeBoundary(repoPath, planning.runId),
+    /capability catalog changed/u,
   );
 });
 

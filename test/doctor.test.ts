@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { formatDoctorReport, runDoctor } from "../src/doctor.js";
 
+const capabilities = {
+  checks: [{ id: "config:test", kind: "test" as const, argv: ["make", "test"], cwd: "." }],
+  testPathPrefixes: ["tests"],
+  testFilePatterns: ["*_test.py"],
+  controlFiles: ["changesafely.config.json"],
+  sources: ["config:changesafely.config.json", "executable:make:/usr/bin/make"],
+};
+
 test("reports a ready local ChangeSafely environment", async () => {
   let appServerClosed = false;
   const report = await runDoctor({
@@ -21,14 +29,17 @@ test("reports a ready local ChangeSafely environment", async () => {
         appServerClosed = true;
       },
     }),
+    discoverCapabilities: async () => capabilities,
   });
 
   assert.equal(report.ok, true);
-  assert.equal(report.checks.length, 7);
+  assert.equal(report.checks.length, 8);
   assert.equal(appServerClosed, true);
   assert.match(formatDoctorReport(report), /Ready: yes/);
   assert.match(formatDoctorReport(report), /generated baseline/);
   assert.match(formatDoctorReport(report), /Telemetry is disabled/);
+  assert.match(formatDoctorReport(report), /config:test.*\["make","test"\]/u);
+  assert.deepEqual(report.repositoryCapabilities, capabilities);
 });
 
 test("reports stable actions without exposing command output", async () => {
@@ -52,6 +63,7 @@ test("reports stable actions without exposing command output", async () => {
       },
       close: async () => undefined,
     }),
+    discoverCapabilities: async () => capabilities,
   });
 
   const output = formatDoctorReport(report);

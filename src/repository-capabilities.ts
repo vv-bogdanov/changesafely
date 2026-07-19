@@ -1,12 +1,15 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { access, readFile, realpath } from "node:fs/promises";
+import { access, readFile, realpath, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
+import Type from "typebox";
+import { Compile } from "typebox/compile";
 import { ChangeSafelyError } from "./errors.js";
 import { normalizeRepositoryPath, pathWithinPrefixes } from "./repository-policy.js";
+import { validateCommandArgv } from "./runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +29,36 @@ export interface RepositoryCapabilities {
   controlFiles: string[];
   sources: string[];
 }
+
+export const REPOSITORY_CONFIG_PATH = "changesafely.config.json";
+
+const configStringSchema = Type.String({ minLength: 1, maxLength: 4096 });
+const repositoryConfigSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    checks: Type.Array(
+      Type.Object(
+        {
+          id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$" }),
+          kind: Type.Unsafe<CheckKind>(
+            Type.String({
+              enum: ["test", "typecheck", "lint", "build"],
+            }),
+          ),
+          argv: Type.Array(configStringSchema, { minItems: 1, maxItems: 64 }),
+          cwd: configStringSchema,
+        },
+        { additionalProperties: false },
+      ),
+      { minItems: 1, maxItems: 64 },
+    ),
+    testPathPrefixes: Type.Array(configStringSchema, { minItems: 1, maxItems: 64 }),
+    testFilePatterns: Type.Array(configStringSchema, { maxItems: 32 }),
+    controlFiles: Type.Array(configStringSchema, { maxItems: 128 }),
+  },
+  { additionalProperties: false },
+);
+const repositoryConfigValidator = Compile(repositoryConfigSchema);
 
 const npmControlNames = new Set([
   "package.json",
@@ -127,13 +160,15 @@ export async function discoverRepositoryCapabilities(
     }
   }
 
-  return normalizeCapabilities({
+  const detected = normalizeCapabilities({
     checks,
     testPathPrefixes: [...testPathPrefixes],
     testFilePatterns: ["*.test.*", "*.spec.*", "test_*.py", "*_test.py"],
     controlFiles: [...controlFiles],
     sources,
   });
+  const configured = await configuredCapabilities(repoPath, trackedFiles);
+  return mergeCapabilities(configured ? [configured, detected] : [detected]);
 }
 
 export function capabilitiesSha256(capabilities: RepositoryCapabilities): string {
@@ -196,11 +231,153 @@ export function assertUsableCapabilities(capabilities: RepositoryCapabilities): 
       "No deterministic repository test check was detected",
       {
         exitCode: 2,
-        nextAction:
-          "Add an npm test script or declare repository checks in the ChangeSafely config.",
+        nextAction: `Add an npm test script or declare repository checks in ${REPOSITORY_CONFIG_PATH}.`,
       },
     );
   }
+}
+
+async function configuredCapabilities(
+  repoPath: string,
+  trackedFiles: string[],
+): Promise<RepositoryCapabilities | undefined> {
+  if (!trackedFiles.includes(REPOSITORY_CONFIG_PATH)) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(join(repoPath, REPOSITORY_CONFIG_PATH), "utf8"));
+  } catch {
+    throw invalidConfig("The file is not valid JSON");
+  }
+  if (!repositoryConfigValidator.Check(value)) {
+    const details = [...repositoryConfigValidator.Errors(value)]
+      .slice(0, 6)
+      .map((error) => `${error.instancePath || "/"} ${error.message}`)
+      .join("; ");
+    throw invalidConfig(details);
+  }
+
+  const config = value as Type.Static<typeof repositoryConfigSchema>;
+  const tracked = new Set(trackedFiles);
+  const checks: RepositoryCheck[] = [];
+  const ids = new Set<string>();
+  const commands = new Set<string>();
+  const programs = new Set<string>();
+  for (const check of config.checks) {
+    if (ids.has(check.id)) throw invalidConfig(`Duplicate check id: ${check.id}`);
+    ids.add(check.id);
+    let cwd: string;
+    try {
+      cwd = normalizeRepositoryPath(check.cwd);
+      validateCommandArgv([...check.argv]);
+    } catch (error) {
+      throw invalidConfig(
+        `Unsafe check ${check.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(check.argv[0] ?? "")) {
+      throw invalidConfig(`Environment overrides are not allowed in check ${check.id}`);
+    }
+    const cwdMetadata = await stat(join(repoPath, cwd)).catch(() => undefined);
+    if (!cwdMetadata?.isDirectory()) {
+      throw invalidConfig(`Check ${check.id} cwd is not an existing directory: ${cwd}`);
+    }
+    const commandKey = JSON.stringify([cwd, check.argv]);
+    if (commands.has(commandKey)) throw invalidConfig(`Duplicate check command: ${check.id}`);
+    commands.add(commandKey);
+    programs.add(check.argv[0] ?? "");
+    checks.push({ id: check.id, kind: check.kind, argv: [...check.argv], cwd });
+  }
+
+  const normalizeConfigPath = (path: string, label: string): string => {
+    try {
+      return normalizeRepositoryPath(path);
+    } catch (error) {
+      throw invalidConfig(
+        `Invalid ${label} path: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+  const testPathPrefixes = config.testPathPrefixes.map((path) =>
+    normalizeConfigPath(path, "test prefix"),
+  );
+  const controlFiles = config.controlFiles.map((path) => normalizeConfigPath(path, "control file"));
+  for (const path of controlFiles) {
+    if (!tracked.has(path)) throw invalidConfig(`Control file is not tracked: ${path}`);
+  }
+  for (const pattern of config.testFilePatterns) {
+    if (pattern.includes("/") || pattern.includes("\\") || pattern === "." || pattern === "..") {
+      throw invalidConfig(`Test file pattern must be a filename pattern: ${pattern}`);
+    }
+  }
+
+  const sources = [`config:${REPOSITORY_CONFIG_PATH}`];
+  for (const program of [...programs].sort()) {
+    const executable = await resolveExecutable(program);
+    sources.push(
+      `executable:${program}:${executable}`,
+      `executable-target:${program}:${await realpath(executable)}`,
+    );
+  }
+  return normalizeCapabilities({
+    checks,
+    testPathPrefixes,
+    testFilePatterns: [...config.testFilePatterns],
+    controlFiles: [REPOSITORY_CONFIG_PATH, ...controlFiles],
+    sources,
+  });
+}
+
+function mergeCapabilities(catalogs: RepositoryCapabilities[]): RepositoryCapabilities {
+  const merged: RepositoryCapabilities = {
+    checks: [],
+    testPathPrefixes: [],
+    testFilePatterns: [],
+    controlFiles: [],
+    sources: [],
+  };
+  const ids = new Map<string, RepositoryCheck>();
+  const commands = new Map<string, RepositoryCheck>();
+  for (const catalog of catalogs) {
+    for (const check of catalog.checks) {
+      const existingId = ids.get(check.id);
+      if (existingId) {
+        throw ambiguousCatalog(`Check id ${check.id} is declared more than once`);
+      }
+      const commandKey = JSON.stringify([check.cwd, check.argv]);
+      const existingCommand = commands.get(commandKey);
+      if (existingCommand) {
+        throw ambiguousCatalog(
+          `Checks ${existingCommand.id} and ${check.id} declare the same command and cwd`,
+        );
+      }
+      ids.set(check.id, check);
+      commands.set(commandKey, check);
+      merged.checks.push(check);
+    }
+    merged.testPathPrefixes.push(...catalog.testPathPrefixes);
+    merged.testFilePatterns.push(...catalog.testFilePatterns);
+    merged.controlFiles.push(...catalog.controlFiles);
+    merged.sources.push(...catalog.sources);
+  }
+  return normalizeCapabilities(merged);
+}
+
+function invalidConfig(detail: string): ChangeSafelyError {
+  return new ChangeSafelyError(
+    "INVALID_REPOSITORY_CONFIG",
+    `Invalid ${REPOSITORY_CONFIG_PATH}: ${detail}`,
+    {
+      exitCode: 2,
+      nextAction: `Fix the tracked ${REPOSITORY_CONFIG_PATH} file and retry.`,
+    },
+  );
+}
+
+function ambiguousCatalog(detail: string): ChangeSafelyError {
+  return new ChangeSafelyError("AMBIGUOUS_CAPABILITY_CATALOG", detail, {
+    exitCode: 2,
+    nextAction: `Remove duplicate checks from ${REPOSITORY_CONFIG_PATH} and retry.`,
+  });
 }
 
 function normalizeCapabilities(capabilities: RepositoryCapabilities): RepositoryCapabilities {

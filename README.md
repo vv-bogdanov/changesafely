@@ -61,6 +61,30 @@ The App Server protocol is generated reproducibly from the pinned development
 dependency. Runtime Codex versions are accepted when the App Server handshake and
 the messages ChangeSafely actually uses pass fail-closed validation.
 
+### Repository Checks
+
+ChangeSafely detects prepared npm and pytest repositories. Other tools and polyglot
+repositories declare the same command contract in a tracked repository-root
+`changesafely.config.json`:
+
+```json
+{
+  "version": 1,
+  "checks": [
+    { "id": "make:test", "kind": "test", "argv": ["make", "test"], "cwd": "." }
+  ],
+  "testPathPrefixes": ["tests"],
+  "testFilePatterns": ["*_test.py"],
+  "controlFiles": ["Makefile"]
+}
+```
+
+Commands are argv arrays, never shell strings. The config cannot provide setup steps,
+environment overrides, credentials, or deployment actions. Every cwd is
+repository-relative, every additional control file must already be tracked, and the
+resolved catalog and config are hashed before writes. ChangeSafely never installs the
+declared runtime or project dependencies.
+
 ## Workflow
 
 ```mermaid

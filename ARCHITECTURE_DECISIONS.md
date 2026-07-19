@@ -166,8 +166,8 @@ the MVP while preserving a simple override for development runs.
 verification independent of target source syntax. Authorize deterministic project
 commands from an immutable baseline capability catalog containing exact argv, cwd,
 check kind, test paths, control files, and source attribution. Small built-in detectors
-may provide zero-configuration support for proven toolchains; a versioned explicit
-repository contract will cover other and polyglot repositories. A model may select a
+provide zero-configuration support for proven toolchains; the versioned tracked root
+`changesafely.config.json` covers other and polyglot repositories. A model may select a
 catalog command but cannot create, broaden, or mutate command authority during a run.
 
 **Why:** per-language orchestration duplicates owned code, while arbitrary

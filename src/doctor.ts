@@ -2,6 +2,12 @@ import spawn from "cross-spawn";
 import { AppServerClient } from "./app-server/client.js";
 import protocolVersion from "./app-server/generated/protocol-version.json" with { type: "json" };
 import { safeEnvironment } from "./environment.js";
+import { ChangeSafelyError } from "./errors.js";
+import {
+  assertUsableCapabilities,
+  discoverRepositoryCapabilities,
+  type RepositoryCapabilities,
+} from "./repository-capabilities.js";
 import { telemetryConfigurationStatus } from "./telemetry.js";
 
 interface DoctorCheck {
@@ -14,6 +20,7 @@ interface DoctorCheck {
 export interface DoctorReport {
   ok: boolean;
   checks: DoctorCheck[];
+  repositoryCapabilities: RepositoryCapabilities | null;
 }
 
 interface AppServerProbe {
@@ -28,6 +35,7 @@ export interface DoctorOptions {
   env?: NodeJS.ProcessEnv;
   execute?: DoctorExecute;
   appServerFactory?: () => AppServerProbe;
+  discoverCapabilities?: (repoPath: string) => Promise<RepositoryCapabilities>;
 }
 
 async function defaultExecute(command: string, args: string[], cwd?: string): Promise<string> {
@@ -102,6 +110,37 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     "Repository is unavailable or has tracked changes",
     "Use a Git repository and commit tracked or staged changes before ChangeSafely.",
   );
+
+  let repositoryCapabilities: RepositoryCapabilities | null = null;
+  if (repositoryReady) {
+    try {
+      repositoryCapabilities = await (
+        options.discoverCapabilities ?? discoverRepositoryCapabilities
+      )(options.repoPath);
+      assertUsableCapabilities(repositoryCapabilities);
+      add(
+        "repository-capabilities",
+        "pass",
+        `${repositoryCapabilities.checks.length} deterministic check(s) authorized`,
+      );
+    } catch (error) {
+      add(
+        "repository-capabilities",
+        "fail",
+        error instanceof Error ? error.message : "Repository capabilities are unavailable",
+        error instanceof ChangeSafelyError
+          ? error.nextAction
+          : "Fix the repository capability declaration and retry.",
+      );
+    }
+  } else {
+    add(
+      "repository-capabilities",
+      "fail",
+      "Capability discovery requires a ready repository",
+      "Resolve the repository check first.",
+    );
+  }
 
   const codexReady = await attempt(
     "codex",
@@ -185,7 +224,11 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
       telemetry === "enabled" ? "Sentry error telemetry is enabled" : "Telemetry is disabled",
     );
   }
-  return { ok: checks.every((check) => check.status === "pass"), checks };
+  return {
+    ok: checks.every((check) => check.status === "pass"),
+    checks,
+    repositoryCapabilities,
+  };
 }
 
 export function formatDoctorReport(report: DoctorReport): string {
@@ -193,6 +236,14 @@ export function formatDoctorReport(report: DoctorReport): string {
   for (const check of report.checks) {
     lines.push(`[${check.status.toUpperCase()}] ${check.name}: ${check.detail}`);
     if (check.action) lines.push(`  Action: ${check.action}`);
+  }
+  if (report.repositoryCapabilities) {
+    lines.push("", "Repository capabilities:");
+    for (const check of report.repositoryCapabilities.checks) {
+      lines.push(`- [${check.kind}] ${check.id}: ${check.cwd} :: ${JSON.stringify(check.argv)}`);
+    }
+    lines.push(`- Test roots: ${report.repositoryCapabilities.testPathPrefixes.join(", ")}`);
+    lines.push(`- Sources: ${report.repositoryCapabilities.sources.join(", ")}`);
   }
   lines.push("", `Ready: ${report.ok ? "yes" : "no"}`, "");
   return lines.join("\n");

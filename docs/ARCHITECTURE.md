@@ -92,9 +92,12 @@ See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the limits of this boundary.
 The core does not parse or transform target source code. Ecosystem-specific knowledge
 is limited to a baseline repository capability catalog: approved checks, working
 directories, test paths, control files, and their source. The current implementation
-has bounded npm and pytest detection. Subsequent toolchains must reuse the same process runner and
-Git/artifact flow rather than introduce per-language orchestration. Explicit repository
-capabilities remain data, not a runtime plugin system.
+has bounded npm and pytest detection. Subsequent toolchains must reuse the same process
+runner and Git/artifact flow rather than introduce per-language orchestration. A tracked
+root `changesafely.config.json` supplies the same exact argv/cwd contract for other and
+polyglot repositories. Explicit repository capabilities remain immutable data, not a
+runtime plugin system: the config cannot contain shell strings, setup hooks, environment
+overrides, or credentials.
 
 ## Persistence and recovery
 

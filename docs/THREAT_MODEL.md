@@ -63,8 +63,8 @@ and polyglot targets:
 
 - Discover a repository capability catalog during read-only preflight and hash it
   before writes. Plans and harnesses may use only exact catalog argv/cwd pairs.
-- Treat the explicit capability contract, manifests, lockfiles, and contributed control
-  files as approval-sensitive and immutable throughout the run.
+- Treat the tracked root `changesafely.config.json`, manifests, lockfiles, and
+  contributed control files as approval-sensitive and immutable throughout the run.
 - Reject absolute or escaping working directories, shell command strings, inline eval,
   install/update/publish/deploy actions, environment overrides, and ambiguous command
   definitions.

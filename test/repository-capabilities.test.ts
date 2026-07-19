@@ -6,6 +6,7 @@ import {
   capabilitiesSha256,
   discoverRepositoryCapabilities,
   isCapabilityTestPath,
+  REPOSITORY_CONFIG_PATH,
   requireRepositoryCheck,
 } from "../src/repository-capabilities.js";
 import { createTestRepo } from "./support/repository.js";
@@ -102,4 +103,82 @@ test("discovers a prepared pytest repository without executing project code", as
   assert.ok(capabilities.sources.some((source) => source.startsWith("runtime:pytest:pytest ")));
   assert.deepEqual(capabilities.controlFiles, ["pyproject.toml", "requirements-test.txt"]);
   assert.equal(isCapabilityTestPath(capabilities, "tests/test_new_behavior.py"), true);
+});
+
+test("authorizes a non-built-in tool through the tracked repository config", async (t) => {
+  const repoPath = await createTestRepo(t, {
+    files: {
+      [REPOSITORY_CONFIG_PATH]: `${JSON.stringify({
+        version: 1,
+        checks: [{ id: "make:test", kind: "test", argv: ["make", "test"], cwd: "." }],
+        testPathPrefixes: ["checks"],
+        testFilePatterns: ["*_check.js"],
+        controlFiles: ["Makefile"],
+      })}\n`,
+      Makefile: "test:\n\t@true\n",
+      "checks/value_check.js": "// acceptance test\n",
+    },
+  });
+
+  const capabilities = await discoverRepositoryCapabilities(repoPath);
+  assert.deepEqual(capabilities.checks, [
+    { id: "make:test", kind: "test", argv: ["make", "test"], cwd: "." },
+  ]);
+  assert.deepEqual(capabilities.controlFiles, ["Makefile", REPOSITORY_CONFIG_PATH]);
+  assert.ok(capabilities.sources.includes(`config:${REPOSITORY_CONFIG_PATH}`));
+  assert.ok(capabilities.sources.some((source) => source.startsWith("executable:make:")));
+  assert.equal(isCapabilityTestPath(capabilities, "checks/new_check.js"), true);
+});
+
+test("rejects unsafe or ambiguous repository config checks", async (t) => {
+  const unsafeRepo = await createTestRepo(t, {
+    prefix: "changesafely-unsafe-config-",
+    files: {
+      [REPOSITORY_CONFIG_PATH]: `${JSON.stringify({
+        version: 1,
+        checks: [{ id: "unsafe", kind: "test", argv: ["sh", "-c", "true"], cwd: "." }],
+        testPathPrefixes: ["tests"],
+        testFilePatterns: [],
+        controlFiles: [],
+      })}\n`,
+    },
+  });
+  await assert.rejects(
+    discoverRepositoryCapabilities(unsafeRepo),
+    /Invalid changesafely\.config\.json.*not approved/u,
+  );
+
+  const ambiguousRepo = await createTestRepo(t, {
+    prefix: "changesafely-ambiguous-config-",
+    files: {
+      [REPOSITORY_CONFIG_PATH]: `${JSON.stringify({
+        version: 1,
+        checks: [{ id: "configured-test", kind: "test", argv: ["npm", "test"], cwd: "." }],
+        testPathPrefixes: ["test"],
+        testFilePatterns: ["*.test.js"],
+        controlFiles: [],
+      })}\n`,
+      "package.json": `${JSON.stringify({ scripts: { test: "node --test" } })}\n`,
+      "test/value.test.js": "// test\n",
+    },
+  });
+  await assert.rejects(
+    discoverRepositoryCapabilities(ambiguousRepo),
+    /declare the same command and cwd/u,
+  );
+});
+
+test("rejects malformed config paths and untracked controls", async (t) => {
+  const repoPath = await createTestRepo(t, {
+    files: {
+      [REPOSITORY_CONFIG_PATH]: `${JSON.stringify({
+        version: 1,
+        checks: [{ id: "make:test", kind: "test", argv: ["make", "test"], cwd: "." }],
+        testPathPrefixes: ["../outside"],
+        testFilePatterns: [],
+        controlFiles: ["missing.mk"],
+      })}\n`,
+    },
+  });
+  await assert.rejects(discoverRepositoryCapabilities(repoPath), /Invalid test prefix path/u);
 });
