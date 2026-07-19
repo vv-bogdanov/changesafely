@@ -1,0 +1,21 @@
+diff --git a/src/CancellationService.php b/src/CancellationService.php
+--- a/src/CancellationService.php
++++ b/src/CancellationService.php
+@@ -13,5 +13,6 @@ final class SagaState
+     private bool $failureUsed = false;
+     private bool $interleaveUsed = false;
++    private array $refundKeys = [];
+ 
+     public function __construct(
+         private readonly ?string $failAfter = null,
+@@ -25,4 +26,10 @@ final class SagaState
+ 
+     public function effect(string $kind, string $key, array $payload): void
+     {
++        if ($kind === 'refunds' && isset($this->refundKeys[$key])) {
++            return;
++        }
++        if ($kind === 'refunds') {
++            $this->refundKeys[$key] = true;
++        }
+         $this->{$kind}[] = $payload;

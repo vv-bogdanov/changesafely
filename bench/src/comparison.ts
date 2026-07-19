@@ -157,7 +157,7 @@ async function commandOutput(command: string, args: string[], cwd?: string): Pro
         npm_config_offline: "true",
       },
     });
-    const value = stdout.trim();
+    const value = stdout.trim().replace(/\s+/gu, " ");
     if (!value) throw new Error(`${command} returned empty output`);
     return value.slice(0, 500);
   } catch (error) {

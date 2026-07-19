@@ -103,6 +103,24 @@ test("benchmark environment identifies the exact ChangeSafely commit", async () 
   ]);
 });
 
+test("benchmark environment normalizes multiline toolchain versions", async () => {
+  const environment = await collectEnvironmentVersions(
+    process.execPath,
+    process.cwd(),
+    [
+      {
+        id: "multiline",
+        version: {
+          argv: [process.execPath, "-e", 'process.stdout.write("runtime 1\\nbuild 2\\n")'],
+          cwd: ".",
+        },
+      },
+    ],
+    process.cwd(),
+  );
+  assert.equal(environment.toolchains[0]?.version, "runtime 1 build 2");
+});
+
 test("controller runs a fair fake Direct and ChangeSafely pair end to end", async (t) => {
   const resultsRoot = await temporaryWorkspace(t, "changesafely-paired-run-");
   const common = {

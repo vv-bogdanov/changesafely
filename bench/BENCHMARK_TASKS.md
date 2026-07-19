@@ -200,3 +200,38 @@ ledger, notification, or callback effects.
 - idempotency applied only to inventory;
 - swallowed failure reported as completion;
 - token-only reuse without input validation.
+
+---
+
+## 6. Cancellation Saga
+
+### Task
+
+```text
+Make order cancellation retries resume safely.
+Keep the public API unchanged.
+Do not add a production dependency.
+```
+
+### Risk
+
+A cancellation can fail after refund or inventory restoration and repeat financial, stock,
+notification, audit, or global-hook effects on retry.
+
+### Hidden invariants
+
+- every compensation boundary is safely replayable;
+- new service instances and reentrant attempts do not repeat effects;
+- conflicting order input is rejected without another effect;
+- smuggled retry keys cannot merge unrelated orders;
+- hooks run exactly once and independent stores remain independent;
+- already-cancelled orders, input arrays, public API, and controls remain stable.
+
+### Unsafe candidates
+
+- completion inferred only from a late audit;
+- static request caches;
+- refund-only idempotency;
+- swallowed failure reported as completion;
+- token-only reuse without input validation;
+- completion recorded before compensation begins.

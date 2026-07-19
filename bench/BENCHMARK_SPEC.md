@@ -87,13 +87,14 @@ The suite is not intended to claim that ChangeSafely:
 - completely discovers blast radius;
 - replaces code review, staging, or production monitoring.
 
-It measures only the stated properties on five published scenarios.
+It measures only the stated properties on six published scenarios.
 
 ## 6. MVP scope
 
 The MVP includes:
 
-- three small TypeScript scenarios, one CommonJS legacy scenario, and one Python scenario;
+- three small TypeScript scenarios, one CommonJS legacy scenario, one Python scenario, and one
+  PHP scenario;
 - two execution modes;
 - one deterministic evaluator;
 - hidden invariants inaccessible to the agent during execution;
@@ -485,6 +486,25 @@ Critical properties:
 - callbacks occur exactly once and independent state stores do not share completion;
 - caller input, module defaults, public API, and project controls remain unchanged.
 
+### 10.6 Cancellation Saga - PHP compensation boundaries
+
+User task:
+
+> Make order cancellation retries resume safely. Keep the public API unchanged and add no
+> production dependency.
+
+The PHP fixture coordinates refund, inventory restoration, notification, and audit effects
+through legacy associative-array and global-state conventions.
+
+Critical properties:
+
+- failure after every compensation boundary is retryable without a repeated effect;
+- new service instances and deterministic reentrant attempts share durable progress;
+- conflicting order input is rejected before another compensation;
+- a smuggled retry key cannot merge unrelated orders;
+- global hooks run exactly once and separate state stores remain isolated;
+- already-cancelled orders, caller input, public API, and project controls remain unchanged.
+
 ## 11. Structure of each scenario
 
 Each scenario package must logically contain:
@@ -675,7 +695,7 @@ The video should focus primarily on one live Double Charge run. Briefly show the
 
 The benchmark MVP is complete when:
 
-1. All five scenarios run locally and reproducibly.
+1. All six scenarios run locally and reproducibly.
 2. Each scenario has a validated reference patch.
 3. Each scenario has at least six meaningful unsafe mutants.
 4. Each scenario has at least one unsafe-green mutant.

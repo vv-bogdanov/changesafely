@@ -1,0 +1,11 @@
+diff --git a/src/CancellationService.php b/src/CancellationService.php
+--- a/src/CancellationService.php
++++ b/src/CancellationService.php
+@@ -80,6 +80,6 @@ final class CancellationService
+             $this->state->effect('notifications', $orderId, $base);
+             $this->state->effect('audits', $orderId, $base + ['event' => 'order.cancelled']);
+         } catch (Throwable $error) {
+-            return ['status' => 'retry', 'order_id' => $orderId, 'error' => $error->getMessage()];
++            return ['status' => 'cancelled', 'order_id' => $orderId];
+         }
+         self::$recent[$orderId] = true;

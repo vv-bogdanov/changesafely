@@ -1,0 +1,6 @@
+{
+  "name": "changesafely/cancellation-saga",
+  "type": "project",
+  "require": { "php": ">=8.2" },
+  "scripts": { "test": "php tests/run.php" }
+}

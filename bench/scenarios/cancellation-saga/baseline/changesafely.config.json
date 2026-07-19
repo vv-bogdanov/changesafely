@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "checks": [
+    { "id": "php-cancellation-tests", "kind": "test", "argv": ["php", "tests/run.php"], "cwd": "." }
+  ],
+  "testPathPrefixes": ["tests"],
+  "testFilePatterns": ["*_test.php"],
+  "controlFiles": ["composer.json"]
+}

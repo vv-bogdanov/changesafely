@@ -1,0 +1,43 @@
+diff --git a/src/CancellationService.php b/src/CancellationService.php
+--- a/src/CancellationService.php
++++ b/src/CancellationService.php
+@@ -12,6 +12,8 @@ final class SagaState
+     public array $audits = [];
+     private bool $failureUsed = false;
+     private bool $interleaveUsed = false;
++    private array $requests = [];
++    private array $effects = [];
+ 
+     public function __construct(
+         private readonly ?string $failAfter = null,
+@@ -21,10 +23,19 @@ final class SagaState
+ 
+     public function begin(string $orderId, string $signature): void
+     {
++        if (isset($this->requests[$orderId]) && $this->requests[$orderId] !== $signature) {
++            throw new InvalidArgumentException('order input conflicts with the original request');
++        }
++        $this->requests[$orderId] = $signature;
+     }
+ 
+     public function effect(string $kind, string $key, array $payload): void
+     {
++        $effectKey = "{$kind}:{$key}";
++        if (isset($this->effects[$effectKey])) {
++            return;
++        }
++        $this->effects[$effectKey] = true;
+         $this->{$kind}[] = $payload;
+         if (!$this->interleaveUsed && is_callable($this->interleave)) {
+             $this->interleaveUsed = true;
+@@ -61,8 +72,8 @@ final class CancellationService
+ 
+     public function cancel(array $order): array
+     {
+-        $orderId = $order['meta']['retry_key'] ?? $order['id'];
+-        if (($order['status'] ?? null) == 'cancelled') {
++        $orderId = $order['id'];
++        if (($order['status'] ?? null) === 'cancelled') {
+             return ['status' => 'already_cancelled', 'order_id' => $orderId];
+         }
+         $signature = json_encode([$order['amount'], $order['items']], JSON_THROW_ON_ERROR);

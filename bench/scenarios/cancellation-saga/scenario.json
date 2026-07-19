@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "cancellation-saga",
+  "version": 1,
+  "visibleChecks": [{ "argv": ["php", "tests/run.php"], "cwd": "." }],
+  "preparation": [],
+  "testPaths": { "prefixes": ["tests"], "patterns": ["*_test.php"] },
+  "toolchains": [
+    { "id": "php", "version": { "argv": ["php", "--version"], "cwd": "." } },
+    { "id": "composer", "version": { "argv": ["composer", "--version"], "cwd": "." } }
+  ]
+}

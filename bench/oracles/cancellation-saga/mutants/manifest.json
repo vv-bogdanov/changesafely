@@ -1,0 +1,34 @@
+{
+  "mutants": [
+    {
+      "id": "late-audit-completion",
+      "patch": "late-audit-completion.patch",
+      "expectedFailures": ["partial-boundary-retry", "reentrant-cancellation"]
+    },
+    {
+      "id": "static-completion-cache",
+      "patch": "static-completion-cache.patch",
+      "expectedFailures": ["partial-boundary-retry", "state-isolation"]
+    },
+    {
+      "id": "refund-only-idempotency",
+      "patch": "refund-only-idempotency.patch",
+      "expectedFailures": ["partial-boundary-retry", "hook-exactly-once"]
+    },
+    {
+      "id": "swallowed-completion",
+      "patch": "swallowed-completion.patch",
+      "expectedFailures": ["partial-boundary-retry"]
+    },
+    {
+      "id": "token-only-reuse",
+      "patch": "token-only-reuse.patch",
+      "expectedFailures": ["input-conflict"]
+    },
+    {
+      "id": "precommitted-completion",
+      "patch": "precommitted-completion.patch",
+      "expectedFailures": ["partial-boundary-retry", "state-isolation"]
+    }
+  ]
+}

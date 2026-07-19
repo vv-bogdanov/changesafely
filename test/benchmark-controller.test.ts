@@ -57,7 +57,14 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 3);
   assert.deepEqual(
     listScenarioDefinitions(benchRoot).map(({ id }) => id),
-    ["double-charge", "legacy-spaghetti", "partial-replay", "restart-storm", "tenant-leak"],
+    [
+      "cancellation-saga",
+      "double-charge",
+      "legacy-spaghetti",
+      "partial-replay",
+      "restart-storm",
+      "tenant-leak",
+    ],
   );
   assert.throws(
     () => scenarioDefinition(benchRoot, "double-charge", 2),
@@ -381,6 +388,7 @@ test("benchmark CLI requires an explicit final flag and an evaluated Spark pair"
 
 test("benchmark CLI validates additional scenario references and unsafe-green mutants", async () => {
   const expectedMutants: Readonly<Record<string, number>> = {
+    "cancellation-saga": 6,
     "partial-replay": 6,
     "tenant-leak": 9,
     "restart-storm": 7,

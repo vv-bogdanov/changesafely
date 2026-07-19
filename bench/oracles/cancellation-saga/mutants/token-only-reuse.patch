@@ -1,0 +1,30 @@
+diff --git a/src/CancellationService.php b/src/CancellationService.php
+--- a/src/CancellationService.php
++++ b/src/CancellationService.php
+@@ -12,6 +12,7 @@ final class SagaState
+     public array $audits = [];
+     private bool $failureUsed = false;
+     private bool $interleaveUsed = false;
++    private array $effects = [];
+ 
+     public function __construct(
+         private readonly ?string $failAfter = null,
+@@ -25,4 +26,9 @@ final class SagaState
+ 
+     public function effect(string $kind, string $key, array $payload): void
+     {
++        $effectKey = "{$kind}:{$key}";
++        if (isset($this->effects[$effectKey])) {
++            return;
++        }
++        $this->effects[$effectKey] = true;
+         $this->{$kind}[] = $payload;
+@@ -61,6 +67,6 @@ final class CancellationService
+ 
+     public function cancel(array $order): array
+     {
+-        $orderId = $order['meta']['retry_key'] ?? $order['id'];
+-        if (($order['status'] ?? null) == 'cancelled') {
++        $orderId = $order['id'];
++        if (($order['status'] ?? null) === 'cancelled') {
+             return ['status' => 'already_cancelled', 'order_id' => $orderId];

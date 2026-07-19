@@ -1,0 +1,14 @@
+diff --git a/src/CancellationService.php b/src/CancellationService.php
+--- a/src/CancellationService.php
++++ b/src/CancellationService.php
+@@ -64,5 +64,10 @@ final class CancellationService
+         $orderId = $order['meta']['retry_key'] ?? $order['id'];
+         if (($order['status'] ?? null) == 'cancelled') {
+             return ['status' => 'already_cancelled', 'order_id' => $orderId];
++        }
++        foreach ($this->state->audits as $audit) {
++            if (($audit['order_id'] ?? null) === $orderId) {
++                return ['status' => 'cancelled', 'order_id' => $orderId];
++            }
+         }
+         $signature = json_encode([$order['amount'], $order['items']], JSON_THROW_ON_ERROR);
