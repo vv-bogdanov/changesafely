@@ -46,6 +46,8 @@ jobs:
         run: npm run check
       - name: Typecheck
         run: npm run typecheck
+      - name: Detect dead code and unused dependencies
+        run: npm run deadcode:check
       - name: Test with coverage thresholds
         run: npm run test:coverage
 
@@ -75,5 +77,7 @@ jobs:
         run: npm run security:signatures
       - name: Verify generated Codex protocol
         run: npm run protocol:check
+      - name: Lint npm package metadata and files
+        run: npm run package:lint
       - name: Install and exercise the packed CLI
         run: npm run package:smoke

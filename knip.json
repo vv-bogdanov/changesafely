@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["scripts/*.ts", "test/*.test.ts", "test/fixtures/*.ts"],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
+  "ignoreDependencies": ["@openai/codex"],
+  "ignoreBinaries": ["taskkill"]
+}

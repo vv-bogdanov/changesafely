@@ -3,6 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repositoryCommandEnvironment } from "./environment.js";
+import type { CommandEvidence } from "./schemas.js";
+
+export type { CommandEvidence } from "./schemas.js";
 
 export interface CommandResult {
   argv: string[];
@@ -20,17 +23,6 @@ export interface CommandResult {
   sandboxed: boolean;
 }
 
-export type CommandEvidence = Pick<
-  CommandResult,
-  | "exitCode"
-  | "signal"
-  | "timedOut"
-  | "sandboxed"
-  | "durationMs"
-  | "stdoutTruncated"
-  | "stderrTruncated"
-> & { command: string };
-
 export interface RunCommandOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
@@ -41,7 +33,7 @@ export interface RunCommandOptions {
 
 const forbiddenTokens = new Set(["|", "||", "&&", ";", ">", ">>", "<"]);
 
-export function isTestCommand(argv: string[]): boolean {
+function isTestCommand(argv: string[]): boolean {
   const [program, ...args] = argv;
   return (
     (program === "npm" &&

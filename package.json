@@ -42,6 +42,7 @@
     "build": "node scripts/clean.mjs && tsc -p tsconfig.json",
     "check": "biome check .",
     "check:fix": "biome check --write .",
+    "deadcode:check": "knip",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
@@ -51,13 +52,14 @@
     "smoke:app-server": "npm run build && node dist/scripts/smoke-app-server.js",
     "demo:setup": "npm run build && node dist/scripts/setup-demo.js",
     "package:smoke": "npm run build && node dist/scripts/package-smoke.js",
+    "package:lint": "npm run build && publint",
     "protocol:generate": "npm run build && node dist/scripts/generate-protocol.js --write",
     "protocol:check": "npm run build && node dist/scripts/generate-protocol.js --check",
     "release:check": "node scripts/verify-release-tag.mjs",
     "security:audit": "npm audit --audit-level=moderate && npm run security:audit:demo",
     "security:audit:demo": "npm audit --prefix demo/payment-retry-template --audit-level=moderate",
     "security:signatures": "npm audit signatures",
-    "ci": "npm run check && npm run typecheck && npm run test:coverage && npm run protocol:check && npm run security:audit && npm run package:smoke",
+    "ci": "npm run check && npm run typecheck && npm run deadcode:check && npm run test:coverage && npm run protocol:check && npm run security:audit && npm run package:lint && npm run package:smoke",
     "prepublishOnly": "npm run ci && npm run security:signatures",
     "prepack": "npm run build"
   },
@@ -68,13 +70,15 @@
   },
   "packageManager": "npm@11.12.1",
   "dependencies": {
-    "ajv": "8.20.0"
+    "typebox": "1.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
     "@openai/codex": "0.144.6",
     "@types/node": "26.1.1",
     "fast-check": "4.9.0",
+    "knip": "6.27.0",
+    "publint": "0.3.21",
     "typescript": "7.0.2"
   },
   "license": "MIT"

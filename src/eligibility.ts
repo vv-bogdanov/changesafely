@@ -1,17 +1,9 @@
 import { isSafetyTestCommand } from "./runner.js";
-import type { ChangeContract, DetailedPlan } from "./schemas.js";
+import type { ChangeContract, DetailedPlan, PlanEligibility } from "./schemas.js";
 
-export interface EligibilityFailure {
-  code: string;
-  message: string;
-}
+export type { PlanEligibility } from "./schemas.js";
 
-export interface PlanEligibility {
-  planId: string;
-  eligible: boolean;
-  failures: EligibilityFailure[];
-  humanDecisionReasons: string[];
-}
+type EligibilityFailure = PlanEligibility["failures"][number];
 
 function pathAllowed(path: string, prefixes: string[]): boolean {
   return prefixes.some((rawPrefix) => {

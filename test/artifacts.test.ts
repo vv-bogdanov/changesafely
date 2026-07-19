@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -57,6 +57,7 @@ test("validates run state on write and load", async (t) => {
   const state = validState(repoPath);
   await store.writeState(state);
   assert.deepEqual(await loadRunState(repoPath, "safe-run"), state);
+  await assert.rejects(access(join(store.runPath, "context.json")));
 
   await assert.rejects(
     store.writeState({ ...state, repairCount: 2 }),

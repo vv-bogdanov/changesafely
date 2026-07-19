@@ -57,9 +57,7 @@ function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export async function inspectProtectedConfiguration(
-  repoPath: string,
-): Promise<Record<string, string>> {
+async function inspectProtectedConfiguration(repoPath: string): Promise<Record<string, string>> {
   const protectedConfiguration: Record<string, string> = {};
   for (const path of [".env", ".env.local", ".npmrc"]) {
     const absolutePath = join(repoPath, path);
@@ -171,7 +169,7 @@ export async function assertBaselineUnchanged(
   return actual;
 }
 
-export async function untrackedPaths(repoPath: string): Promise<string[]> {
+async function untrackedPaths(repoPath: string): Promise<string[]> {
   const output = await git(repoPath, ["ls-files", "--others", "--exclude-standard"]);
   return output
     .split("\n")

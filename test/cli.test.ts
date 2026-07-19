@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { main } from "../src/cli.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,4 +19,29 @@ test("runs the CLI through an npm-style symlink", async (t) => {
   const { stdout: help } = await execFileAsync(process.execPath, [link, "--help"]);
   assert.equal(version, "0.1.0\n");
   assert.match(help, /safechange run --task/);
+});
+
+test("implements help, version, and invalid CLI contracts", async (t) => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  t.mock.method(process.stdout, "write", (chunk: string | Uint8Array) => {
+    stdout.push(String(chunk));
+    return true;
+  });
+  t.mock.method(process.stderr, "write", (chunk: string | Uint8Array) => {
+    stderr.push(String(chunk));
+    return true;
+  });
+
+  assert.equal(await main(["--version"]), 0);
+  assert.equal(await main(["--help"]), 0);
+  assert.equal(await main(["unknown"]), 1);
+  assert.equal(await main(["plan", "--task", "bounded", "--plans", "0"]), 1);
+  assert.equal(await main(["resume"]), 1);
+
+  assert.match(stdout.join(""), /0\.1\.0/);
+  assert.match(stdout.join(""), /safechange resume/);
+  assert.match(stderr.join(""), /Unknown command: unknown/);
+  assert.match(stderr.join(""), /--plans must be an integer from 1 to 5/);
+  assert.match(stderr.join(""), /--run is required/);
 });

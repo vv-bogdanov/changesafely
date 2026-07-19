@@ -147,7 +147,7 @@ SAFECHANGE_LIVE_TEST_MODEL=gpt-5.3-codex-spark safechange run \
 
 Runs are stored under `.safechange/runs/<run-id>/`:
 
-- `state.json` and `context.json`: phase, status, Git state, hashes, and role lineage.
+- `state.json`: phase, status, Git state, hashes, and role lineage.
 - `evidence.json`, `contract.json`, `plans/*.json`, `eligibility.json`, and
   `decision.json`: the read-only plan tournament.
 - `harness.json` and `commands.json`: protected T1 paths and failing-first evidence.
@@ -192,10 +192,12 @@ sensitive code.
 ```sh
 npm run check
 npm run typecheck
+npm run deadcode:check
 npm run test:coverage
 npm run protocol:check
 npm run security:audit
 npm run security:signatures
+npm run package:lint
 npm run package:smoke
 ```
 

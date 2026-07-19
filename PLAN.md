@@ -105,7 +105,7 @@ These commits are mandatory checkpoints made by the coding agent while implement
 - **Runtime:** Node.js 20 or newer, ESM, strict TypeScript, npm.
 - **CLI parsing:** `node:util.parseArgs`; no CLI framework.
 - **Tests:** start with `node:test` and `node:assert`; change only if real test ergonomics justify it.
-- **Schema validation:** start with `ajv`. JSON Schemas are the canonical role-output contracts and are also passed as `turn/start.outputSchema`.
+- **Schema validation:** JSON Schemas are the canonical role-output contracts and are also passed as `turn/start.outputSchema`. The MVP started with `ajv`; hardening replaced the duplicated TypeScript interfaces and handwritten schemas with TypeBox as one source for types and compiled validation.
 - **Codex defaults:** invoke the standard `codex` executable from `PATH` and do not override the user's default model. Generate protocol TypeScript and JSON Schema from that build and store its exact `codex --version` value in `src/app-server/generated/protocol-version.json`. Development may regenerate on a version change; release preflight must fail on a mismatch. This preserves version-specific protocol types without hard-coding the currently installed version in this plan.
 - **Transport:** one long-lived App Server child process per SafeChange run; JSONL on stdin/stdout; stderr captured separately.
 - **Orchestration:** explicit async functions and a persisted phase enum, not a state-machine library.
@@ -166,7 +166,6 @@ Treat this layout as provisional. Keep modules small, but prefer a working verti
 ```text
 .safechange/runs/<run-id>/
   state.json
-  context.json
   evidence.json
   contract.json
   plans/<planner-id>.json
@@ -176,10 +175,9 @@ Treat this layout as provisional. Keep modules small, but prefer a working verti
   commands.json
   verification.json
   report.md
-  logs/<phase>.log
 ```
 
-`state.json` stores the current phase, final status, baseline fingerprint, branch and commit ids, retry count, and artifact hashes. `context.json` stores role, thread id, parent C0 thread id, turn id, and status for traceability only.
+`state.json` stores the current phase, final status, baseline fingerprint, branch and commit ids, retry count, artifact hashes, and role lineage. The original separate `context.json` projection was removed after MVP because it duplicated `state.json` without serving an independent reader.
 
 Every role artifact ultimately has a common envelope with run id, baseline commit, contract version when available, role, input artifact hashes, evidence references, assumptions, unknowns, and the typed payload. The first slice may persist a smaller envelope, but local schema validation is mandatory. Atomic writes, complete hashes, and recovery metadata are added before release.
 
@@ -336,7 +334,7 @@ At this gate, and not earlier, the full passing workflow may emit `VERIFIED`.
 ## 10. Known risks and minimal responses
 
 - **App Server protocol changes:** regenerate freely from the standard installed Codex during development; enforce generated/runtime equality before release; no compatibility shim in MVP.
-- **Model output still invalid under `outputSchema`:** local Ajv validation and one same-role correction attempt; then explicit failure.
+- **Model output still invalid under `outputSchema`:** local TypeBox validation and one same-role correction attempt; then explicit failure.
 - **Plans differ only cosmetically:** start with lens-specific prompts and inspect artifacts from real runs. Add a deterministic overlap gate only if observed failures justify it; never invent diversity or a winner.
 - **Repository scripts are hostile or require network/secrets:** sandbox smoke test, sanitized environment, command allowlist, and `BLOCKED` when the proof environment is insufficient.
 - **Protected-test semantic comparison is unreliable:** make every T1 path immutable during I1.

@@ -1,780 +1,358 @@
-import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
-import type { ArtifactEnvelope, RunState } from "./artifacts.js";
-import type { PlanEligibility } from "./eligibility.js";
-import type { CommandEvidence } from "./runner.js";
+import Type from "typebox";
+import { Compile } from "typebox/compile";
+import type { TLocalizedValidationError } from "typebox/error";
 
-export interface EvidenceReference {
-  path: string;
-  detail: string;
+type Mutable<Value> = Value extends readonly (infer Item)[]
+  ? Mutable<Item>[]
+  : Value extends object
+    ? { -readonly [Key in keyof Value]: Mutable<Value[Key]> }
+    : Value;
+
+function strictObject<const Properties extends Type.TProperties>(properties: Properties) {
+  return Type.Object(properties, { additionalProperties: false });
 }
 
-export interface EvidenceFact {
-  id: string;
-  claim: string;
-  references: EvidenceReference[];
+function stringEnum<const Values extends string[]>(...values: Values) {
+  return Type.Unsafe<Values[number]>(Type.String({ enum: values }));
 }
 
-export interface CommandSpec {
-  name: string;
-  argv: string[];
-  purpose: string;
-}
+const stringSchema = Type.String({ minLength: 1, maxLength: 400 });
+const stringArraySchema = Type.Array(stringSchema, { maxItems: 12 });
+const referenceSchema = strictObject({
+  path: stringSchema,
+  detail: Type.String({ maxLength: 400 }),
+});
+const commandSchema = strictObject({
+  name: stringSchema,
+  argv: Type.Array(stringSchema, { minItems: 1 }),
+  purpose: stringSchema,
+});
+const contractItemSchema = strictObject({ id: stringSchema, statement: stringSchema });
+const coverageSchema = strictObject({ id: stringSchema, strategy: stringSchema });
 
-export interface EvidenceArtifact {
-  summary: string;
-  facts: EvidenceFact[];
-  commands: CommandSpec[];
-  testGaps: string[];
-  constraints: string[];
-  assumptions: string[];
-  unknowns: string[];
-}
+export const smokeArtifactSchema = strictObject({
+  kind: Type.Literal("smoke"),
+  message: stringSchema,
+});
 
-export interface ContractItem {
-  id: string;
-  statement: string;
-}
+export const evidenceArtifactSchema = strictObject({
+  summary: stringSchema,
+  facts: Type.Array(
+    strictObject({
+      id: stringSchema,
+      claim: stringSchema,
+      references: Type.Array(referenceSchema, { maxItems: 4 }),
+    }),
+    { maxItems: 12 },
+  ),
+  commands: Type.Array(commandSchema, { maxItems: 6 }),
+  testGaps: stringArraySchema,
+  constraints: stringArraySchema,
+  assumptions: stringArraySchema,
+  unknowns: stringArraySchema,
+});
 
-export interface ChangeContract {
-  goal: string;
-  acceptanceCriteria: ContractItem[];
-  protectedInvariants: ContractItem[];
-  nonGoals: string[];
-  allowedPathPrefixes: string[];
-  approvalRequiredChanges: string[];
-  evidenceGaps: string[];
-  risks: string[];
-  unknowns: string[];
-}
+export const changeContractSchema = strictObject({
+  goal: stringSchema,
+  acceptanceCriteria: Type.Array(contractItemSchema, { minItems: 1, maxItems: 12 }),
+  protectedInvariants: Type.Array(contractItemSchema, { minItems: 1, maxItems: 12 }),
+  nonGoals: stringArraySchema,
+  allowedPathPrefixes: Type.Array(stringSchema, { minItems: 1, maxItems: 12 }),
+  approvalRequiredChanges: stringArraySchema,
+  evidenceGaps: stringArraySchema,
+  risks: stringArraySchema,
+  unknowns: stringArraySchema,
+});
 
-export interface CoverageItem {
-  id: string;
-  strategy: string;
-}
+const plannedFileSchema = strictObject({ path: stringSchema, purpose: stringSchema });
+const planStepSchema = strictObject({
+  id: stringSchema,
+  description: stringSchema,
+  paths: stringArraySchema,
+});
+const safetyTestSchema = strictObject({
+  name: stringSchema,
+  proves: stringSchema,
+  argv: Type.Array(stringSchema, { minItems: 1 }),
+});
+const planUnknownSchema = strictObject({
+  description: stringSchema,
+  critical: Type.Boolean(),
+  resolution: Type.String({ maxLength: 400 }),
+});
 
-export interface PlannedFile {
-  path: string;
-  purpose: string;
-}
+export const detailedPlanSchema = strictObject({
+  planId: stringSchema,
+  lens: stringSchema,
+  title: stringSchema,
+  approach: stringSchema,
+  rationale: stringSchema,
+  acceptanceCoverage: Type.Array(coverageSchema, { maxItems: 12 }),
+  invariantProtection: Type.Array(coverageSchema, { maxItems: 12 }),
+  files: Type.Array(plannedFileSchema, { minItems: 1, maxItems: 12 }),
+  steps: Type.Array(planStepSchema, { minItems: 1, maxItems: 12 }),
+  safetyTests: Type.Array(safetyTestSchema, { minItems: 1, maxItems: 12 }),
+  verificationCommands: Type.Array(commandSchema, { minItems: 1, maxItems: 6 }),
+  dependencies: stringArraySchema,
+  migrations: stringArraySchema,
+  approvalRequiredChanges: stringArraySchema,
+  risks: stringArraySchema,
+  assumptions: stringArraySchema,
+  unknowns: Type.Array(planUnknownSchema, { maxItems: 8 }),
+  recovery: Type.Array(stringSchema, { minItems: 1, maxItems: 6 }),
+  rejectionReasons: stringArraySchema,
+});
 
-export interface PlanStep {
-  id: string;
-  description: string;
-  paths: string[];
-}
+const rejectedPlanSchema = strictObject({ planId: stringSchema, reason: stringSchema });
 
-export interface SafetyTest {
-  name: string;
-  proves: string;
-  argv: string[];
-}
+export const decisionArtifactSchema = strictObject({
+  winnerPlanId: stringSchema,
+  reason: stringSchema,
+  rejectedPlans: Type.Array(rejectedPlanSchema, { maxItems: 5 }),
+  tradeoffs: stringArraySchema,
+  residualRisks: stringArraySchema,
+  humanDecisionRequired: Type.Boolean(),
+  humanDecisionReason: Type.String({ maxLength: 400 }),
+});
 
-export interface PlanUnknown {
-  description: string;
-  critical: boolean;
-  resolution: string;
-}
+export const harnessArtifactSchema = strictObject({
+  summary: stringSchema,
+  testPaths: Type.Array(stringSchema, { minItems: 1, maxItems: 12 }),
+  fixturePaths: stringArraySchema,
+  targetedCommand: commandSchema,
+  expectedBaselineOutcome: stringEnum("fail", "pass"),
+  expectedFailure: Type.String(),
+  protectedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: 12 }),
+});
 
-export interface DetailedPlan {
-  planId: string;
-  lens: string;
-  title: string;
-  approach: string;
-  rationale: string;
-  acceptanceCoverage: CoverageItem[];
-  invariantProtection: CoverageItem[];
-  files: PlannedFile[];
-  steps: PlanStep[];
-  safetyTests: SafetyTest[];
-  verificationCommands: CommandSpec[];
-  dependencies: string[];
-  migrations: string[];
-  approvalRequiredChanges: string[];
-  risks: string[];
-  assumptions: string[];
-  unknowns: PlanUnknown[];
-  recovery: string[];
-  rejectionReasons: string[];
-}
+export const implementationArtifactSchema = strictObject({
+  summary: stringSchema,
+  changedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: 12 }),
+  testsAdded: stringArraySchema,
+  scopeNotes: stringArraySchema,
+  residualRisks: stringArraySchema,
+});
 
-export interface RejectedPlan {
-  planId: string;
-  reason: string;
-}
+const verificationFindingSchema = strictObject({
+  code: stringSchema,
+  severity: stringEnum("error", "warning"),
+  message: stringSchema,
+  path: Type.String({ maxLength: 400 }),
+});
 
-export interface DecisionArtifact {
-  winnerPlanId: string;
-  reason: string;
-  rejectedPlans: RejectedPlan[];
-  tradeoffs: string[];
-  residualRisks: string[];
-  humanDecisionRequired: boolean;
-  humanDecisionReason: string;
-}
+export const verificationArtifactSchema = strictObject({
+  verdict: stringEnum("accept", "reject"),
+  contractFulfilled: Type.Boolean(),
+  invariantsPreserved: Type.Boolean(),
+  scopeConformant: Type.Boolean(),
+  evidenceSufficient: Type.Boolean(),
+  reason: stringSchema,
+  findings: Type.Array(verificationFindingSchema, { maxItems: 12 }),
+  residualRisks: stringArraySchema,
+});
 
-export interface HarnessArtifact {
-  summary: string;
-  testPaths: string[];
-  fixturePaths: string[];
-  targetedCommand: CommandSpec;
-  expectedBaselineOutcome: "fail" | "pass";
-  expectedFailure: string;
-  protectedPaths: string[];
-}
+const sha256Schema = Type.String({ pattern: "^[a-f0-9]{64}$" });
+const runIdSchema = Type.String({
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+  not: { enum: [".", ".."] },
+});
+const nullableStringSchema = Type.Union([Type.String({ maxLength: 4096 }), Type.Null()]);
+const hashRecordSchema = Type.Record(Type.String(), sha256Schema, {
+  maxProperties: 16,
+  propertyNames: Type.String({ minLength: 1, maxLength: 255 }),
+});
+const artifactHashRecordSchema = Type.Record(Type.String(), sha256Schema, {
+  maxProperties: 32,
+  propertyNames: Type.String({
+    pattern:
+      "^(?:evidence|contract|eligibility|decision|harness|commands|implementation|verificationCommands|verificationAttempt1|repair|verificationCommandsRepair|verification|plan-[1-5])$",
+  }),
+});
+const contextEntrySchema = strictObject({
+  role: Type.String({ minLength: 1, maxLength: 100 }),
+  threadId: Type.String({ minLength: 1, maxLength: 4096 }),
+  parentThreadId: nullableStringSchema,
+  checkpointTurnId: nullableStringSchema,
+  turnId: nullableStringSchema,
+  status: stringEnum("started", "completed", "failed"),
+});
 
-export interface ImplementationArtifact {
-  summary: string;
-  changedPaths: string[];
-  testsAdded: string[];
-  scopeNotes: string[];
-  residualRisks: string[];
-}
+const runStateSchema = strictObject({
+  runId: runIdSchema,
+  task: Type.String({ minLength: 1, maxLength: 100_000 }),
+  repoPath: Type.String({ minLength: 1, maxLength: 4096 }),
+  baselineCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+  baselineFingerprint: sha256Schema,
+  baselineProtectedConfiguration: hashRecordSchema,
+  phase: Type.String({ minLength: 1, maxLength: 100 }),
+  status: stringEnum(
+    "RUNNING",
+    "PLANNED",
+    "BLOCKED",
+    "HUMAN_DECISION_REQUIRED",
+    "BASELINE_CHANGED",
+    "REPLAN_REQUIRED",
+    "FAILED",
+    "VERIFIED",
+  ),
+  reason: Type.String({ maxLength: 32_768 }),
+  nextAction: Type.String({ maxLength: 4096 }),
+  artifacts: artifactHashRecordSchema,
+  contexts: Type.Array(contextEntrySchema, { maxItems: 64 }),
+  branch: Type.String({ maxLength: 1024 }),
+  testCommit: Type.String({ pattern: "^(?:[a-f0-9]{40,64})?$" }),
+  implementationCommit: Type.String({ pattern: "^(?:[a-f0-9]{40,64})?$" }),
+  repairCount: Type.Integer({ minimum: 0, maximum: 1 }),
+  model: Type.String({ maxLength: 255 }),
+});
 
-export interface StoredHarnessArtifact extends HarnessArtifact {
-  protectedHashes: Record<string, string>;
-  testCommit: string;
-}
+const artifactEnvelopeSchema = strictObject({
+  meta: strictObject({
+    runId: runIdSchema,
+    baselineCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+    role: Type.String({ minLength: 1, maxLength: 100 }),
+    createdAt: Type.String({
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+    }),
+    inputHashes: Type.Array(sha256Schema, { maxItems: 32 }),
+  }),
+  payload: Type.Unknown(),
+});
 
-export interface StoredImplementationArtifact extends ImplementationArtifact {
-  implementationCommit: string;
-  actualPaths: string[];
-}
+const eligibilityFailureSchema = strictObject({ code: stringSchema, message: stringSchema });
+const planEligibilitySchema = strictObject({
+  planId: stringSchema,
+  eligible: Type.Boolean(),
+  failures: Type.Array(eligibilityFailureSchema, { maxItems: 12 }),
+  humanDecisionReasons: stringArraySchema,
+});
 
-export interface VerificationFinding {
-  code: string;
-  severity: "error" | "warning";
-  message: string;
-  path: string;
-}
-
-export interface VerificationArtifact {
-  verdict: "accept" | "reject";
-  contractFulfilled: boolean;
-  invariantsPreserved: boolean;
-  scopeConformant: boolean;
-  evidenceSufficient: boolean;
-  reason: string;
-  findings: VerificationFinding[];
-  residualRisks: string[];
-}
-
-export interface SmokeArtifact {
-  kind: "smoke";
-  message: string;
-}
-
-const stringSchema = { type: "string", minLength: 1, maxLength: 400 } as const;
-const stringArraySchema = {
-  type: "array",
-  maxItems: 12,
-  items: stringSchema,
-} as const;
-const referenceSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["path", "detail"],
-  properties: { path: stringSchema, detail: { type: "string", maxLength: 400 } },
-} as const;
-const commandSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["name", "argv", "purpose"],
-  properties: {
-    name: stringSchema,
-    argv: { type: "array", minItems: 1, items: stringSchema },
-    purpose: stringSchema,
-  },
-} as const;
-const contractItemSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["id", "statement"],
-  properties: { id: stringSchema, statement: stringSchema },
-} as const;
-const coverageSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["id", "strategy"],
-  properties: { id: stringSchema, strategy: stringSchema },
-} as const;
-
-export const smokeArtifactSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["kind", "message"],
-  properties: {
-    kind: { type: "string", const: "smoke" },
-    message: stringSchema,
-  },
-} as const;
-
-export const evidenceArtifactSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["summary", "facts", "commands", "testGaps", "constraints", "assumptions", "unknowns"],
-  properties: {
-    summary: stringSchema,
-    facts: {
-      type: "array",
-      maxItems: 12,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["id", "claim", "references"],
-        properties: {
-          id: stringSchema,
-          claim: stringSchema,
-          references: { type: "array", maxItems: 4, items: referenceSchema },
-        },
-      },
-    },
-    commands: { type: "array", maxItems: 6, items: commandSchema },
-    testGaps: stringArraySchema,
-    constraints: stringArraySchema,
-    assumptions: stringArraySchema,
-    unknowns: stringArraySchema,
-  },
-} as const;
-
-export const changeContractSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "goal",
-    "acceptanceCriteria",
-    "protectedInvariants",
-    "nonGoals",
-    "allowedPathPrefixes",
-    "approvalRequiredChanges",
-    "evidenceGaps",
-    "risks",
-    "unknowns",
-  ],
-  properties: {
-    goal: stringSchema,
-    acceptanceCriteria: {
-      type: "array",
-      minItems: 1,
-      maxItems: 12,
-      items: contractItemSchema,
-    },
-    protectedInvariants: {
-      type: "array",
-      minItems: 1,
-      maxItems: 12,
-      items: contractItemSchema,
-    },
-    nonGoals: stringArraySchema,
-    allowedPathPrefixes: {
-      type: "array",
-      minItems: 1,
-      maxItems: 12,
-      items: stringSchema,
-    },
-    approvalRequiredChanges: stringArraySchema,
-    evidenceGaps: stringArraySchema,
-    risks: stringArraySchema,
-    unknowns: stringArraySchema,
-  },
-} as const;
-
-export const detailedPlanSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "planId",
-    "lens",
-    "title",
-    "approach",
-    "rationale",
-    "acceptanceCoverage",
-    "invariantProtection",
-    "files",
-    "steps",
-    "safetyTests",
-    "verificationCommands",
-    "dependencies",
-    "migrations",
-    "approvalRequiredChanges",
-    "risks",
-    "assumptions",
-    "unknowns",
-    "recovery",
-    "rejectionReasons",
-  ],
-  properties: {
-    planId: stringSchema,
-    lens: stringSchema,
-    title: stringSchema,
-    approach: stringSchema,
-    rationale: stringSchema,
-    acceptanceCoverage: { type: "array", maxItems: 12, items: coverageSchema },
-    invariantProtection: { type: "array", maxItems: 12, items: coverageSchema },
-    files: {
-      type: "array",
-      minItems: 1,
-      maxItems: 12,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["path", "purpose"],
-        properties: { path: stringSchema, purpose: stringSchema },
-      },
-    },
-    steps: {
-      type: "array",
-      minItems: 1,
-      maxItems: 12,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["id", "description", "paths"],
-        properties: {
-          id: stringSchema,
-          description: stringSchema,
-          paths: stringArraySchema,
-        },
-      },
-    },
-    safetyTests: {
-      type: "array",
-      minItems: 1,
-      maxItems: 12,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["name", "proves", "argv"],
-        properties: {
-          name: stringSchema,
-          proves: stringSchema,
-          argv: { type: "array", minItems: 1, items: stringSchema },
-        },
-      },
-    },
-    verificationCommands: {
-      type: "array",
-      minItems: 1,
-      maxItems: 6,
-      items: commandSchema,
-    },
-    dependencies: stringArraySchema,
-    migrations: stringArraySchema,
-    approvalRequiredChanges: stringArraySchema,
-    risks: stringArraySchema,
-    assumptions: stringArraySchema,
-    unknowns: {
-      type: "array",
-      maxItems: 8,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["description", "critical", "resolution"],
-        properties: {
-          description: stringSchema,
-          critical: { type: "boolean" },
-          resolution: { type: "string", maxLength: 400 },
-        },
-      },
-    },
-    recovery: { type: "array", minItems: 1, maxItems: 6, items: stringSchema },
-    rejectionReasons: stringArraySchema,
-  },
-} as const;
-
-export const decisionArtifactSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "winnerPlanId",
-    "reason",
-    "rejectedPlans",
-    "tradeoffs",
-    "residualRisks",
-    "humanDecisionRequired",
-    "humanDecisionReason",
-  ],
-  properties: {
-    winnerPlanId: stringSchema,
-    reason: stringSchema,
-    rejectedPlans: {
-      type: "array",
-      maxItems: 5,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["planId", "reason"],
-        properties: { planId: stringSchema, reason: stringSchema },
-      },
-    },
-    tradeoffs: stringArraySchema,
-    residualRisks: stringArraySchema,
-    humanDecisionRequired: { type: "boolean" },
-    humanDecisionReason: { type: "string", maxLength: 400 },
-  },
-} as const;
-
-export const harnessArtifactSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "summary",
-    "testPaths",
-    "fixturePaths",
-    "targetedCommand",
-    "expectedBaselineOutcome",
-    "expectedFailure",
-    "protectedPaths",
-  ],
-  properties: {
-    summary: stringSchema,
-    testPaths: { type: "array", minItems: 1, maxItems: 12, items: stringSchema },
-    fixturePaths: stringArraySchema,
-    targetedCommand: commandSchema,
-    expectedBaselineOutcome: { type: "string", enum: ["fail", "pass"] },
-    expectedFailure: { type: "string" },
-    protectedPaths: { type: "array", minItems: 1, maxItems: 12, items: stringSchema },
-  },
-} as const;
-
-export const implementationArtifactSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["summary", "changedPaths", "testsAdded", "scopeNotes", "residualRisks"],
-  properties: {
-    summary: stringSchema,
-    changedPaths: { type: "array", minItems: 1, maxItems: 12, items: stringSchema },
-    testsAdded: stringArraySchema,
-    scopeNotes: stringArraySchema,
-    residualRisks: stringArraySchema,
-  },
-} as const;
-
-export const verificationArtifactSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "verdict",
-    "contractFulfilled",
-    "invariantsPreserved",
-    "scopeConformant",
-    "evidenceSufficient",
-    "reason",
-    "findings",
-    "residualRisks",
-  ],
-  properties: {
-    verdict: { type: "string", enum: ["accept", "reject"] },
-    contractFulfilled: { type: "boolean" },
-    invariantsPreserved: { type: "boolean" },
-    scopeConformant: { type: "boolean" },
-    evidenceSufficient: { type: "boolean" },
-    reason: stringSchema,
-    findings: {
-      type: "array",
-      maxItems: 12,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["code", "severity", "message", "path"],
-        properties: {
-          code: stringSchema,
-          severity: { type: "string", enum: ["error", "warning"] },
-          message: stringSchema,
-          path: { type: "string", maxLength: 400 },
-        },
-      },
-    },
-    residualRisks: stringArraySchema,
-  },
-} as const;
-
-const sha256Schema = { type: "string", pattern: "^[a-f0-9]{64}$" } as const;
-const nullableStringSchema = {
-  anyOf: [{ type: "string", maxLength: 4096 }, { type: "null" }],
-} as const;
-
-export const runStateSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "runId",
-    "task",
-    "repoPath",
-    "baselineCommit",
-    "baselineFingerprint",
-    "baselineProtectedConfiguration",
-    "phase",
-    "status",
-    "reason",
-    "nextAction",
-    "artifacts",
-    "contexts",
-    "branch",
-    "testCommit",
-    "implementationCommit",
-    "repairCount",
-    "model",
-  ],
-  properties: {
-    runId: {
-      type: "string",
-      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-      not: { enum: [".", ".."] },
-    },
-    task: { type: "string", minLength: 1, maxLength: 100_000 },
-    repoPath: { type: "string", minLength: 1, maxLength: 4096 },
-    baselineCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
-    baselineFingerprint: sha256Schema,
-    baselineProtectedConfiguration: {
-      type: "object",
-      maxProperties: 16,
-      propertyNames: { type: "string", minLength: 1, maxLength: 255 },
-      additionalProperties: sha256Schema,
-    },
-    phase: { type: "string", minLength: 1, maxLength: 100 },
-    status: {
-      type: "string",
-      enum: [
-        "RUNNING",
-        "PLANNED",
-        "BLOCKED",
-        "HUMAN_DECISION_REQUIRED",
-        "BASELINE_CHANGED",
-        "REPLAN_REQUIRED",
-        "FAILED",
-        "VERIFIED",
-      ],
-    },
-    reason: { type: "string", maxLength: 32_768 },
-    nextAction: { type: "string", maxLength: 4096 },
-    artifacts: {
-      type: "object",
-      maxProperties: 32,
-      propertyNames: {
-        type: "string",
-        pattern:
-          "^(?:evidence|contract|eligibility|decision|harness|commands|implementation|verificationCommands|verificationAttempt1|repair|verificationCommandsRepair|verification|plan-[1-5])$",
-      },
-      additionalProperties: sha256Schema,
-    },
-    contexts: {
-      type: "array",
-      maxItems: 64,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["role", "threadId", "parentThreadId", "checkpointTurnId", "turnId", "status"],
-        properties: {
-          role: { type: "string", minLength: 1, maxLength: 100 },
-          threadId: { type: "string", minLength: 1, maxLength: 4096 },
-          parentThreadId: nullableStringSchema,
-          checkpointTurnId: nullableStringSchema,
-          turnId: nullableStringSchema,
-          status: { type: "string", enum: ["started", "completed", "failed"] },
-        },
-      },
-    },
-    branch: { type: "string", maxLength: 1024 },
-    testCommit: { type: "string", pattern: "^(?:[a-f0-9]{40,64})?$" },
-    implementationCommit: { type: "string", pattern: "^(?:[a-f0-9]{40,64})?$" },
-    repairCount: { type: "integer", minimum: 0, maximum: 1 },
-    model: { type: "string", maxLength: 255 },
-  },
-} as const;
-
-export const artifactEnvelopeSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["meta", "payload"],
-  properties: {
-    meta: {
-      type: "object",
-      additionalProperties: false,
-      required: ["runId", "baselineCommit", "role", "createdAt", "inputHashes"],
-      properties: {
-        runId: {
-          type: "string",
-          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-          not: { enum: [".", ".."] },
-        },
-        baselineCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
-        role: { type: "string", minLength: 1, maxLength: 100 },
-        createdAt: {
-          type: "string",
-          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-        },
-        inputHashes: { type: "array", maxItems: 32, items: sha256Schema },
-      },
-    },
-    payload: {},
-  },
-} as const;
-
-export const planEligibilityListSchema = {
-  type: "array",
+const planEligibilityListSchema = Type.Array(planEligibilitySchema, {
   minItems: 1,
   maxItems: 5,
-  items: {
-    type: "object",
-    additionalProperties: false,
-    required: ["planId", "eligible", "failures", "humanDecisionReasons"],
-    properties: {
-      planId: stringSchema,
-      eligible: { type: "boolean" },
-      failures: {
-        type: "array",
-        maxItems: 12,
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: ["code", "message"],
-          properties: { code: stringSchema, message: stringSchema },
-        },
-      },
-      humanDecisionReasons: stringArraySchema,
-    },
-  },
-} as const;
+});
 
-export const commandEvidenceListSchema = {
-  type: "array",
+const commandEvidenceSchema = strictObject({
+  command: Type.String({ minLength: 1, maxLength: 255 }),
+  exitCode: Type.Union([Type.Integer(), Type.Null()]),
+  signal: Type.Union([Type.String({ maxLength: 64 }), Type.Null()]),
+  timedOut: Type.Boolean(),
+  sandboxed: Type.Boolean(),
+  durationMs: Type.Integer({ minimum: 0 }),
+  stdoutTruncated: Type.Boolean(),
+  stderrTruncated: Type.Boolean(),
+});
+
+const commandEvidenceListSchema = Type.Array(commandEvidenceSchema, {
   minItems: 1,
   maxItems: 12,
-  items: {
-    type: "object",
-    additionalProperties: false,
-    required: [
-      "command",
-      "exitCode",
-      "signal",
-      "timedOut",
-      "sandboxed",
-      "durationMs",
-      "stdoutTruncated",
-      "stderrTruncated",
-    ],
-    properties: {
-      command: { type: "string", minLength: 1, maxLength: 255 },
-      exitCode: { anyOf: [{ type: "integer" }, { type: "null" }] },
-      signal: { anyOf: [{ type: "string", maxLength: 64 }, { type: "null" }] },
-      timedOut: { type: "boolean" },
-      sandboxed: { type: "boolean" },
-      durationMs: { type: "integer", minimum: 0 },
-      stdoutTruncated: { type: "boolean" },
-      stderrTruncated: { type: "boolean" },
-    },
-  },
-} as const;
+});
 
-export const storedHarnessArtifactSchema = {
-  ...harnessArtifactSchema,
-  required: [...harnessArtifactSchema.required, "protectedHashes", "testCommit"],
-  properties: {
-    ...harnessArtifactSchema.properties,
-    protectedHashes: {
-      type: "object",
-      minProperties: 1,
-      maxProperties: 32,
-      propertyNames: { type: "string", minLength: 1, maxLength: 4096 },
-      additionalProperties: sha256Schema,
-    },
-    testCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
-  },
-} as const;
+const protectedHashesSchema = Type.Record(Type.String(), sha256Schema, {
+  minProperties: 1,
+  maxProperties: 32,
+  propertyNames: Type.String({ minLength: 1, maxLength: 4096 }),
+});
 
-export const storedImplementationArtifactSchema = {
-  ...implementationArtifactSchema,
-  required: [...implementationArtifactSchema.required, "implementationCommit", "actualPaths"],
-  properties: {
-    ...implementationArtifactSchema.properties,
-    implementationCommit: { type: "string", pattern: "^[a-f0-9]{40,64}$" },
-    actualPaths: { type: "array", minItems: 1, maxItems: 32, items: stringSchema },
-  },
-} as const;
+const storedHarnessArtifactSchema = strictObject({
+  ...harnessArtifactSchema.properties,
+  protectedHashes: protectedHashesSchema,
+  testCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+});
 
-const ajv = new Ajv({ allErrors: true, strict: true });
+const storedImplementationArtifactSchema = strictObject({
+  ...implementationArtifactSchema.properties,
+  implementationCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+  actualPaths: Type.Array(stringSchema, { minItems: 1, maxItems: 32 }),
+});
+
+export type EvidenceArtifact = Mutable<Type.Static<typeof evidenceArtifactSchema>>;
+export type ChangeContract = Mutable<Type.Static<typeof changeContractSchema>>;
+export type DetailedPlan = Mutable<Type.Static<typeof detailedPlanSchema>>;
+export type DecisionArtifact = Mutable<Type.Static<typeof decisionArtifactSchema>>;
+export type HarnessArtifact = Mutable<Type.Static<typeof harnessArtifactSchema>>;
+export type ImplementationArtifact = Mutable<Type.Static<typeof implementationArtifactSchema>>;
+export type VerificationArtifact = Mutable<Type.Static<typeof verificationArtifactSchema>>;
+export type ContextEntry = Mutable<Type.Static<typeof contextEntrySchema>>;
+export type RunState = Mutable<Type.Static<typeof runStateSchema>>;
+export type RunStatus = RunState["status"];
+export type PlanEligibility = Mutable<Type.Static<typeof planEligibilitySchema>>;
+export type CommandEvidence = Mutable<Type.Static<typeof commandEvidenceSchema>>;
 
 export class ArtifactValidationError extends Error {
   constructor(
     public readonly artifactName: string,
-    public readonly validationErrors: ErrorObject[],
+    public readonly validationErrors: TLocalizedValidationError[],
   ) {
     super(
       `Invalid ${artifactName}: ${validationErrors
-        .map((error) => `${error.instancePath || "/"} ${error.message ?? "is invalid"}`)
+        .map((error) => `${error.instancePath || "/"} ${error.message}`)
         .join("; ")}`,
     );
     this.name = "ArtifactValidationError";
   }
 }
 
-export function compileArtifactValidator<T>(
+function compileArtifactValidator<const Schema extends Type.TSchema>(
   artifactName: string,
-  schema: object,
-): (value: unknown) => T {
-  const validate = ajv.compile(schema) as ValidateFunction<T>;
-  return (value: unknown): T => {
-    if (!validate(value)) {
-      throw new ArtifactValidationError(artifactName, validate.errors ?? []);
+  schema: Schema,
+): (value: unknown) => Mutable<Type.Static<Schema>> {
+  const validator = Compile(schema);
+  return (value: unknown): Mutable<Type.Static<Schema>> => {
+    if (!validator.Check(value)) {
+      throw new ArtifactValidationError(artifactName, validator.Errors(value));
     }
-    return value;
+    return value as Mutable<Type.Static<Schema>>;
   };
 }
 
-export const validateSmokeArtifact = compileArtifactValidator<SmokeArtifact>(
+export const validateSmokeArtifact = compileArtifactValidator(
   "smoke artifact",
   smokeArtifactSchema,
 );
-export const validateEvidenceArtifact = compileArtifactValidator<EvidenceArtifact>(
+export const validateEvidenceArtifact = compileArtifactValidator(
   "evidence artifact",
   evidenceArtifactSchema,
 );
-export const validateChangeContract = compileArtifactValidator<ChangeContract>(
+export const validateChangeContract = compileArtifactValidator(
   "change contract",
   changeContractSchema,
 );
-export const validateDetailedPlan = compileArtifactValidator<DetailedPlan>(
-  "detailed plan",
-  detailedPlanSchema,
-);
-export const validateDecisionArtifact = compileArtifactValidator<DecisionArtifact>(
+export const validateDetailedPlan = compileArtifactValidator("detailed plan", detailedPlanSchema);
+export const validateDecisionArtifact = compileArtifactValidator(
   "decision artifact",
   decisionArtifactSchema,
 );
-export const validateHarnessArtifact = compileArtifactValidator<HarnessArtifact>(
+export const validateHarnessArtifact = compileArtifactValidator(
   "harness artifact",
   harnessArtifactSchema,
 );
-export const validateImplementationArtifact = compileArtifactValidator<ImplementationArtifact>(
+export const validateImplementationArtifact = compileArtifactValidator(
   "implementation artifact",
   implementationArtifactSchema,
 );
-export const validateVerificationArtifact = compileArtifactValidator<VerificationArtifact>(
+export const validateVerificationArtifact = compileArtifactValidator(
   "verification artifact",
   verificationArtifactSchema,
 );
-export const validateRunState = compileArtifactValidator<RunState>(
-  "SafeChange run state",
-  runStateSchema,
-);
-export const validateArtifactEnvelope = compileArtifactValidator<ArtifactEnvelope<unknown>>(
+export const validateRunState = compileArtifactValidator("SafeChange run state", runStateSchema);
+export const validateArtifactEnvelope = compileArtifactValidator(
   "SafeChange artifact envelope",
   artifactEnvelopeSchema,
 );
-export const validatePlanEligibilityList = compileArtifactValidator<PlanEligibility[]>(
+export const validatePlanEligibilityList = compileArtifactValidator(
   "plan eligibility artifact",
   planEligibilityListSchema,
 );
-export const validateCommandEvidenceList = compileArtifactValidator<CommandEvidence[]>(
+export const validateCommandEvidenceList = compileArtifactValidator(
   "command evidence artifact",
   commandEvidenceListSchema,
 );
-export const validateStoredHarnessArtifact = compileArtifactValidator<StoredHarnessArtifact>(
+export const validateStoredHarnessArtifact = compileArtifactValidator(
   "stored harness artifact",
   storedHarnessArtifactSchema,
 );
-export const validateStoredImplementationArtifact =
-  compileArtifactValidator<StoredImplementationArtifact>(
-    "stored implementation artifact",
-    storedImplementationArtifactSchema,
-  );
+export const validateStoredImplementationArtifact = compileArtifactValidator(
+  "stored implementation artifact",
+  storedImplementationArtifactSchema,
+);

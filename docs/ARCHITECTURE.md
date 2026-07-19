@@ -55,7 +55,7 @@ task -> evidence -> contract -> plans -> eligibility -> decision
 
 - Git commit ids, branch, status, paths, and diffs.
 - Atomic artifact envelopes and SHA-256 hashes.
-- JSON Schemas validated locally with Ajv.
+- TypeBox contracts used as both inferred TypeScript types and locally compiled JSON Schemas.
 - Structured command argv, real exit codes, timeouts, and bounded output.
 - Explicit App Server thread ids, turn ids, parent C0 id, and checkpoint turn id.
 

@@ -1,46 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
-import { validateArtifactEnvelope, validateRunState } from "./schemas.js";
+import { type RunState, validateArtifactEnvelope, validateRunState } from "./schemas.js";
 
-export type RunStatus =
-  | "RUNNING"
-  | "PLANNED"
-  | "BLOCKED"
-  | "HUMAN_DECISION_REQUIRED"
-  | "BASELINE_CHANGED"
-  | "REPLAN_REQUIRED"
-  | "FAILED"
-  | "VERIFIED";
-
-export interface ContextEntry {
-  role: string;
-  threadId: string;
-  parentThreadId: string | null;
-  checkpointTurnId: string | null;
-  turnId: string | null;
-  status: "started" | "completed" | "failed";
-}
-
-export interface RunState {
-  runId: string;
-  task: string;
-  repoPath: string;
-  baselineCommit: string;
-  baselineFingerprint: string;
-  baselineProtectedConfiguration: Record<string, string>;
-  phase: string;
-  status: RunStatus;
-  reason: string;
-  nextAction: string;
-  artifacts: Record<string, string>;
-  contexts: ContextEntry[];
-  branch: string;
-  testCommit: string;
-  implementationCommit: string;
-  repairCount: number;
-  model: string;
-}
+export type { ContextEntry, RunState, RunStatus } from "./schemas.js";
 
 export interface ArtifactEnvelope<T> {
   meta: {
@@ -83,7 +46,7 @@ function runPath(repoPath: string, runId: string): string {
   return resolve(repoPath, ".safechange", "runs", validateRunId(runId));
 }
 
-export function hashContent(content: string): string {
+function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
@@ -110,7 +73,6 @@ export class ArtifactStore {
 
   async initialize(): Promise<void> {
     await mkdir(resolveWithin(this.runPath, "plans"), { recursive: true });
-    await mkdir(resolveWithin(this.runPath, "logs"), { recursive: true });
   }
 
   async writeState(state: RunState): Promise<void> {
@@ -119,7 +81,6 @@ export class ArtifactStore {
       throw new Error("Run state lineage does not match its artifact store");
     }
     await this.writeJson("state.json", validated);
-    await this.writeJson("context.json", validated.contexts);
   }
 
   async writeArtifact<T>(

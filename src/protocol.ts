@@ -6,7 +6,7 @@ import { PreflightError } from "./git.js";
 
 const execFileAsync = promisify(execFile);
 
-export async function currentCodexVersion(): Promise<string> {
+async function currentCodexVersion(): Promise<string> {
   try {
     const { stdout } = await execFileAsync("codex", ["--version"], {
       timeout: 10_000,
