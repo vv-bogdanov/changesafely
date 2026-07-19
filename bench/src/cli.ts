@@ -5,10 +5,12 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
+import { createOrVerifyAnalysisPackage, evaluateMutationEvidence } from "./analysis.js";
 import { resolveCodexCommand } from "./comparison.js";
 import type { BenchmarkMode } from "./contracts.js";
 import { loadEvidencePackage } from "./evidence.js";
 import { prepareCodexHome, proveIsolation } from "./isolation.js";
+import { buildBenchmarkReport, replayBenchmarkRun, writeBenchmarkReport } from "./report.js";
 import { materializeAttempt, scenarioDefinition } from "./repository.js";
 import { runBenchmarkAttempt } from "./run.js";
 
@@ -23,10 +25,12 @@ Usage:
   npm run benchmark -- run --scenario double-charge --mode direct|changesafely --model ${SPARK_MODEL}
   npm run benchmark -- validate --scenario double-charge
   npm run benchmark -- canary --scenario double-charge
+  npm run benchmark -- evaluate --run <run-id> [--results <path>]
   npm run benchmark -- replay --run <run-id> [--results <path>]
+  npm run benchmark -- report [--results <path>]
 
-Live Direct and ChangeSafely adapters are added only after deterministic validation and
-isolation pass. Final measured runs always require a separate explicit user command.
+Live development runs use Spark. Final measured runs always require a separate explicit
+user command after the Spark results have been evaluated.
 `;
 
 export async function main(argv: string[]): Promise<number> {
@@ -141,18 +145,43 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    if (command === "replay") {
+    if (command === "evaluate") {
       const runId = required(parsed.values.run, "--run");
       const resultsRoot = resolve(parsed.values.results ?? join(benchRoot, "results"));
       const evidence = await loadEvidencePackage(resultsRoot, runId);
+      const document = await evaluateMutationEvidence(benchRoot, evidence);
+      const analysis = await createOrVerifyAnalysisPackage(resultsRoot, evidence, document);
       process.stdout.write(
-        `${JSON.stringify({ verified: true, run: evidence.run, manifest: evidence.manifest }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            runId,
+            analysisPath: analysis.path,
+            analysis: analysis.document,
+            manifest: analysis.manifest,
+          },
+          null,
+          2,
+        )}\n`,
       );
       return 0;
     }
 
-    if (["evaluate", "report"].includes(command ?? "")) {
-      throw new Error(`${command} is not available until its STEP.md implementation phase`);
+    if (command === "replay") {
+      const runId = required(parsed.values.run, "--run");
+      const resultsRoot = resolve(parsed.values.results ?? join(benchRoot, "results"));
+      process.stdout.write(
+        `${JSON.stringify(await replayBenchmarkRun(resultsRoot, runId), null, 2)}\n`,
+      );
+      return 0;
+    }
+
+    if (command === "report") {
+      const resultsRoot = resolve(parsed.values.results ?? join(benchRoot, "results"));
+      const report = await buildBenchmarkReport(resultsRoot);
+      process.stdout.write(
+        `${JSON.stringify(await writeBenchmarkReport(resultsRoot, report), null, 2)}\n`,
+      );
+      return 0;
     }
     throw new Error(`Unknown benchmark command: ${command}`);
   } catch (error) {

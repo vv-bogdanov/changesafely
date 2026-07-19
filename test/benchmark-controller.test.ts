@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { COMPARISON_VERSION, EVIDENCE_VERSION, type RunDocument } from "../bench/src/contracts.js";
 import { classifyTechnicalFailure } from "../bench/src/controller.js";
 import {
   contentSha256,
@@ -19,6 +18,7 @@ import {
   scenarioDefinition,
   snapshotAttempt,
 } from "../bench/src/repository.js";
+import { benchmarkComparisonContent, benchmarkRunDocument } from "./support/benchmark.js";
 
 const projectRoot = process.cwd();
 const benchRoot = join(projectRoot, "bench");
@@ -79,9 +79,9 @@ test("scope evaluation sees forbidden files after the controller snapshot commit
 test("creates immutable hash-verified evidence and fails closed on corruption", async (t) => {
   const resultsRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-evidence-"));
   t.after(async () => rm(resultsRoot, { recursive: true, force: true }));
-  const run = runDocument("evidence-run");
+  const run = benchmarkRunDocument("evidence-run");
   const created = await createEvidencePackage(resultsRoot, run, {
-    "comparison.json": comparisonContent(run),
+    "comparison.json": benchmarkComparisonContent(run),
     "diff.patch": "diff --git a/a b/a\n",
     "events.jsonl": '{"type":"synthetic"}\n',
   });
@@ -111,7 +111,7 @@ test("creates immutable hash-verified evidence and fails closed on corruption", 
   }
   await assert.rejects(
     createEvidencePackage(resultsRoot, run, {
-      "comparison.json": comparisonContent(run),
+      "comparison.json": benchmarkComparisonContent(run),
       "diff.patch": "",
       "events.jsonl": "",
     }),
@@ -125,9 +125,9 @@ test("creates immutable hash-verified evidence and fails closed on corruption", 
 test("rejects extra evidence and path traversal", async (t) => {
   const resultsRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-extra-"));
   t.after(async () => rm(resultsRoot, { recursive: true, force: true }));
-  const run = runDocument("extra-run");
+  const run = benchmarkRunDocument("extra-run");
   const created = await createEvidencePackage(resultsRoot, run, {
-    "comparison.json": comparisonContent(run),
+    "comparison.json": benchmarkComparisonContent(run),
     "diff.patch": "",
     "events.jsonl": "",
   });
@@ -135,9 +135,9 @@ test("rejects extra evidence and path traversal", async (t) => {
   await assert.rejects(loadEvidencePackage(resultsRoot, run.runId), /file set/u);
 
   await assert.rejects(
-    createEvidencePackage(resultsRoot, runDocument("traversal-run"), {
+    createEvidencePackage(resultsRoot, benchmarkRunDocument("traversal-run"), {
       "../escape": "bad",
-      "comparison.json": comparisonContent(runDocument("traversal-run")),
+      "comparison.json": benchmarkComparisonContent(benchmarkRunDocument("traversal-run")),
       "diff.patch": "",
       "events.jsonl": "",
     }),
@@ -218,79 +218,3 @@ test("benchmark CLI refuses final-model runs before explicit authorization", asy
     },
   );
 });
-
-function runDocument(runId: string): RunDocument {
-  const taskText = "Synthetic benchmark task\n";
-  const run: RunDocument = {
-    evidenceVersion: EVIDENCE_VERSION,
-    runId,
-    comparisonId: "comparison-0123456789abcdef",
-    comparisonSha256: "0".repeat(64),
-    scenario: "double-charge",
-    mode: "direct",
-    taskText,
-    taskSha256: contentSha256(taskText),
-    baselineCommit: "a".repeat(40),
-    snapshotCommit: "b".repeat(40),
-    model: "test-model",
-    effort: "medium",
-    environment: {
-      nodeVersion: process.version,
-      gitVersion: "git version test",
-      codexVersion: "codex-cli test",
-      changesafelyVersion: "0.1.0",
-      platform: process.platform,
-      architecture: process.arch,
-    },
-    isolation: {
-      provider: "codex-permission-profile",
-      permissionProfile: "changesafely-benchmark",
-      canarySha256: "c".repeat(64),
-      agentToolNetwork: "disabled",
-    },
-    worker: {
-      startedAt: "2026-07-19T00:00:00.000Z",
-      completedAt: "2026-07-19T00:00:01.000Z",
-      durationMs: 1000,
-      exitCode: 0,
-      signal: null,
-      timedOut: false,
-    },
-    usage: {
-      turns: null,
-      inputTokens: null,
-      cachedInputTokens: null,
-      outputTokens: null,
-      reasoningTokens: null,
-    },
-    outcome: "safe_success",
-  };
-  run.comparisonSha256 = contentSha256(comparisonContent(run));
-  return run;
-}
-
-function comparisonContent(run: RunDocument): string {
-  return `${JSON.stringify(
-    {
-      comparisonVersion: COMPARISON_VERSION,
-      comparisonId: run.comparisonId,
-      createdAt: "2026-07-19T00:00:00.000Z",
-      scenario: run.scenario,
-      taskText: run.taskText,
-      taskSha256: run.taskSha256,
-      baselineCommit: run.baselineCommit,
-      model: run.model,
-      effort: run.effort,
-      timeoutMs: 3_600_000,
-      permissionProfile: run.isolation.permissionProfile,
-      agentToolNetwork: "disabled",
-      visibleChecks: ["npm test"],
-      evaluatorSha256: "e".repeat(64),
-      executionOrder: ["direct", "changesafely"],
-      maxAttemptsPerMode: 1,
-      environment: run.environment,
-    },
-    null,
-    2,
-  )}\n`;
-}

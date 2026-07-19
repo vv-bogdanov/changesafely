@@ -28,7 +28,7 @@ import { classifyTechnicalFailure, type TechnicalFailure } from "./controller.js
 import {
   contentSha256,
   createEvidencePackage,
-  loadEvidencePackage,
+  listEvidencePackages,
   type VerifiedEvidence,
 } from "./evidence.js";
 import { type IsolationProof, prepareCodexHome, proveIsolation } from "./isolation.js";
@@ -314,14 +314,8 @@ async function enforceExecutionOrder(
   comparison: StoredComparison,
   mode: BenchmarkMode,
 ): Promise<void> {
-  const entries = await readdir(resultsRoot, { withFileTypes: true }).catch((error: unknown) => {
-    if (errorCode(error) === "ENOENT") return [];
-    throw error;
-  });
   const runs: RunDocument[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === "comparisons") continue;
-    const evidence = await loadEvidencePackage(resultsRoot, entry.name);
+  for (const evidence of await listEvidencePackages(resultsRoot)) {
     if (evidence.run.comparisonId === comparison.manifest.comparisonId) runs.push(evidence.run);
   }
   if (runs.some((run) => run.mode === mode)) {
@@ -400,10 +394,4 @@ function processEvidence(result: ProcessResult, technical?: TechnicalFailure) {
 function createRunId(scenario: string, mode: BenchmarkMode): string {
   const timestamp = new Date().toISOString().replaceAll(/[-:.TZ]/gu, "");
   return `${scenario}-${mode}-${timestamp}-${randomUUID().slice(0, 8)}`;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error
-    ? String(error.code)
-    : undefined;
 }

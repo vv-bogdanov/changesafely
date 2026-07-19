@@ -48,21 +48,25 @@ export async function materializeAttempt(
     recursive: true,
     filter: (source) => !["dist", "node_modules"].includes(basename(source)),
   });
-  await command("git", ["init", "--quiet", "-b", "benchmark"], destination);
-  await command("git", ["config", "user.name", "ChangeSafely Benchmark"], destination);
-  await command("git", ["config", "user.email", "benchmark@changesafely.local"], destination);
-  await command("git", ["add", "."], destination);
-  await command("git", ["commit", "--quiet", "-m", "benchmark baseline"], destination);
+  await repositoryCommand("git", ["init", "--quiet", "-b", "benchmark"], destination);
+  await repositoryCommand("git", ["config", "user.name", "ChangeSafely Benchmark"], destination);
+  await repositoryCommand(
+    "git",
+    ["config", "user.email", "benchmark@changesafely.local"],
+    destination,
+  );
+  await repositoryCommand("git", ["add", "."], destination);
+  await repositoryCommand("git", ["commit", "--quiet", "-m", "benchmark baseline"], destination);
   if (options.installDependencies ?? true) {
-    await command(
+    await repositoryCommand(
       "npm",
       ["ci", "--ignore-scripts", "--offline", "--no-audit", "--no-fund"],
       destination,
       120_000,
     );
   }
-  const baselineCommit = await command("git", ["rev-parse", "HEAD"], destination);
-  const remotes = await command("git", ["remote"], destination);
+  const baselineCommit = await repositoryCommand("git", ["rev-parse", "HEAD"], destination);
+  const remotes = await repositoryCommand("git", ["remote"], destination);
   if (remotes) throw new Error("Disposable benchmark repository unexpectedly has a remote");
   return { workspace: destination, baselineCommit };
 }
@@ -71,25 +75,29 @@ export async function snapshotAttempt(
   workspace: string,
   baselineCommit: string,
 ): Promise<AttemptSnapshot> {
-  const root = resolve(await command("git", ["rev-parse", "--show-toplevel"], workspace));
+  const root = resolve(await repositoryCommand("git", ["rev-parse", "--show-toplevel"], workspace));
   if (root !== resolve(workspace)) throw new Error("Benchmark workspace Git root changed");
-  await command("git", ["cat-file", "-e", `${baselineCommit}^{commit}`], workspace);
-  await command("git", ["merge-base", "--is-ancestor", baselineCommit, "HEAD"], workspace);
-  await command("git", ["add", "-A"], workspace);
-  await command(
+  await repositoryCommand("git", ["cat-file", "-e", `${baselineCommit}^{commit}`], workspace);
+  await repositoryCommand(
+    "git",
+    ["merge-base", "--is-ancestor", baselineCommit, "HEAD"],
+    workspace,
+  );
+  await repositoryCommand("git", ["add", "-A"], workspace);
+  await repositoryCommand(
     "git",
     ["commit", "--quiet", "--allow-empty", "-m", "benchmark attempt snapshot"],
     workspace,
   );
-  const snapshotCommit = await command("git", ["rev-parse", "HEAD"], workspace);
-  const diff = await command(
+  const snapshotCommit = await repositoryCommand("git", ["rev-parse", "HEAD"], workspace);
+  const diff = await repositoryCommand(
     "git",
     ["diff", "--binary", "--no-ext-diff", baselineCommit, snapshotCommit],
     workspace,
     30_000,
     false,
   );
-  const changed = await command(
+  const changed = await repositoryCommand(
     "git",
     ["diff", "--name-only", "-z", baselineCommit, snapshotCommit],
     workspace,
@@ -104,7 +112,7 @@ export async function snapshotAttempt(
   };
 }
 
-async function command(
+export async function repositoryCommand(
   program: string,
   args: string[],
   cwd: string,

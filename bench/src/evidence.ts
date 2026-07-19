@@ -17,6 +17,7 @@ export interface VerifiedEvidence {
   path: string;
   run: RunDocument;
   manifest: EvidenceManifest;
+  manifestSha256: string;
 }
 
 export async function createEvidencePackage(
@@ -67,16 +68,13 @@ export async function createEvidencePackage(
     await mkdir(dirname(target), { recursive: true, mode: 0o700 });
     await writeFile(target, content, { flag: "wx", mode: 0o600 });
   }
-  await writeFile(
-    resolveWithin(packagePath, MANIFEST_FILE),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    {
-      flag: "wx",
-      mode: 0o600,
-    },
-  );
+  const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`;
+  await writeFile(resolveWithin(packagePath, MANIFEST_FILE), manifestContent, {
+    flag: "wx",
+    mode: 0o600,
+  });
 
-  return { path: packagePath, run, manifest };
+  return { path: packagePath, run, manifest, manifestSha256: sha256(manifestContent) };
 }
 
 export async function loadEvidencePackage(
@@ -85,9 +83,8 @@ export async function loadEvidencePackage(
 ): Promise<VerifiedEvidence> {
   validateRunId(runId);
   const packagePath = resolveWithin(resultsRoot, runId);
-  const manifest = validateEvidenceManifest(
-    parseJson(await readFile(resolveWithin(packagePath, MANIFEST_FILE), "utf8"), MANIFEST_FILE),
-  );
+  const manifestContent = await readFile(resolveWithin(packagePath, MANIFEST_FILE), "utf8");
+  const manifest = validateEvidenceManifest(parseJson(manifestContent, MANIFEST_FILE));
   if (manifest.runId !== runId) throw new Error("Evidence manifest run identity mismatch");
 
   const expectedPaths = [...manifest.files.map((file) => file.path), MANIFEST_FILE].sort();
@@ -110,7 +107,20 @@ export async function loadEvidencePackage(
   if (run.runId !== runId) throw new Error("Benchmark run identity mismatch");
   verifyRunLineage(run);
   verifyComparisonLineage(run, await readFile(resolveWithin(packagePath, "comparison.json")));
-  return { path: packagePath, run, manifest };
+  return { path: packagePath, run, manifest, manifestSha256: sha256(manifestContent) };
+}
+
+export async function listEvidencePackages(resultsRoot: string): Promise<VerifiedEvidence[]> {
+  const entries = await readdir(resultsRoot, { withFileTypes: true }).catch((error: unknown) => {
+    if (errorCode(error) === "ENOENT") return [];
+    throw error;
+  });
+  const packages: VerifiedEvidence[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isDirectory() || ["analyses", "comparisons"].includes(entry.name)) continue;
+    packages.push(await loadEvidencePackage(resultsRoot, entry.name));
+  }
+  return packages;
 }
 
 export async function readVerifiedEvidenceFile(

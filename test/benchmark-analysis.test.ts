@@ -1,0 +1,213 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { promisify } from "node:util";
+import {
+  createOrVerifyAnalysisPackage,
+  evaluateMutationEvidence,
+  loadAnalysisPackage,
+} from "../bench/src/analysis.js";
+import { createEvidencePackage } from "../bench/src/evidence.js";
+import type { RunCaseCard } from "../bench/src/report.js";
+import {
+  materializeAttempt,
+  scenarioDefinition,
+  snapshotAttempt,
+} from "../bench/src/repository.js";
+import { ARTIFACT_VERSION } from "../src/schemas.js";
+import { benchmarkComparisonContent, benchmarkRunDocument } from "./support/benchmark.js";
+
+const projectRoot = process.cwd();
+const benchRoot = join(projectRoot, "bench");
+const execFileAsync = promisify(execFile);
+
+test("evaluates candidate tests against reference and mutants, then replays one stable report", {
+  timeout: 300_000,
+}, async (t) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-analysis-test-"));
+  t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
+  const scenario = scenarioDefinition(benchRoot, "double-charge");
+  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "candidate"), {
+    installDependencies: false,
+  });
+  await writeFile(
+    join(attempt.workspace, "test", "candidate-mutation.test.ts"),
+    candidateMutationTest,
+  );
+  const snapshot = await snapshotAttempt(attempt.workspace, attempt.baselineCommit);
+  const run = benchmarkRunDocument("mutation-run", {
+    baselineCommit: attempt.baselineCommit,
+    mode: "changesafely",
+    snapshotCommit: snapshot.snapshotCommit,
+    taskText: await readFile(scenario.task, "utf8"),
+  });
+  const resultsRoot = join(temporaryRoot, "results");
+  const evidence = await createEvidencePackage(resultsRoot, run, {
+    "comparison.json": benchmarkComparisonContent(run),
+    "diff.patch": snapshot.diff,
+    "events.jsonl": '{"type":"synthetic"}\n',
+    "changesafely/run/harness.json": `${JSON.stringify(
+      {
+        meta: {
+          artifactVersion: ARTIFACT_VERSION,
+          producerVersion: "0.1.0",
+          runId: run.runId,
+          baselineCommit: run.baselineCommit,
+          role: "test-author",
+          createdAt: "2026-07-19T00:00:00.000Z",
+          inputs: {},
+        },
+        payload: {
+          summary: "Synthetic protected harness",
+          testPaths: ["test/candidate-mutation.test.ts"],
+          fixturePaths: [],
+          targetedCommand: {
+            name: "test",
+            argv: ["npm", "test"],
+            purpose: "Run candidate tests",
+          },
+          expectedBaselineOutcome: "fail",
+          expectedFailure: "Missing idempotency",
+          protectedPaths: ["test/candidate-mutation.test.ts"],
+          protectedHashes: { "test/candidate-mutation.test.ts": "f".repeat(64) },
+          testCommit: run.snapshotCommit,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "evaluation.json": `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        scenario: "double-charge",
+        checks: [{ id: "synthetic", category: "visible", passed: true, detail: "passed" }],
+        summary: { visible: true, acceptance: true, preservation: true, scope: true },
+        passed: true,
+      },
+      null,
+      2,
+    )}\n`,
+  });
+
+  const document = await evaluateMutationEvidence(benchRoot, evidence);
+  assert.equal(document.reference.passed, true, JSON.stringify(document.reference.process));
+  assert.deepEqual(
+    document.mutants.map((mutant) => [mutant.id, mutant.killed]),
+    [
+      ["process-local-cache", true],
+      ["check-then-write", true],
+    ],
+  );
+  assert.equal(document.mutation.killRate, 1);
+  assert.deepEqual(document.candidateTests.paths, ["test/candidate-mutation.test.ts"]);
+  assert.equal(document.protectedTests.applicable, true);
+  assert.equal(document.protectedTests.intact, false);
+
+  const analysis = await createOrVerifyAnalysisPackage(resultsRoot, evidence, document);
+  assert.deepEqual(
+    (await loadAnalysisPackage(resultsRoot, run.runId, evidence)).document,
+    document,
+  );
+  const evaluated = await benchmarkCli<{ manifest: { analysisSha256: string } }>([
+    "evaluate",
+    "--run",
+    run.runId,
+    "--results",
+    resultsRoot,
+  ]);
+  assert.equal(evaluated.manifest.analysisSha256, analysis.manifest.analysisSha256);
+  const replay = await benchmarkCli<{ verified: boolean; caseCard: RunCaseCard | null }>([
+    "replay",
+    "--run",
+    run.runId,
+    "--results",
+    resultsRoot,
+  ]);
+  assert.equal(replay.verified, true);
+  assert.equal(replay.caseCard?.mutation.killRate, 1);
+  assert.ok((replay.caseCard?.diff.testAdditions ?? 0) > 0);
+  assert.equal(replay.caseCard?.diff.productionFiles, 0);
+
+  const reportOutput = await benchmarkCli<{ jsonPath: string; markdownPath: string }>([
+    "report",
+    "--results",
+    resultsRoot,
+  ]);
+  const report = JSON.parse(await readFile(reportOutput.jsonPath, "utf8"));
+  assert.deepEqual(report.comparisons[0]?.runs[0], replay.caseCard);
+  assert.match(await readFile(reportOutput.markdownPath, "utf8"), /2\/2 \(100%\)/u);
+
+  const analysisManifestPath = join(analysis.path, "analysis-manifest.json");
+  const analysisManifest = await readFile(analysisManifestPath, "utf8");
+  await rm(analysisManifestPath);
+  await assert.rejects(
+    benchmarkCli(["replay", "--run", run.runId, "--results", resultsRoot]),
+    /package file set is invalid/u,
+  );
+  await writeFile(analysisManifestPath, analysisManifest);
+  await writeFile(join(analysis.path, "analysis.json"), "{}\n");
+  await assert.rejects(
+    loadAnalysisPackage(resultsRoot, run.runId, evidence),
+    /analysis document|hash/u,
+  );
+});
+
+async function benchmarkCli<Value>(args: string[]): Promise<Value> {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [join(projectRoot, "dist", "bench", "src", "cli.js"), ...args],
+    { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
+  );
+  return JSON.parse(stdout) as Value;
+}
+
+const candidateMutationTest = `import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  PaymentService,
+  type GatewayChargeRequest,
+  type OperationStore,
+  type PaymentGateway,
+  type PaymentReceipt,
+  type RefundReceipt,
+  type RefundRequest,
+  type StoredOperation,
+} from "../src/payment-service.js";
+
+class MemoryStore implements OperationStore {
+  readonly operations = new Map<string, StoredOperation>();
+  async get(token: string) { return this.operations.get(token); }
+  async save(operation: StoredOperation) { this.operations.set(operation.operationToken, operation); }
+}
+
+class AtomicGateway implements PaymentGateway {
+  effects = 0;
+  readonly payments = new Map<string, Promise<PaymentReceipt>>();
+  async charge(input: GatewayChargeRequest): Promise<PaymentReceipt> {
+    if (!input.idempotencyKey) return await this.create(input);
+    const existing = this.payments.get(input.idempotencyKey);
+    if (existing) return await existing;
+    const payment = this.create(input);
+    this.payments.set(input.idempotencyKey, payment);
+    return await payment;
+  }
+  async refund(_input: RefundRequest): Promise<RefundReceipt> { throw new Error("unused"); }
+  private async create(input: GatewayChargeRequest): Promise<PaymentReceipt> {
+    await new Promise((resolve) => setImmediate(resolve));
+    this.effects += 1;
+    return { paymentId: \`payment-\${this.effects}\`, amount: input.amount, currency: input.currency };
+  }
+}
+
+test("concurrent retries have one gateway effect", async () => {
+  const gateway = new AtomicGateway();
+  const service = new PaymentService(gateway, new MemoryStore());
+  const input = { operationToken: "same", amount: 1000, currency: "USD" } as const;
+  const [first, second] = await Promise.all([service.retryPayment(input), service.retryPayment(input)]);
+  assert.equal(first.paymentId, second.paymentId);
+  assert.equal(gateway.effects, 1);
+});
+`;

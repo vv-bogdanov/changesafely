@@ -54,6 +54,19 @@ npm run benchmark -- run --scenario double-charge --mode direct --model gpt-5.3-
 npm run benchmark -- run --scenario double-charge --mode changesafely --model gpt-5.3-codex-spark
 ```
 
+Evaluate candidate-added tests against the reference and declared mutants, then replay
+only the persisted hash-verified evidence and generate the paired report:
+
+```sh
+npm run benchmark -- evaluate --run <run-id>
+npm run benchmark -- replay --run <run-id>
+npm run benchmark -- report
+```
+
+`evaluate` runs deterministic test commands with tool network access disabled. `replay`
+never starts Codex, test commands, or a network call. Reports are derived from verified
+evidence and analysis documents and contain no aggregate safety score.
+
 Attempts are stored under ignored `bench/results/` directories as immutable,
 hash-verified evidence packages. A non-Spark model is intentionally rejected until
 Spark results are evaluated and a separate user command authorizes final measurements.
