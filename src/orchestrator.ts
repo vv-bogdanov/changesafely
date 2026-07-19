@@ -27,6 +27,7 @@ export interface FullRunOptions {
   task: string;
   plannerCount: number;
   model?: string;
+  permissionProfile?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
   diagnostics?: boolean;
@@ -125,6 +126,7 @@ export async function validateResumeBoundary(
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
   state.model ??= "";
+  state.permissionProfile ??= "";
   state.baselineProtectedConfiguration ??= {};
   if (state.repoPath !== repoPath || state.runId !== runId || state.repairCount > 1) {
     throw resumeError("Run state identity or repair bound is invalid");
@@ -187,6 +189,7 @@ async function finalizeVerifiedRun(
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
   state.model ??= "";
+  state.permissionProfile ??= "";
   state.baselineProtectedConfiguration ??= {};
   const store = new ArtifactStore(repoPath, runId, state.baselineCommit, {
     ...(diagnostics ? { diagnostics: true } : {}),
@@ -283,6 +286,7 @@ async function continueFromPlanning(
   repoPath: string,
   runId: string,
   model?: string,
+  permissionProfile?: string,
   diagnostics = false,
   signal?: AbortSignal,
   onProgress?: ProgressReporter,
@@ -293,11 +297,20 @@ async function continueFromPlanning(
       runId,
       sandboxCommands: true,
       ...(model ? { model } : {}),
+      ...(permissionProfile ? { permissionProfile } : {}),
       ...(diagnostics ? { diagnostics: true } : {}),
       ...(signal ? { signal } : {}),
       ...(onProgress ? { onProgress } : {}),
     });
-    return await continueFromHarness(repoPath, runId, model, diagnostics, signal, onProgress);
+    return await continueFromHarness(
+      repoPath,
+      runId,
+      model,
+      permissionProfile,
+      diagnostics,
+      signal,
+      onProgress,
+    );
   } catch (error) {
     if (!(error instanceof ChangeSafelyError)) throw error;
     return persistedResult(repoPath, runId, undefined, error.code);
@@ -308,6 +321,7 @@ async function continueFromHarness(
   repoPath: string,
   runId: string,
   model?: string,
+  permissionProfile?: string,
   diagnostics = false,
   signal?: AbortSignal,
   onProgress?: ProgressReporter,
@@ -318,6 +332,7 @@ async function continueFromHarness(
       runId,
       sandboxCommands: true,
       ...(model ? { model } : {}),
+      ...(permissionProfile ? { permissionProfile } : {}),
       ...(diagnostics ? { diagnostics: true } : {}),
       ...(signal ? { signal } : {}),
       ...(onProgress ? { onProgress } : {}),
@@ -363,6 +378,7 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
     plannerCount: options.plannerCount,
     parallelPlanners: true,
     ...(options.model ? { model: options.model } : {}),
+    ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
     ...(options.diagnostics ? { diagnostics: true } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
@@ -375,6 +391,7 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
       repoPath,
       planning.runId,
       options.model,
+      options.permissionProfile,
       options.diagnostics ?? false,
       options.signal,
       options.onProgress,
@@ -404,12 +421,29 @@ export async function resumeRun(
       throw error;
     }
     const model = state.model || undefined;
+    const permissionProfile = state.permissionProfile || undefined;
     const boundary = resumablePhase(state);
     if (boundary === "planning-complete") {
-      return continueFromPlanning(repoPath, runId, model, diagnostics, signal, onProgress);
+      return continueFromPlanning(
+        repoPath,
+        runId,
+        model,
+        permissionProfile,
+        diagnostics,
+        signal,
+        onProgress,
+      );
     }
     if (boundary === "harness-complete") {
-      return continueFromHarness(repoPath, runId, model, diagnostics, signal, onProgress);
+      return continueFromHarness(
+        repoPath,
+        runId,
+        model,
+        permissionProfile,
+        diagnostics,
+        signal,
+        onProgress,
+      );
     }
     if (boundary === "verification-complete") {
       try {

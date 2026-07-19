@@ -138,6 +138,34 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     assert.equal(await runSuccessful("git", ["status", "--porcelain=v1"], repoPath), "");
   });
 
+  await t.test("full run applies and persists one configured permission profile", async () => {
+    const repoPath = await repository("permission-profile");
+    const result = await spawnCaptured(
+      changesafely,
+      [
+        "run",
+        "--task",
+        "Change the fixture value.",
+        "--plans",
+        "1",
+        "--permission-profile",
+        "benchmark-profile",
+        "--repo",
+        repoPath,
+        "--json",
+      ],
+      temporaryRoot,
+      await environment("expect-permission-profile"),
+    ).result;
+    assert.equal(result.exitCode, 0);
+    const outcome = parseOutcome(result);
+    assert.equal(outcome.status, "VERIFIED");
+    const state = await readState(outcome.statePath);
+    const trace = await readTrace(outcome.tracePath);
+    assert.equal(state.permissionProfile, "benchmark-profile");
+    assert(trace.some((event) => event.sandboxPolicy === "permissions:benchmark-profile"));
+  });
+
   await t.test("full run reports human progress on stderr", async () => {
     const repoPath = await repository("full-run");
     const result = await spawnCaptured(

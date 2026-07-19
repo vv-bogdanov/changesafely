@@ -58,6 +58,7 @@ export interface AppServerClientOptions {
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   trace?: TraceWriter;
+  permissionProfile?: string;
 }
 
 export interface RunTurnOptions {
@@ -314,7 +315,10 @@ export class AppServerClient {
   }
 
   startThread(params: ThreadStartParams): Promise<ThreadStartResponse> {
-    return this.request("thread/start", params).then((value) =>
+    const requestParams = this.options.permissionProfile
+      ? configuredPermissionThread(params, this.options.permissionProfile)
+      : params;
+    return this.request("thread/start", requestParams).then((value) =>
       validateThreadResponse<ThreadStartResponse>(value, "thread/start"),
     );
   }
@@ -334,7 +338,9 @@ export class AppServerClient {
   async runTurn(threadId: string, prompt: string, options: RunTurnOptions): Promise<TurnResult> {
     const role = options.role ?? "unknown";
     const evidence = promptEvidence(prompt, options.outputSchema);
-    const sandboxPolicy = sandboxPolicyName(options.sandboxPolicy);
+    const sandboxPolicy = this.options.permissionProfile
+      ? `permissions:${this.options.permissionProfile}`
+      : sandboxPolicyName(options.sandboxPolicy);
     const model = options.model ?? "default";
     const effort = options.effort ?? "default";
     await this.trace?.recordRoleProvenance({
@@ -362,7 +368,7 @@ export class AppServerClient {
       input: [{ type: "text", text: prompt, text_elements: [] }],
       cwd: options.cwd,
       approvalPolicy: "never",
-      sandboxPolicy: options.sandboxPolicy,
+      ...(this.options.permissionProfile ? {} : { sandboxPolicy: options.sandboxPolicy }),
       ...(options.effort ? { effort: options.effort } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.outputSchema ? { outputSchema: options.outputSchema as JsonValue } : {}),
@@ -669,6 +675,17 @@ export class AppServerClient {
       ...(diagnosticPath ? { diagnosticsPaths: [diagnosticPath] } : {}),
     });
   }
+}
+
+function configuredPermissionThread(
+  params: ThreadStartParams,
+  permissionProfile: string,
+): ThreadStartParams {
+  const { sandbox: _sandbox, ...rest } = params;
+  return {
+    ...rest,
+    config: { ...params.config, default_permissions: permissionProfile },
+  };
 }
 
 function rpcContext(params: unknown): Pick<TraceEventInput, "threadId" | "turnId"> {

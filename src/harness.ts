@@ -47,6 +47,7 @@ export interface HarnessOptions {
   clientFactory?: () => AppServerClient;
   sandboxCommands?: boolean;
   model?: string;
+  permissionProfile?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
   diagnostics?: boolean;
@@ -156,7 +157,11 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
 
   const client =
     options.clientFactory?.() ??
-    new AppServerClient({ cwd: repoPath, ...(options.signal ? { signal: options.signal } : {}) });
+    new AppServerClient({
+      cwd: repoPath,
+      ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
   client.setTrace(store.trace);
   try {
     await client.start();

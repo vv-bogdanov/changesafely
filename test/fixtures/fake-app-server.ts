@@ -298,6 +298,16 @@ lines.on("line", async (line) => {
   }
 
   if (message.method === "thread/start" || message.method === "thread/fork") {
+    if (
+      mode === "expect-permission-profile" &&
+      message.method === "thread/start" &&
+      (message.params?.sandbox !== undefined ||
+        (message.params?.config as Record<string, unknown> | undefined)?.default_permissions !==
+          "benchmark-profile")
+    ) {
+      send({ id: message.id, error: { code: -32602, message: "permission profile mismatch" } });
+      return;
+    }
     threadNumber += 1;
     send({ id: message.id, result: { thread: { id: `thread-${threadNumber}` } } });
     return;
@@ -312,6 +322,10 @@ lines.on("line", async (line) => {
   }
 
   if (message.method === "turn/start") {
+    if (mode === "expect-permission-profile" && message.params?.sandboxPolicy !== undefined) {
+      send({ id: message.id, error: { code: -32602, message: "legacy sandbox override" } });
+      return;
+    }
     if (
       mode === "expect-spark" &&
       (message.params?.model !== "gpt-5.3-codex-spark" || message.params?.effort !== "low")

@@ -53,6 +53,7 @@ export interface PlanningOptions {
   clientFactory?: () => AppServerClient;
   parallelPlanners?: boolean;
   model?: string;
+  permissionProfile?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
   diagnostics?: boolean;
@@ -107,6 +108,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     implementationCommit: "",
     repairCount: 0,
     model: options.model ?? "",
+    permissionProfile: options.permissionProfile ?? "",
   };
   await store.writeState(state);
   reportProgress(options.onProgress, runId, "preflight", "Baseline captured", startedAt);
@@ -115,6 +117,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
     options.clientFactory?.() ??
     new AppServerClient({
       cwd: baseline.repoPath,
+      ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
     });
   client.setTrace(store.trace);

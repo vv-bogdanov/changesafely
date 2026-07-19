@@ -24,8 +24,8 @@ import { runPlanning } from "./workflow.js";
 const HELP = `ChangeSafely ${VERSION}
 
 Usage:
-  changesafely plan --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
-  changesafely run --task <text> [--plans 1..5] [--model <id>] [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
+  changesafely plan --task <text> [--plans 1..5] [--model <id>] [--permission-profile <id>] [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
+  changesafely run --task <text> [--plans 1..5] [--model <id>] [--permission-profile <id>] [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
   changesafely resume --run <run-id> [--timeout <seconds>] [--diagnostics] [--repo <path>] [--json]
   changesafely status --run <run-id> [--repo <path>] [--json]
   changesafely trace --run <run-id> [--repo <path>] [--json]
@@ -41,6 +41,7 @@ Commands:
 
 Options:
   --model <id>         Override the Codex model; omit to use the Codex default
+  --permission-profile Use a configured Codex permission profile for every role
   --timeout <seconds>  Bound the complete plan/run/resume command
   --json               Emit one machine-readable outcome on stdout
   --diagnostics        Persist bounded local output tails; they may contain sensitive data
@@ -109,6 +110,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           run: { type: "string" },
           json: { type: "boolean" },
           model: { type: "string" },
+          "permission-profile": { type: "string" },
           timeout: { type: "string" },
           diagnostics: { type: "boolean" },
         },
@@ -137,6 +139,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       ? undefined
       : (event) => process.stderr.write(formatProgress(event));
     const modelValue = parsed.values.model;
+    const permissionProfileValue = parsed.values["permission-profile"];
     const diagnostics = parsed.values.diagnostics === true;
     if (diagnostics && !["plan", "run", "resume"].includes(command)) {
       throw usageError("--diagnostics is supported only by plan, run, and resume");
@@ -152,6 +155,17 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
     if (model && command !== "plan" && command !== "run") {
       throw usageError("--model is supported only by plan and run");
+    }
+    const permissionProfile =
+      typeof permissionProfileValue === "string" ? permissionProfileValue.trim() : undefined;
+    if (
+      permissionProfileValue !== undefined &&
+      (!permissionProfile || !/^[A-Za-z0-9:._-]{1,100}$/u.test(permissionProfile))
+    ) {
+      throw usageError("--permission-profile must be a valid configured profile id");
+    }
+    if (permissionProfile && command !== "plan" && command !== "run") {
+      throw usageError("--permission-profile is supported only by plan and run");
     }
     if (parsed.values.timeout !== undefined) {
       if (!["plan", "run", "resume"].includes(command)) {
@@ -221,6 +235,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
             parallelPlanners: true,
             signal: abortController.signal,
             ...(model ? { model } : {}),
+            ...(permissionProfile ? { permissionProfile } : {}),
             ...(diagnostics ? { diagnostics: true } : {}),
             ...(onProgress ? { onProgress } : {}),
           })
@@ -230,6 +245,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
             plannerCount,
             signal: abortController.signal,
             ...(model ? { model } : {}),
+            ...(permissionProfile ? { permissionProfile } : {}),
             ...(diagnostics ? { diagnostics: true } : {}),
             ...(onProgress ? { onProgress } : {}),
           });

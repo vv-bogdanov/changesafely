@@ -53,6 +53,7 @@ export interface ImplementationOptions {
   clientFactory?: () => AppServerClient;
   sandboxCommands?: boolean;
   model?: string;
+  permissionProfile?: string;
   signal?: AbortSignal;
   onProgress?: ProgressReporter;
   diagnostics?: boolean;
@@ -275,7 +276,11 @@ export async function runImplementationAndVerification(
   );
   const client =
     options.clientFactory?.() ??
-    new AppServerClient({ cwd: repoPath, ...(options.signal ? { signal: options.signal } : {}) });
+    new AppServerClient({
+      cwd: repoPath,
+      ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
   client.setTrace(store.trace);
   let implementationCommit = "";
   let commandResults: CommandResult[] = [];

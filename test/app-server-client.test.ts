@@ -61,6 +61,27 @@ test("completes the App Server handshake and one structured turn", async () => {
   });
 });
 
+test("uses one configured permission profile without a legacy sandbox override", async () => {
+  await withFakeClient(
+    "expect-permission-profile",
+    async (client) => {
+      await client.start();
+      const thread = await client.startThread({
+        cwd: process.cwd(),
+        approvalPolicy: "never",
+        sandbox: "read-only",
+      });
+      const result = await client.runTurn(thread.thread.id, "Return the smoke artifact.", {
+        cwd: process.cwd(),
+        sandboxPolicy: { type: "readOnly", networkAccess: false },
+        outputSchema: smokeArtifactSchema,
+      });
+      assert.equal(result.status, "completed");
+    },
+    { permissionProfile: "benchmark-profile" },
+  );
+});
+
 test("rejects unsupported App Server requests and continues the turn", async () => {
   await withFakeClient("server-request", async (client) => {
     const thread = await startReadOnlyThread(client);

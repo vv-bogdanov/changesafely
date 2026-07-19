@@ -41,6 +41,8 @@ test("implements help, version, and invalid CLI contracts", async (t) => {
   assert.equal(await main(["--help"]), 0);
   assert.equal(await main(["unknown"]), 1);
   assert.equal(await main(["plan", "--task", "bounded", "--plans", "0"]), 1);
+  assert.equal(await main(["plan", "--task", "bounded", "--permission-profile", "bad id"]), 1);
+  assert.equal(await main(["status", "--permission-profile", "benchmark-profile"]), 1);
   assert.equal(await main(["resume"]), 1);
 
   assert.match(stdout.join(""), /0\.1\.0/);
@@ -49,6 +51,8 @@ test("implements help, version, and invalid CLI contracts", async (t) => {
   assert.match(stdout.join(""), /changesafely trace/);
   assert.match(stderr.join(""), /Unknown command: unknown/);
   assert.match(stderr.join(""), /--plans must be an integer from 1 to 5/);
+  assert.match(stderr.join(""), /--permission-profile must be a valid configured profile id/);
+  assert.match(stderr.join(""), /--permission-profile is supported only by plan and run/);
   assert.match(stderr.join(""), /--run is required/);
 });
 

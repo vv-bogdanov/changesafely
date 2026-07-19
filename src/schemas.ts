@@ -237,6 +237,7 @@ const runStateSchema = strictObject({
   implementationCommit: Type.String({ pattern: "^(?:[a-f0-9]{40,64})?$" }),
   repairCount: Type.Integer({ minimum: 0, maximum: 1 }),
   model: Type.String({ maxLength: 255 }),
+  permissionProfile: Type.Optional(Type.String({ maxLength: 100 })),
 });
 
 const artifactEnvelopeSchema = strictObject({
