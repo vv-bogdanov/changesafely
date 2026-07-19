@@ -99,6 +99,9 @@ if (args[0] !== "sandbox" || args[args.indexOf("-P") + 1] !== "changesafely-test
 if (args.includes("--sandbox-state-disable-network")) process.exit(92);
 if (process.env.CODEX_HOME !== ${JSON.stringify(codexHome)}) process.exit(93);
 const separator = args.indexOf("--");
+const capturePath = args[separator + 4]?.replaceAll("\\\\", "/");
+if (!capturePath?.includes("/.changesafely/command-results/")) process.exit(94);
+if (capturePath.includes("/runs/")) process.exit(95);
 const child = spawn(args[separator + 1], args.slice(separator + 2), {
   stdio: "inherit",
   env: { ...process.env, CODEX_HOME: undefined },
@@ -112,6 +115,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   );
   await chmod(fakeCodex, 0o755);
   const testFile = join(cwd, "profile.test.js");
+  const trace = new TraceWriter(cwd, "profile-run");
   await writeFile(
     testFile,
     'import assert from "node:assert/strict"; import test from "node:test"; test("env", () => assert.equal(process.env.CODEX_HOME, undefined));\n',
@@ -125,6 +129,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       CODEX_HOME: codexHome,
       PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}`,
     },
+    trace,
   });
   assert.equal(result.exitCode, 0, result.stderr);
   assert.equal(result.sandboxed, true);
@@ -142,6 +147,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       CODEX_HOME: codexHome,
       PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}`,
     },
+    trace,
   });
   assert.equal(failed.exitCode, 1);
   assert.match(failed.stdout, /named-profile-output/u);
