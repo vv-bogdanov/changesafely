@@ -5,9 +5,9 @@
 ChangeSafely is a local developer tool whose workflow is independent of target source
 syntax. It compares plans, creates a protected safety harness, implements one selected
 plan, and verifies the resulting Git branch. The current security-qualified target is
-prepared npm JavaScript/TypeScript and Python/pytest repositories; other toolchains are
-not claimed until their capability detection, command policy, and end-to-end fixture
-pass. ChangeSafely is not a deployment or rollback system.
+prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, and Node/Python
+polyglot repositories; other toolchains are not claimed until their command policy and
+end-to-end fixture pass. ChangeSafely is not a deployment or rollback system.
 
 ## Assets
 
@@ -92,8 +92,9 @@ and polyglot targets:
   telemetry performs a separate outbound HTTPS request after a CLI failure. Its
   event has no user fields, but the receiving host can observe the source IP.
   Trace and diagnostic files and their contents are never attached to Sentry events.
-- The current release supports bounded npm and pytest command contracts. Other
-  ecosystems and production workflows have not yet been security-qualified.
+- The current release supports bounded npm, pytest, and explicit config command
+  contracts. Other ecosystems and production workflows have not yet been
+  security-qualified.
 - Non-Node runtimes may execute user startup files, plugins, autoloaders, compiler
   hooks, or package scripts before tests. Network denial and credential removal reduce
   impact but cannot make hostile repository code trustworthy.

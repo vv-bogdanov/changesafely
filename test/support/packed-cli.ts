@@ -134,10 +134,7 @@ export async function createFunctionalRepository(path: string): Promise<void> {
   await runSuccessful("git", ["commit", "-m", "fixture baseline"], path);
 }
 
-export async function createPythonFunctionalRepository(
-  path: string,
-  fixtureRoot: string,
-): Promise<void> {
+export async function createFixtureRepository(path: string, fixtureRoot: string): Promise<void> {
   await cp(fixtureRoot, path, { recursive: true });
   await runSuccessful("git", ["init", "-b", "main"], path);
   await runSuccessful("git", ["config", "user.name", "ChangeSafely Package Test"], path);

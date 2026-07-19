@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { validContract, validEvidence, validPlan } from "../support/artifacts.js";
 
@@ -26,6 +27,104 @@ interface PendingCompletion {
 }
 
 let pendingCompletion: PendingCompletion | undefined;
+
+interface FunctionalTarget {
+  summary: string;
+  allowedPathPrefixes: string[];
+  sources: Array<{ path: string; implementation: string }>;
+  tests: Array<{ path: string; content: string }>;
+  checks: Array<{ name: string; argv: string[]; cwd: string; purpose: string }>;
+}
+
+function functionalTarget(value: string): FunctionalTarget | undefined {
+  if (value === "python") {
+    return {
+      summary: "Small Python fixture with one source file.",
+      allowedPathPrefixes: ["src", "tests"],
+      sources: [{ path: "src/value.py", implementation: "def value():\n    return 2\n" }],
+      tests: [
+        {
+          path: "tests/test_value.py",
+          content:
+            "from src.value import value\n\n\ndef test_requested_value():\n    assert value() == 2\n",
+        },
+      ],
+      checks: [
+        {
+          name: "pytest",
+          argv: ["python", "-m", "pytest"],
+          cwd: ".",
+          purpose: "Run the prepared Python tests",
+        },
+      ],
+    };
+  }
+  if (value === "configured-make") {
+    return {
+      summary: "Small repository authorized by an explicit make check.",
+      allowedPathPrefixes: ["src", "checks"],
+      sources: [{ path: "src/value.js", implementation: "exports.value = () => 2;\n" }],
+      tests: [
+        {
+          path: "checks/value_check.js",
+          content:
+            'const assert = require("node:assert/strict");\nconst test = require("node:test");\nconst { value } = require("../src/value.js");\n\ntest("requested value", () => {\n  assert.equal(value(), 2);\n});\n',
+        },
+      ],
+      checks: [
+        {
+          name: "make test",
+          argv: ["make", "test"],
+          cwd: ".",
+          purpose: "Run the explicitly configured test target",
+        },
+      ],
+    };
+  }
+  if (value === "polyglot") {
+    return {
+      summary: "Polyglot fixture with independent JavaScript and Python checks.",
+      allowedPathPrefixes: ["producer", "consumer"],
+      sources: [
+        {
+          path: "producer/src/value.js",
+          implementation: "exports.value = () => 2;\n",
+        },
+        {
+          path: "consumer/src/value.py",
+          implementation: "def value():\n    return 2\n",
+        },
+      ],
+      tests: [
+        {
+          path: "producer/test/value.test.js",
+          content:
+            'const assert = require("node:assert/strict");\nconst test = require("node:test");\nconst { value } = require("../src/value.js");\n\ntest("requested producer value", () => {\n  assert.equal(value(), 2);\n});\n',
+        },
+        {
+          path: "consumer/tests/test_value.py",
+          content:
+            "from src.value import value\n\n\ndef test_requested_consumer_value():\n    assert value() == 2\n",
+        },
+      ],
+      checks: [
+        {
+          name: "producer tests",
+          argv: ["node", "--test"],
+          cwd: "producer",
+          purpose: "Run the configured producer tests",
+        },
+        {
+          name: "consumer tests",
+          argv: ["python", "-m", "pytest"],
+          cwd: "consumer",
+          purpose: "Run the detected consumer tests",
+        },
+      ],
+    };
+  }
+  return undefined;
+}
 
 function completeTurn({ threadId, turnId, text }: PendingCompletion): void {
   if (mode === "tool-notification") {
@@ -116,32 +215,20 @@ function completeTurn({ threadId, turnId, text }: PendingCompletion): void {
 }
 
 async function structuredOutput(prompt: string): Promise<unknown> {
-  const python = mode === "python";
+  const target = functionalTarget(mode);
   if (prompt.includes("[CHANGESAFELY_ROLE:discovery]")) {
     if (mode === "malformed") return { summary: "missing required fields" };
     return validEvidence({
-      summary: python
-        ? "Small Python fixture with one source file."
-        : "Small TypeScript fixture with one source file.",
-      facts: [
-        {
-          id: "F1",
-          claim: "The source is under src.",
-          references: [
-            {
-              path: python ? "src/value.py" : "src/value.ts",
-              detail: "exports the current value",
-            },
-          ],
-        },
-      ],
-      commands: [
-        {
-          name: "test",
-          argv: python ? ["python", "-m", "pytest"] : ["npm", "test"],
-          cwd: ".",
-          purpose: "Run tests",
-        },
+      summary: target?.summary ?? "Small TypeScript fixture with one source file.",
+      facts: (target?.sources ?? [{ path: "src/value.ts", implementation: "" }]).map(
+        (source, index) => ({
+          id: `F${index + 1}`,
+          claim: "The source exports the current value.",
+          references: [{ path: source.path, detail: "exports the current value" }],
+        }),
+      ),
+      commands: target?.checks ?? [
+        { name: "test", argv: ["npm", "test"], cwd: ".", purpose: "Run tests" },
       ],
       testGaps: ["Requested behavior has no acceptance test."],
       constraints: ["Keep the public function stable."],
@@ -157,7 +244,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       approvalRequiredChanges: ["New production dependencies"],
       evidenceGaps: ["Acceptance test is missing."],
       risks: ["Behavioral regression."],
-      allowedPathPrefixes: python ? ["src", "tests"] : ["src", "test"],
+      allowedPathPrefixes: target?.allowedPathPrefixes ?? ["src", "test"],
     });
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:planner]")) {
@@ -173,36 +260,47 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       title: `${lens} fixture plan`,
       approach: `Use the ${lens} approach in the existing module.`,
       rationale: "It is bounded and directly testable.",
-      ...(python
+      ...(target
         ? {
             files: [
-              { path: "tests/test_value.py", purpose: "Acceptance coverage" },
-              { path: "src/value.py", purpose: "Implementation" },
+              ...target.tests.map((item) => ({ path: item.path, purpose: "Acceptance coverage" })),
+              ...target.sources.map((item) => ({ path: item.path, purpose: "Implementation" })),
             ],
             steps: [
               {
                 id: "S1",
-                description: "Add the failing acceptance test.",
-                paths: ["tests/test_value.py"],
+                description: "Add failing acceptance coverage in every target test root.",
+                paths: target.tests.map((item) => item.path),
               },
-              { id: "S2", description: "Implement the behavior.", paths: ["src/value.py"] },
+              {
+                id: "S2",
+                description: "Implement the behavior in every target source.",
+                paths: target.sources.map((item) => item.path),
+              },
             ],
           }
         : {}),
-      safetyTests: [
-        {
-          name: "acceptance",
-          proves: "AC1 and INV1",
-          argv: python
-            ? ["python", "-m", "pytest"]
-            : mode === "planner-correction" && !prompt.includes("[CHANGESAFELY_CORRECTION]")
-              ? ["npm", "run", "typecheck"]
-              : ["npm", "test"],
-          cwd: ".",
-        },
-      ],
-      verificationCommands:
-        mode === "plan-command"
+      safetyTests: target
+        ? target.checks.map((check) => ({
+            name: check.name,
+            proves: "AC1 and INV1",
+            argv: check.argv,
+            cwd: check.cwd,
+          }))
+        : [
+            {
+              name: "acceptance",
+              proves: "AC1 and INV1",
+              argv:
+                mode === "planner-correction" && !prompt.includes("[CHANGESAFELY_CORRECTION]")
+                  ? ["npm", "run", "typecheck"]
+                  : ["npm", "test"],
+              cwd: ".",
+            },
+          ],
+      verificationCommands: target
+        ? target.checks
+        : mode === "plan-command"
           ? [
               {
                 name: "selected plan check",
@@ -214,7 +312,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
           : [
               {
                 name: "test",
-                argv: python ? ["python", "-m", "pytest"] : ["npm", "test"],
+                argv: ["npm", "test"],
                 cwd: ".",
                 purpose: "Verify behavior",
               },
@@ -247,26 +345,21 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     };
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:test-author]")) {
-    if (python) {
-      await mkdir("tests", { recursive: true });
-      await writeFile(
-        "tests/test_value.py",
-        "from src.value import value\n\n\ndef test_requested_value():\n    assert value() == 2\n",
-        "utf8",
-      );
+    if (target) {
+      for (const item of target.tests) {
+        await mkdir(dirname(item.path), { recursive: true });
+        await writeFile(item.path, item.content, "utf8");
+      }
+      const targeted = target.checks[0];
+      if (!targeted) throw new Error("Functional target requires one check");
       return {
-        summary: "Added a failing pytest acceptance test.",
-        testPaths: ["tests/test_value.py"],
+        summary: "Added failing acceptance tests in the declared test roots.",
+        testPaths: target.tests.map((item) => item.path),
         fixturePaths: [],
-        targetedCommand: {
-          name: "targeted acceptance",
-          argv: ["python", "-m", "pytest"],
-          cwd: ".",
-          purpose: "Prove the requested behavior is missing on baseline",
-        },
+        targetedCommand: targeted,
         expectedBaselineOutcome: "fail",
         expectedFailure: "Expected the requested value",
-        protectedPaths: ["tests/test_value.py"],
+        protectedPaths: target.tests.map((item) => item.path),
       };
     }
     await mkdir("test", { recursive: true });
@@ -291,13 +384,15 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     };
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:implementer]")) {
-    if (python) {
-      await writeFile("src/value.py", "def value():\n    return 2\n", "utf8");
+    if (target) {
+      for (const source of target.sources) {
+        await writeFile(source.path, source.implementation, "utf8");
+      }
       return {
-        summary: "Changed the existing Python value implementation.",
-        changedPaths: ["src/value.py"],
+        summary: "Changed the selected target implementations.",
+        changedPaths: target.sources.map((item) => item.path),
         testsAdded: [],
-        scopeNotes: ["Protected pytest coverage was not changed."],
+        scopeNotes: ["Protected acceptance coverage was not changed."],
         residualRisks: [],
       };
     }

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "id": "make:test",
+      "kind": "test",
+      "argv": ["make", "test"],
+      "cwd": "."
+    }
+  ],
+  "testPathPrefixes": ["checks"],
+  "testFilePatterns": ["*_check.js"],
+  "controlFiles": ["Makefile"]
+}

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "id": "producer:test",
+      "kind": "test",
+      "argv": ["node", "--test"],
+      "cwd": "producer"
+    }
+  ],
+  "testPathPrefixes": ["producer/test"],
+  "testFilePatterns": ["*.test.js"],
+  "controlFiles": []
+}

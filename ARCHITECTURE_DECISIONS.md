@@ -175,6 +175,6 @@ model-proposed shell commands break the fail-closed execution boundary. A small 
 contract preserves the workflow's strength, supports multiple toolchains in one
 repository, and keeps runtime/process safety centralized.
 
-**Rollout:** prepared npm JavaScript/TypeScript and Python/pytest repositories have
-end-to-end fixtures. Practical support for additional toolchains is claimed only after
-the corresponding fixture passes.
+**Rollout:** prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, and
+Node/Python polyglot repositories have end-to-end fixtures. Practical support for
+additional toolchains is claimed only after the corresponding fixture passes.

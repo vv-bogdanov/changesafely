@@ -20,8 +20,8 @@ import { fakeAppServerFactory } from "./support/app-server.js";
 import {
   cliEnvironment,
   createFakeCodex,
+  createFixtureRepository,
   createFunctionalRepository,
-  createPythonFunctionalRepository,
   installPackedCli,
   type ProcessResult,
   protocolVersion,
@@ -170,10 +170,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
 
   await t.test("packed CLI completes a prepared pytest repository", async () => {
     const repoPath = join(temporaryRoot, "python-workflow");
-    await createPythonFunctionalRepository(
-      repoPath,
-      join(root, "test", "fixtures", "python-project"),
-    );
+    await createFixtureRepository(repoPath, join(root, "test", "fixtures", "python-project"));
     const result = await spawnCaptured(
       changesafely,
       [
@@ -189,8 +186,16 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       temporaryRoot,
       await environment("python"),
     ).result;
-    assert.equal(result.exitCode, 0, `${result.stderr}\n${result.stdout}`);
     const outcome = parseOutcome(result);
+    const rerun =
+      result.exitCode === 0
+        ? undefined
+        : await spawnCaptured("python", ["-m", "pytest"], repoPath).result;
+    assert.equal(
+      result.exitCode,
+      0,
+      `${result.stderr}\n${result.stdout}\nDirect pytest rerun:\n${rerun?.stdout ?? ""}\n${rerun?.stderr ?? ""}`,
+    );
     assert.equal(outcome.status, "VERIFIED");
     const state = await readState(outcome.statePath);
     assert.deepEqual(
@@ -211,6 +216,102 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     );
     const commands = await loadVerifiedArtifact(repoPath, state, "verificationCommands");
     assert.ok(commands.payload.every((command) => command.argv[0] === "python"));
+  });
+
+  await t.test("packed CLI runs a non-built-in check from explicit config", async () => {
+    const repoPath = join(temporaryRoot, "configured-make-workflow");
+    await createFixtureRepository(
+      repoPath,
+      join(root, "test", "fixtures", "configured-make-project"),
+    );
+    const result = await spawnCaptured(
+      changesafely,
+      [
+        "run",
+        "--task",
+        "Return the requested value.",
+        "--plans",
+        "1",
+        "--repo",
+        repoPath,
+        "--json",
+      ],
+      temporaryRoot,
+      await environment("configured-make"),
+    ).result;
+    assert.equal(result.exitCode, 0, `${result.stderr}\n${result.stdout}`);
+    const outcome = parseOutcome(result);
+    assert.equal(outcome.status, "VERIFIED");
+    const state = await readState(outcome.statePath);
+    assert.deepEqual(state.repositoryCapabilities?.checks, [
+      { id: "make:test", kind: "test", argv: ["make", "test"], cwd: "." },
+    ]);
+    assert.ok(state.repositoryCapabilities?.sources.includes("config:changesafely.config.json"));
+    assert.equal(
+      await runSuccessful(
+        "git",
+        ["diff", "--name-only", state.baselineCommit, state.testCommit],
+        repoPath,
+      ),
+      "checks/value_check.js",
+    );
+    const commands = await loadVerifiedArtifact(repoPath, state, "verificationCommands");
+    assert.deepEqual(
+      commands.payload.map((command) => [command.argv, command.cwd, command.exitCode]),
+      [[["make", "test"], ".", 0]],
+    );
+  });
+
+  await t.test("packed CLI keeps polyglot checks and test roots distinct", async () => {
+    const repoPath = join(temporaryRoot, "polyglot-workflow");
+    await createFixtureRepository(repoPath, join(root, "test", "fixtures", "polyglot-project"));
+    const result = await spawnCaptured(
+      changesafely,
+      [
+        "run",
+        "--task",
+        "Return the requested value from both producer and consumer.",
+        "--plans",
+        "1",
+        "--repo",
+        repoPath,
+        "--json",
+      ],
+      temporaryRoot,
+      await environment("polyglot"),
+    ).result;
+    assert.equal(result.exitCode, 0, `${result.stderr}\n${result.stdout}`);
+    const outcome = parseOutcome(result);
+    assert.equal(outcome.status, "VERIFIED");
+    const state = await readState(outcome.statePath);
+    assert.deepEqual(
+      state.repositoryCapabilities?.checks.map((check) => [check.argv, check.cwd]),
+      [
+        [["node", "--test"], "producer"],
+        [["python", "-m", "pytest"], "consumer"],
+      ],
+    );
+    assert.equal(
+      await runSuccessful(
+        "git",
+        ["diff", "--name-only", state.baselineCommit, state.testCommit],
+        repoPath,
+      ),
+      "consumer/tests/test_value.py\nproducer/test/value.test.js",
+    );
+    const harness = await loadVerifiedArtifact(repoPath, state, "harness");
+    assert.deepEqual(Object.keys(harness.payload.protectedHashes).sort(), [
+      "consumer/tests/test_value.py",
+      "producer/test/value.test.js",
+    ]);
+    const commands = await loadVerifiedArtifact(repoPath, state, "verificationCommands");
+    assert.deepEqual(
+      commands.payload.map((command) => [command.argv, command.cwd, command.exitCode]),
+      [
+        [["node", "--test"], "producer", 0],
+        [["python", "-m", "pytest"], "consumer", 0],
+      ],
+    );
   });
 
   await t.test("full run reports human progress on stderr", async () => {
