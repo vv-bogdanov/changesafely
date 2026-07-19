@@ -17,7 +17,6 @@ import {
   plannerCorrectionPrompt,
   plannerPrompt,
 } from "./prompts.js";
-import { assertProtocolVersion } from "./protocol.js";
 import { planningReport } from "./report.js";
 import {
   type ChangeContract,
@@ -49,7 +48,6 @@ export interface PlanningOptions {
   task: string;
   plannerCount: number;
   clientFactory?: () => AppServerClient;
-  requireProtocolMatch?: boolean;
   parallelPlanners?: boolean;
   model?: string;
   signal?: AbortSignal;
@@ -92,7 +90,6 @@ function context(
 export async function runPlanning(options: PlanningOptions): Promise<PlanningResult> {
   const repoPath = resolve(options.repoPath);
   const roleEffort = options.model ? "medium" : "low";
-  if (options.requireProtocolMatch) await assertProtocolVersion();
   const baseline = await inspectBaseline(repoPath);
   const runId = createRunId();
   const store = new ArtifactStore(baseline.repoPath, runId, baseline.commit);

@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { AppServerClient } from "./app-server/client.js";
+import protocolVersion from "./app-server/generated/protocol-version.json" with { type: "json" };
 import { safeEnvironment } from "./environment.js";
-import { assertProtocolVersionValue } from "./protocol.js";
 import { telemetryConfigurationStatus } from "./telemetry.js";
 
 const execFileAsync = promisify(execFile);
@@ -105,11 +105,13 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     "codex",
     async () => {
       const version = await execute("codex", ["--version"]);
-      assertProtocolVersionValue(version);
-      return `Codex protocol matches ${version}`;
+      if (!version) throw new Error("empty Codex version output");
+      return version === protocolVersion.codexVersion
+        ? `${version} (generated protocol baseline)`
+        : `${version} (generated baseline: ${protocolVersion.codexVersion})`;
     },
-    "Codex is unavailable or protocol-incompatible",
-    "Install the pinned Codex version and regenerate protocol artifacts only for an intentional upgrade.",
+    "Codex is unavailable",
+    "Install Codex and make the authenticated executable available on PATH.",
   );
 
   if (codexReady) {
@@ -130,12 +132,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
       "Check Codex authentication and local App Server availability.",
     );
   } else {
-    add(
-      "app-server",
-      "fail",
-      "App Server check requires a compatible Codex",
-      "Resolve the Codex check first.",
-    );
+    add("app-server", "fail", "App Server check requires Codex", "Resolve the Codex check first.");
   }
 
   if (codexReady && repositoryReady) {
@@ -166,7 +163,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     add(
       "sandbox",
       "fail",
-      "Sandbox check requires compatible Codex and repository checks",
+      "Sandbox check requires Codex and repository checks",
       "Resolve the Codex and repository checks first.",
     );
   }

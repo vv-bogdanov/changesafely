@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import protocolVersion from "../src/app-server/generated/protocol-version.json" with {
-  type: "json",
-};
 import { formatDoctorReport, runDoctor } from "../src/doctor.js";
 
 test("reports a ready local SafeChange environment", async () => {
@@ -14,7 +11,7 @@ test("reports a ready local SafeChange environment", async () => {
       if (command === "git" && args[0] === "--version") return "git version 2.50.0";
       if (command === "git" && args.includes("rev-parse")) return "/workspace";
       if (command === "git" && args.includes("status")) return "";
-      if (command === "codex" && args[0] === "--version") return protocolVersion.codexVersion;
+      if (command === "codex" && args[0] === "--version") return "codex-cli 99.0.0";
       if (command === "codex" && args[0] === "sandbox") return process.versions.node;
       throw new Error("unexpected doctor command");
     },
@@ -30,6 +27,7 @@ test("reports a ready local SafeChange environment", async () => {
   assert.equal(report.checks.length, 7);
   assert.equal(appServerClosed, true);
   assert.match(formatDoctorReport(report), /Ready: yes/);
+  assert.match(formatDoctorReport(report), /generated baseline/);
   assert.match(formatDoctorReport(report), /Telemetry is disabled/);
 });
 
@@ -58,7 +56,7 @@ test("reports stable actions without exposing command output", async () => {
 
   const output = formatDoctorReport(report);
   assert.equal(report.ok, false);
-  assert.equal(appServerStarted, false);
+  assert.equal(appServerStarted, true);
   assert.match(output, /Ready: no/);
   assert.match(output, /Sentry error telemetry is enabled/);
   assert.doesNotMatch(output, /private|secret-name/);

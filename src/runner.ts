@@ -33,12 +33,23 @@ export interface RunCommandOptions {
 
 const forbiddenTokens = new Set(["|", "||", "&&", ";", ">", ">>", "<"]);
 
+function acceptsForwardedArgs(args: string[], commandLength: number): boolean {
+  return (
+    args.length === commandLength ||
+    (args.length > commandLength + 1 && args[commandLength] === "--")
+  );
+}
+
+function isNpmScript(name: string | undefined, bases: string[]): boolean {
+  return bases.some((base) => name === base || name?.startsWith(`${base}:`));
+}
+
 function isTestCommand(argv: string[]): boolean {
   const [program, ...args] = argv;
   return (
     (program === "npm" &&
-      ((args.length === 1 && args[0] === "test") ||
-        (args.length === 2 && args[0] === "run" && args[1] === "test"))) ||
+      ((args[0] === "test" && acceptsForwardedArgs(args, 1)) ||
+        (args[0] === "run" && isNpmScript(args[1], ["test"]) && acceptsForwardedArgs(args, 2)))) ||
     (program === "node" && args[0] === "--test")
   );
 }
@@ -47,8 +58,8 @@ export function isSafetyTestCommand(argv: string[]): boolean {
   const [program, ...args] = argv;
   return (
     program === "npm" &&
-    ((args.length === 1 && args[0] === "test") ||
-      (args.length === 2 && args[0] === "run" && args[1] === "test"))
+    ((args[0] === "test" && acceptsForwardedArgs(args, 1)) ||
+      (args[0] === "run" && isNpmScript(args[1], ["test"]) && acceptsForwardedArgs(args, 2)))
   );
 }
 
@@ -61,9 +72,9 @@ export function validateCommandArgv(argv: string[]): void {
   if (program === "npm") {
     const allowed =
       isTestCommand(argv) ||
-      (args.length === 2 &&
-        args[0] === "run" &&
-        ["test", "typecheck", "build"].includes(args[1] ?? ""));
+      (args[0] === "run" &&
+        isNpmScript(args[1], ["typecheck", "lint", "check", "build"]) &&
+        acceptsForwardedArgs(args, 2));
     if (!allowed) throw new Error(`npm command is not approved: ${argv.join(" ")}`);
     return;
   }

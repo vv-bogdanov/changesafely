@@ -36,7 +36,8 @@ package manager, or operating-system sandbox.
 - Repository commands use structured argv, `shell: false`, a sanitized environment,
   timeouts, bounded captured output, an allowlist, and a network-disabled Codex
   sandbox. Real exit codes are persisted.
-- Protocol generation and runtime Codex versions must match exactly.
+- Protocol generation is reproducible from an exact dev baseline; runtime App Server
+  responses are validated fail closed instead of trusting a version string.
 - Resume validates artifact hashes, lineage, Git branch, commits, ancestry, protected
   files, and phase boundaries.
 - Sentry telemetry is disabled unless both opt-in variables are set. It sends only a

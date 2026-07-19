@@ -55,7 +55,7 @@ The final product must satisfy the safety guarantees in this plan, but not every
 
 The following constraints would be excessive during the first implementation passes and are deferred to hardening or pre-release:
 
-- A hard-coded numeric Codex version. During development, use the standard `codex` from `PATH`, record its version, and regenerate protocol files as needed. Exact runtime/generated-version equality becomes a release gate.
+- A hard-coded runtime Codex version. Use the standard `codex` from `PATH`; keep an exact dev/CI baseline only for reproducible protocol generation and validate the runtime contract fail closed.
 - Cross-platform sandbox support from the start. Early development commands may run only against the trusted, dependency-light demo with fixed argv. A run using this shortcut must be labelled development-only and cannot end in the product status `VERIFIED`; network-disabled sandbox enforcement is required before release.
 - Full interrupted-run recovery. Until the happy path works, a failed development run may be restarted from B0. Artifact persistence stays, but `resume` correctness is a hardening task.
 - Complete provenance metadata and atomic recovery for every intermediate file. Start with schema-valid evidence, contract, plans, decision, and verification output; add exhaustive hashes, input lineage, atomic writes, and recovery checks after the workflow closes end to end.
@@ -102,11 +102,11 @@ These commits are mandatory checkpoints made by the coding agent while implement
 
 ## 3. Concrete implementation choices
 
-- **Runtime:** Node.js 20 or newer, ESM, strict TypeScript, npm.
+- **Runtime:** Node.js 22 or newer, ESM, strict TypeScript, npm.
 - **CLI parsing:** `node:util.parseArgs`; no CLI framework.
 - **Tests:** start with `node:test` and `node:assert`; change only if real test ergonomics justify it.
 - **Schema validation:** JSON Schemas are the canonical role-output contracts and are also passed as `turn/start.outputSchema`. The MVP started with `ajv`; hardening replaced the duplicated TypeScript interfaces and handwritten schemas with TypeBox as one source for types and compiled validation.
-- **Codex defaults:** invoke the standard `codex` executable from `PATH` and do not override the user's default model. Generate protocol TypeScript and JSON Schema from that build and store its exact `codex --version` value in `src/app-server/generated/protocol-version.json`. Development may regenerate on a version change; release preflight must fail on a mismatch. This preserves version-specific protocol types without hard-coding the currently installed version in this plan.
+- **Codex defaults:** invoke the standard `codex` executable from `PATH` and do not override the user's default model. Generate protocol TypeScript and JSON Schema from the exact dev/CI dependency and record it in `src/app-server/generated/protocol-version.json`. Runtime accepts another Codex build when the App Server handshake and every used message pass fail-closed validation.
 - **Transport:** one long-lived App Server child process per SafeChange run; JSONL on stdin/stdout; stderr captured separately.
 - **Orchestration:** explicit async functions and a persisted phase enum, not a state-machine library.
 - **Commands:** start with fixed structured argv and timeouts against the trusted demo. Before a run may report `VERIFIED`, require `shell: false`, a non-interactive sanitized environment, bounded output, and network disabled through the Codex sandbox wrapper. If the host cannot prove that setup works, stop with `BLOCKED` before repository scripts run.
@@ -196,7 +196,7 @@ Every role artifact ultimately has a common envelope with run id, baseline commi
    codex app-server generate-json-schema --out <generated-dir>
    ```
 
-4. Record the generator's `codex --version`. During development, provide one command to regenerate from the standard installed Codex; strict mismatch failure is added in Stage 4.
+4. Record the generator's `codex --version` and provide one command to regenerate from the pinned dev/CI dependency. Treat this as a tested baseline, not a runtime allowlist.
 5. Implement the smallest JSONL client that completes one real thread/turn: handshake (`initialize`, then `initialized`), request-id correlation, notifications, turn completion, timeout/interrupt, and process-exit handling. Add concurrent requests only when planner parallelism is enabled later.
 6. Add focused fake-server tests and one opt-in live smoke test. Do not build the exhaustive protocol failure suite before the first successful turn.
 
@@ -280,7 +280,7 @@ Every role artifact ultimately has a common envelope with run id, baseline commi
 
 ### Stage 4: Hardening, recovery, and demo readiness
 
-1. Make generated/runtime Codex version equality a strict preflight release gate and add protocol-drift tests.
+1. Verify reproducible protocol generation in CI and fail closed on malformed App Server responses; do not add an exact runtime-version gate.
 2. Replace trusted-demo command execution with structured argv validation, `shell: false`, a sanitized non-interactive environment, bounded logs, and network-disabled Codex sandbox execution. Sandbox failure returns `BLOCKED`.
 3. Complete baseline/configuration fingerprints, artifact envelopes, hashes, atomic writes, lineage checks, and explicit status/exit-code mapping.
 4. Add planner concurrency only if needed for the three-minute demo and test out-of-order App Server responses before enabling it.
@@ -318,9 +318,10 @@ At this gate, and not earlier, the full passing workflow may emit `VERIFIED`.
 
 ### Opt-in end-to-end tests
 
-- Standard Codex plus the generated protocol version against the payment demo.
+- The generated Codex baseline and the current standard Codex, when different,
+  against the payment demo.
 - Happy path: three distinct plans, admissible winner, failing-first harness, implementation, all commands passing, independent `VERIFIED` result.
-- Negative path: dirty baseline, changed baseline, all plans ineligible, protected harness edit, undeclared dependency, unexpected path, failed verification, and protocol mismatch.
+- Negative path: dirty baseline, changed baseline, all plans ineligible, protected harness edit, undeclared dependency, unexpected path, failed verification, and malformed or incompatible protocol messages.
 
 ## 9. Acceptance mapping
 
@@ -333,7 +334,7 @@ At this gate, and not earlier, the full passing workflow may emit `VERIFIED`.
 
 ## 10. Known risks and minimal responses
 
-- **App Server protocol changes:** regenerate freely from the standard installed Codex during development; enforce generated/runtime equality before release; no compatibility shim in MVP.
+- **App Server protocol changes:** update the dev baseline intentionally, regenerate artifacts, and run contract tests. Runtime incompatibility stops at handshake or schema validation; no version-range shim in MVP.
 - **Model output still invalid under `outputSchema`:** local TypeBox validation and one same-role correction attempt; then explicit failure.
 - **Plans differ only cosmetically:** start with lens-specific prompts and inspect artifacts from real runs. Add a deterministic overlap gate only if observed failures justify it; never invent diversity or a winner.
 - **Repository scripts are hostile or require network/secrets:** sandbox smoke test, sanitized environment, command allowlist, and `BLOCKED` when the proof environment is insufficient.

@@ -1,8 +1,8 @@
 # Release rehearsal
 
-> Historical evidence only: these runs used Codex `0.144.5`. The repository is now
-> pinned to `0.144.6`, so the prerelease checklist requires fresh rehearsals before
-> `0.1.0` is published.
+> Historical evidence only: these runs predate the current runtime and workflow
+> changes, so the prerelease checklist requires fresh rehearsals before `0.1.0` is
+> published.
 
 Date: 2026-07-18  
 Codex CLI: `codex-cli 0.144.5`  

@@ -40,7 +40,7 @@ test("keeps telemetry disabled unless both opt-ins are present", async () => {
   );
 
   let requests = 0;
-  const sent = await captureFailure("PROTOCOL_MISMATCH", "plan", {
+  const sent = await captureFailure("APP_SERVER_INCOMPATIBLE", "plan", {
     env: {
       SAFECHANGE_TELEMETRY: "1",
       SAFECHANGE_SENTRY_DSN: "https://public_key@o1.ingest.sentry.io/42",

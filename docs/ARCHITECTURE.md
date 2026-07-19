@@ -66,7 +66,9 @@ Model statements are proposals or findings, never sufficient proof of success.
 `AppServerClient` is a thin JSONL client, not an SDK. It implements initialization,
 request correlation, concurrent responses, thread start/fork/resume, turn completion,
 timeouts, interruption, and process failure. TypeScript declarations and JSON Schemas
-are generated from the exact Codex version recorded in `protocol-version.json`.
+are generated from the exact development baseline recorded in
+`protocol-version.json`. The runtime may differ; handshake and used messages are
+validated before their data is trusted.
 
 Repository commands are independent child processes wrapped by the Codex sandbox.
 They are allowlisted, non-interactive, network-disabled, and run with a sanitized

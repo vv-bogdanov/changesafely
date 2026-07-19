@@ -49,13 +49,14 @@ override the user's default model.
 | Component | Supported baseline |
 | --- | --- |
 | Node.js | Active LTS 22 and 24 |
-| Codex CLI | Exact version in `protocol-version.json`, currently `0.144.6` |
+| Codex CLI | Standard authenticated executable on `PATH`; generated baseline currently `0.144.6` |
 | Git | Named branch, valid HEAD, clean tracked and staged state |
 | Target | Prepared npm-based TypeScript repository |
 | Host | Linux release path; other hosts are not yet qualified |
 
-The App Server protocol is generated from the pinned Codex build. Runtime and
-generated versions must match; SafeChange fails preflight on drift.
+The App Server protocol is generated reproducibly from the pinned development
+dependency. Runtime Codex versions are accepted when the App Server handshake and
+the messages SafeChange actually uses pass fail-closed validation.
 
 ## Workflow
 

@@ -136,7 +136,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
             repoPath,
             task,
             plannerCount,
-            requireProtocolMatch: true,
             parallelPlanners: true,
             signal: abortController.signal,
             ...(testModel ? { model: testModel } : {}),

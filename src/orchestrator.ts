@@ -17,7 +17,6 @@ import {
 } from "./git.js";
 import { runHarness } from "./harness.js";
 import { runImplementationAndVerification } from "./implementation.js";
-import { assertProtocolVersion } from "./protocol.js";
 import { implementationReport } from "./report.js";
 import type { CommandEvidence } from "./runner.js";
 import {
@@ -221,7 +220,6 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
 }
 
 async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<FullRunResult> {
-  await assertProtocolVersion();
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
   state.model ??= "";
@@ -400,7 +398,6 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
     repoPath,
     task: options.task,
     plannerCount: options.plannerCount,
-    requireProtocolMatch: true,
     parallelPlanners: true,
     ...(options.model ? { model: options.model } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
@@ -425,7 +422,6 @@ export async function resumeRun(
 ): Promise<FullRunResult> {
   const repoPath = resolve(repoPathInput);
   return withRepositoryWriteLock(repoPath, runId, async () => {
-    await assertProtocolVersion();
     const state = await validateResumeBoundary(repoPath, runId);
     const model = state.model || undefined;
     if (state.phase === "planning-complete" && state.status === "PLANNED") {

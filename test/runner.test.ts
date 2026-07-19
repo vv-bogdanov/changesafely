@@ -5,7 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import fc from "fast-check";
-import { runCommand, toCommandEvidence, validateCommandArgv } from "../src/runner.js";
+import {
+  isSafetyTestCommand,
+  runCommand,
+  toCommandEvidence,
+  validateCommandArgv,
+} from "../src/runner.js";
 
 const shellOperators = ["|", "||", "&&", ";", ">", ">>", "<"] as const;
 const shellOperatorSet = new Set<string>(shellOperators);
@@ -16,6 +21,22 @@ test("runner rejects installers and shell operators", () => {
     () => validateCommandArgv(["npm", "test", "&&", "npm", "run", "build"]),
     /Shell operators are forbidden/,
   );
+});
+
+test("runner accepts bounded targeted test and verification scripts", () => {
+  for (const argv of [
+    ["npm", "test", "--", "payment"],
+    ["npm", "run", "test:unit"],
+    ["npm", "run", "test:unit", "--", "payment"],
+    ["npm", "run", "lint:ci"],
+    ["npm", "run", "check:types", "--", "--pretty", "false"],
+  ]) {
+    assert.doesNotThrow(() => validateCommandArgv(argv));
+  }
+  assert.equal(isSafetyTestCommand(["npm", "run", "test:unit", "--", "payment"]), true);
+  assert.equal(isSafetyTestCommand(["npm", "run", "lint"]), false);
+  assert.throws(() => validateCommandArgv(["npm", "run", "deploy"]), /not approved/);
+  assert.throws(() => validateCommandArgv(["npm", "run", "test:unit", "payment"]), /not approved/);
 });
 
 test("runner fuzz gate rejects shell operators at every argv position", () => {

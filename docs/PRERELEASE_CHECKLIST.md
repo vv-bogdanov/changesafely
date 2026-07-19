@@ -7,15 +7,16 @@ publishing the first public prerelease.
 
 ## Release candidate
 
-- [ ] Freeze the Codex protocol version and regenerate protocol artifacts in a
-  dedicated commit.
+- [ ] Select the generated Codex protocol baseline and regenerate artifacts if it
+  changed.
 - [ ] Run `safechange doctor --json` with the standard Codex executable on `PATH`;
   every check must pass without a test-only shim.
-- [ ] Repeat the golden demo twice from fresh setup on the pinned Codex version.
+- [ ] Repeat the golden demo twice from fresh setup on the generated Codex baseline
+  and once on the current standard Codex when it differs.
   Use Spark only through `SAFECHANGE_LIVE_TEST_MODEL` for timed test runs; also run
   one untimed rehearsal without a model override.
-- [ ] Update `docs/RELEASE_REHEARSAL.md` with sanitized current evidence. The existing
-  `0.144.5` runs do not qualify for the current `0.144.6` protocol pin.
+- [ ] Update `docs/RELEASE_REHEARSAL.md` with sanitized current evidence. Historical
+  runs do not qualify after runtime or workflow code changes.
 - [ ] Run `npm run ci` and `npm run security:signatures` from a clean clone with
   Node.js 22 and 24.
 - [ ] Confirm `npm pack --dry-run` contains no test fixtures, local artifacts,

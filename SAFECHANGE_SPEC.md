@@ -603,7 +603,7 @@ SafeChange TypeScript CLI
 
 Не строить универсальный App Server SDK и не поддерживать одновременно несколько Codex backends.
 
-Codex version должна быть зафиксирована. Protocol types и JSON Schema следует генерировать из той же установленной версии App Server, а не поддерживать вручную.
+Protocol types и JSON Schema следует воспроизводимо генерировать из зафиксированной dev/CI версии App Server, а не поддерживать вручную. Runtime использует стандартный Codex из `PATH` и должен fail closed на фактической несовместимости handshake или используемых сообщений, а не на одном лишь несовпадении строки версии.
 
 ### Context Graph Registry
 

@@ -3,6 +3,14 @@
 All notable changes to SafeChange are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Treat the generated Codex protocol version as a reproducible development baseline
+  and validate runtime compatibility through the App Server contract.
+- Allow bounded targeted npm test scripts and common verification script variants.
+
 ## [0.1.0] - 2026-07-18
 
 ### Added
