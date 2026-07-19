@@ -89,6 +89,7 @@ export function benchmarkComparisonContent(run: RunDocument): string {
       permissionProfile: run.isolation.permissionProfile,
       agentToolNetwork: "disabled",
       scenarioManifestSha256: "d".repeat(64),
+      oracleSha256: "f".repeat(64),
       preparation: [],
       visibleChecks: [{ argv: ["npm", "test"], cwd: "." }],
       evaluatorSha256: "e".repeat(64),
@@ -128,4 +129,11 @@ export function benchmarkLegacyComparisonContent(run: RunDocument): string {
     null,
     2,
   )}\n`;
+}
+
+export function benchmarkVersion2ComparisonContent(run: RunDocument): string {
+  const comparison = JSON.parse(benchmarkComparisonContent(run)) as Record<string, unknown>;
+  comparison.comparisonVersion = 2;
+  delete comparison.oracleSha256;
+  return `${JSON.stringify(comparison, null, 2)}\n`;
 }

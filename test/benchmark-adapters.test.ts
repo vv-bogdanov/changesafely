@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { appendFile, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 import {
   changeSafelyInvocation,
@@ -16,6 +16,7 @@ import {
 } from "../bench/src/comparison.js";
 import { contentSha256 } from "../bench/src/evidence.js";
 import { runProcess } from "../bench/src/process.js";
+import { scenarioDefinition } from "../bench/src/repository.js";
 import { benchmarkWorkerEnvironment, runBenchmarkAttempt } from "../bench/src/run.js";
 
 const taskText = "Make payment retries idempotent.\nKeep the public API unchanged.\n";
@@ -81,9 +82,30 @@ test("comparison manifest is immutable and content-addressed", async (t) => {
   assert.equal(first.manifest.taskText, taskText);
   assert.equal(first.manifest.measurement, "development");
   assert.equal(first.manifest.scenarioVersion, 1);
-  assert.equal(first.manifest.comparisonVersion, 2);
+  assert.equal(first.manifest.comparisonVersion, 3);
   assert.deepEqual(first.manifest.visibleChecks, [{ argv: ["npm", "test"], cwd: "." }]);
   assert.equal(first.manifest.environment.toolchains[0]?.id, "node");
+});
+
+test("scenario oracle hash covers mutant assets beyond the evaluator", async (t) => {
+  const root = await temporaryWorkspace(t, "changesafely-oracle-hash-");
+  const benchRoot = join(root, "bench");
+  await cp(join(process.cwd(), "bench"), benchRoot, {
+    recursive: true,
+    filter: (source) => !["golden", "results"].includes(basename(source)),
+  });
+  const before = scenarioDefinition(benchRoot, "double-charge");
+  const evaluatorSha256 = contentSha256(await readFile(before.evaluator));
+
+  await appendFile(
+    join(benchRoot, "oracles", "double-charge", "mutants", "constant-provider-key.patch"),
+    "\n",
+  );
+  const after = scenarioDefinition(benchRoot, "double-charge");
+
+  assert.equal(after.manifestSha256, before.manifestSha256);
+  assert.equal(contentSha256(await readFile(after.evaluator)), evaluatorSha256);
+  assert.notEqual(after.oracleSha256, before.oracleSha256);
 });
 
 test("benchmark environment identifies the exact ChangeSafely commit", async () => {
@@ -184,11 +206,13 @@ test("controller runs a fair fake Direct and ChangeSafely pair end to end", asyn
   const comparison = JSON.parse(await readFile(join(direct.path, "comparison.json"), "utf8")) as {
     comparisonVersion: number;
     scenarioManifestSha256: string;
+    oracleSha256: string;
     preparation: Array<{ argv: string[]; cwd: string; network: string }>;
     visibleChecks: Array<{ argv: string[]; cwd: string }>;
   };
-  assert.equal(comparison.comparisonVersion, 2);
+  assert.equal(comparison.comparisonVersion, 3);
   assert.match(comparison.scenarioManifestSha256, /^[a-f0-9]{64}$/u);
+  assert.match(comparison.oracleSha256, /^[a-f0-9]{64}$/u);
   assert.deepEqual(comparison.visibleChecks, [{ argv: ["npm", "test"], cwd: "." }]);
   assert.equal(comparison.preparation[0]?.network, "disabled");
   assert.equal(direct.run.scenarioVersion, 3);
@@ -235,6 +259,7 @@ function comparisonInput(): ComparisonInput {
     permissionProfile: "changesafely-benchmark",
     agentToolNetwork: "disabled",
     scenarioManifestSha256: "d".repeat(64),
+    oracleSha256: "f".repeat(64),
     preparation: [],
     visibleChecks: [{ argv: ["npm", "test"], cwd: "." }],
     evaluatorSha256: "e".repeat(64),

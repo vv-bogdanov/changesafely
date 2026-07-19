@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { cp, lstat, mkdir } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import Type from "typebox";
 import { Compile } from "typebox/compile";
@@ -36,6 +36,7 @@ export interface ScenarioDefinition {
   validator: string;
   manifestPath: string;
   manifestSha256: string;
+  oracleSha256: string;
   visibleChecks: BenchmarkCommand[];
   preparation: BenchmarkPreparation[];
   testPathPrefixes: string[];
@@ -332,12 +333,54 @@ function loadScenarioDefinition(benchRoot: string, scenario: string): ScenarioDe
     validator: required.validator,
     manifestPath,
     manifestSha256: contentSha256(manifestContent),
+    oracleSha256: scenarioOracleSha256(benchRoot, scenario),
     visibleChecks,
     preparation,
     testPathPrefixes,
     testFilePatterns: uniqueSorted([...manifest.testPaths.patterns]),
     toolchains,
   };
+}
+
+function scenarioOracleSha256(benchRoot: string, scenario: string): string {
+  const oracleRoot = resolve(benchRoot, "oracles", scenario);
+  const entries = oracleFiles(oracleRoot).map(({ path, sha256 }) => ({
+    path: `scenario/${path}`,
+    sha256,
+  }));
+  const sharedEvaluator = resolve(benchRoot, "oracles", "evaluator-support.mjs");
+  if (existsSync(sharedEvaluator)) {
+    const metadata = lstatSync(sharedEvaluator);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) {
+      throw new Error(`Benchmark shared evaluator must be a regular file: ${sharedEvaluator}`);
+    }
+    entries.push({
+      path: "shared/evaluator-support.mjs",
+      sha256: contentSha256(readFileSync(sharedEvaluator)),
+    });
+  }
+  return contentSha256(JSON.stringify(entries));
+}
+
+function oracleFiles(root: string, current = root): Array<{ path: string; sha256: string }> {
+  const metadata = lstatSync(current);
+  if (metadata.isSymbolicLink()) {
+    throw new Error(`Benchmark oracle assets must not use symlinks: ${current}`);
+  }
+  if (metadata.isFile()) {
+    return [
+      {
+        path: relative(root, current).split(sep).join("/"),
+        sha256: contentSha256(readFileSync(current)),
+      },
+    ];
+  }
+  if (!metadata.isDirectory()) {
+    throw new Error(`Benchmark oracle asset must be a regular file or directory: ${current}`);
+  }
+  return readdirSync(current)
+    .sort()
+    .flatMap((entry) => oracleFiles(root, join(current, entry)));
 }
 
 function normalizeBenchmarkCommand(

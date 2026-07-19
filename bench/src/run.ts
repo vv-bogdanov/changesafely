@@ -98,6 +98,7 @@ export async function runBenchmarkAttempt(
       permissionProfile: PERMISSION_PROFILE,
       agentToolNetwork: "disabled",
       scenarioManifestSha256: scenario.manifestSha256,
+      oracleSha256: scenario.oracleSha256,
       preparation: scenario.preparation,
       visibleChecks: scenario.visibleChecks,
       evaluatorSha256,

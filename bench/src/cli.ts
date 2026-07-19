@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
 import { createOrVerifyAnalysisPackage, evaluateMutationEvidence } from "./analysis.js";
 import { resolveCodexCommand } from "./comparison.js";
-import type { BenchmarkMode } from "./contracts.js";
-import { loadEvidencePackage } from "./evidence.js";
+import { type BenchmarkMode, COMPARISON_VERSION, validateComparisonManifest } from "./contracts.js";
+import { listEvidencePackages, loadEvidencePackage, readVerifiedEvidenceFile } from "./evidence.js";
 import { prepareCodexHome, proveIsolation } from "./isolation.js";
 import { buildBenchmarkReport, replayBenchmarkRun, writeBenchmarkReport } from "./report.js";
 import {
@@ -242,18 +242,25 @@ async function requireEvaluatedSparkPair(
   scenarioVersion: number,
 ): Promise<void> {
   try {
-    const report = await buildBenchmarkReport(resultsRoot);
-    if (
-      report.comparisons.some(
-        (comparison) =>
-          comparison.scenario === scenario &&
-          (comparison.scenarioVersion ?? 1) === scenarioVersion &&
-          comparison.model === SPARK_MODEL &&
-          comparison.measurement === "development" &&
-          comparison.paired,
-      )
-    ) {
-      return;
+    const candidates = (await listEvidencePackages(resultsRoot)).filter(
+      ({ run }) =>
+        run.scenario === scenario &&
+        (run.scenarioVersion ?? 1) === scenarioVersion &&
+        run.model === SPARK_MODEL &&
+        (run.measurement ?? "development") === "development",
+    );
+    for (const direct of candidates.filter(({ run }) => run.mode === "direct")) {
+      if (
+        !candidates.some(
+          ({ run }) => run.mode === "changesafely" && run.comparisonId === direct.run.comparisonId,
+        )
+      ) {
+        continue;
+      }
+      const comparison = validateComparisonManifest(
+        JSON.parse((await readVerifiedEvidenceFile(direct, "comparison.json")).toString("utf8")),
+      );
+      if (comparison.comparisonVersion === COMPARISON_VERSION) return;
     }
   } catch {
     // Report loading is fail-closed below so the user gets one stable gate message.

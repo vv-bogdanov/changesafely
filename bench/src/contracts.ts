@@ -2,7 +2,7 @@ import Type from "typebox";
 import { Compile } from "typebox/compile";
 
 export const EVIDENCE_VERSION = 1;
-export const COMPARISON_VERSION = 2;
+export const COMPARISON_VERSION = 3;
 export const ANALYSIS_VERSION = 1;
 
 export type BenchmarkMode = "changesafely" | "direct";
@@ -96,6 +96,7 @@ export interface ComparisonManifest {
   permissionProfile: string;
   agentToolNetwork: "disabled";
   scenarioManifestSha256: string;
+  oracleSha256: string;
   preparation: Array<BenchmarkCommandEvidence & { network: "disabled" }>;
   visibleChecks: BenchmarkCommandEvidence[];
   evaluatorSha256: string;
@@ -104,7 +105,31 @@ export interface ComparisonManifest {
   environment: BenchmarkEnvironment & { toolchains: BenchmarkToolchainEvidence[] };
 }
 
-interface LegacyComparisonManifest {
+interface Version2ComparisonManifest {
+  comparisonVersion: 2;
+  comparisonId: string;
+  createdAt: string;
+  measurement?: BenchmarkMeasurement;
+  scenario: string;
+  scenarioVersion: number;
+  taskText: string;
+  taskSha256: string;
+  baselineCommit: string;
+  model: string;
+  effort: string;
+  timeoutMs: number;
+  permissionProfile: string;
+  agentToolNetwork: "disabled";
+  scenarioManifestSha256: string;
+  preparation: Array<BenchmarkCommandEvidence & { network: "disabled" }>;
+  visibleChecks: BenchmarkCommandEvidence[];
+  evaluatorSha256: string;
+  executionOrder: ["direct", "changesafely"];
+  maxAttemptsPerMode: 1;
+  environment: BenchmarkEnvironment & { toolchains: BenchmarkToolchainEvidence[] };
+}
+
+interface Version1ComparisonManifest {
   comparisonVersion: 1;
   comparisonId: string;
   createdAt: string;
@@ -126,7 +151,10 @@ interface LegacyComparisonManifest {
   environment: BenchmarkEnvironment;
 }
 
-export type AnyComparisonManifest = ComparisonManifest | LegacyComparisonManifest;
+export type AnyComparisonManifest =
+  | ComparisonManifest
+  | Version2ComparisonManifest
+  | Version1ComparisonManifest;
 
 export interface EvaluationDocument {
   schemaVersion: 1;
@@ -338,6 +366,7 @@ const currentComparisonManifestSchema = Type.Object(
     comparisonVersion: Type.Literal(COMPARISON_VERSION),
     scenarioVersion: Type.Integer({ minimum: 1 }),
     scenarioManifestSha256: sha256,
+    oracleSha256: sha256,
     preparation: Type.Array(
       Type.Object(
         {
@@ -354,7 +383,29 @@ const currentComparisonManifestSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-const legacyComparisonManifestSchema = Type.Object(
+const version2ComparisonManifestSchema = Type.Object(
+  {
+    ...comparisonCommonProperties,
+    comparisonVersion: Type.Literal(2),
+    scenarioVersion: Type.Integer({ minimum: 1 }),
+    scenarioManifestSha256: sha256,
+    preparation: Type.Array(
+      Type.Object(
+        {
+          argv: benchmarkCommandSchema.properties.argv,
+          cwd: benchmarkCommandSchema.properties.cwd,
+          network: Type.Literal("disabled"),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 16 },
+    ),
+    visibleChecks: Type.Array(benchmarkCommandSchema, { minItems: 1, maxItems: 16 }),
+    environment: currentEnvironmentSchema,
+  },
+  { additionalProperties: false },
+);
+const version1ComparisonManifestSchema = Type.Object(
   {
     ...comparisonCommonProperties,
     comparisonVersion: Type.Literal(1),
@@ -366,7 +417,8 @@ const legacyComparisonManifestSchema = Type.Object(
 );
 const comparisonManifestSchema = Type.Union([
   currentComparisonManifestSchema,
-  legacyComparisonManifestSchema,
+  version2ComparisonManifestSchema,
+  version1ComparisonManifestSchema,
 ]);
 
 const evidenceManifestSchema = Type.Object(

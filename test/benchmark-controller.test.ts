@@ -24,6 +24,7 @@ import {
   benchmarkComparisonContent,
   benchmarkLegacyComparisonContent,
   benchmarkRunDocument,
+  benchmarkVersion2ComparisonContent,
 } from "./support/benchmark.js";
 
 const projectRoot = process.cwd();
@@ -373,6 +374,21 @@ test("benchmark CLI requires an explicit final flag and an evaluated Spark pair"
       return true;
     },
   );
+
+  for (const mode of ["direct", "changesafely"] as const) {
+    const run = benchmarkRunDocument(`v2-${mode}`, {
+      mode,
+      model: "gpt-5.3-codex-spark",
+      scenarioVersion: 3,
+    });
+    const comparison = benchmarkVersion2ComparisonContent(run);
+    run.comparisonSha256 = contentSha256(comparison);
+    await createEvidencePackage(resultsRoot, run, {
+      "comparison.json": comparison,
+      "diff.patch": "",
+      "events.jsonl": '{"type":"synthetic"}\n',
+    });
+  }
 
   await assert.rejects(
     execFileAsync(
