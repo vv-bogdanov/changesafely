@@ -178,6 +178,7 @@ async function runProjectCommands(
   sandboxed: boolean,
   protectedConfiguration: Record<string, string>,
   trace: TraceWriter,
+  permissionProfile?: string,
   signal?: AbortSignal,
 ): Promise<CommandResult[]> {
   const results: CommandResult[] = [];
@@ -185,6 +186,7 @@ async function runProjectCommands(
     results.push(
       await runCommand(argv, repoPath, {
         sandboxed,
+        ...(permissionProfile ? { permissionProfile } : {}),
         trace,
         phase: "deterministic-verification",
         ...(signal ? { signal } : {}),
@@ -376,6 +378,7 @@ export async function runImplementationAndVerification(
       options.sandboxCommands ?? false,
       state.baselineProtectedConfiguration ?? {},
       store.trace,
+      options.permissionProfile,
       options.signal,
     );
     let commandsStored = await store.writeArtifact(
@@ -544,6 +547,7 @@ export async function runImplementationAndVerification(
         options.sandboxCommands ?? false,
         state.baselineProtectedConfiguration ?? {},
         store.trace,
+        options.permissionProfile,
         options.signal,
       );
       commandsStored = await store.writeArtifact(

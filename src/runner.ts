@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
 import spawn from "cross-spawn";
 import { repositoryCommandEnvironment } from "./environment.js";
@@ -38,6 +38,7 @@ export interface RunCommandOptions {
   maxOutputBytes?: number;
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
+  permissionProfile?: string;
   signal?: AbortSignal;
   trace?: TraceWriter;
   phase?: string;
@@ -159,12 +160,28 @@ export async function runCommand(
   let timedOut = false;
   const sandboxed = options.sandboxed ?? false;
   const program = sandboxed ? "codex" : directProgram;
+  const permissionProfile = options.permissionProfile ?? ":workspace";
   const args = sandboxed
-    ? ["sandbox", "-P", ":workspace", "--sandbox-state-disable-network", "-C", cwd, "--", ...argv]
+    ? [
+        "sandbox",
+        "-P",
+        permissionProfile,
+        ...(options.permissionProfile ? [] : ["--sandbox-state-disable-network"]),
+        "-C",
+        cwd,
+        "--",
+        ...argv,
+      ]
     : argv.slice(1);
+  const sourceEnvironment = options.env ?? process.env;
+  const namedCodexHome = options.permissionProfile
+    ? (sourceEnvironment.CODEX_HOME ?? join(sourceEnvironment.HOME ?? homedir(), ".codex"))
+    : undefined;
 
   const commandId = randomUUID();
-  const commandHome = await mkdtemp(join(tmpdir(), "changesafely-command-"));
+  const commandHome = await mkdtemp(join(homedir(), ".changesafely-command-"));
+  const commandEnvironment = repositoryCommandEnvironment(commandHome, options.env);
+  if (namedCodexHome && options.permissionProfile) commandEnvironment.CODEX_HOME = namedCodexHome;
   const stdout = new OutputCapture(maxOutputBytes);
   const stderr = new OutputCapture(maxOutputBytes);
 
@@ -183,7 +200,7 @@ export async function runCommand(
   try {
     const child = spawn(program, args, {
       cwd,
-      env: repositoryCommandEnvironment(commandHome, options.env),
+      env: commandEnvironment,
       shell: false,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],

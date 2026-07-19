@@ -251,6 +251,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     }
     const command = await runCommand(harness.targetedCommand.argv, repoPath, {
       sandboxed: options.sandboxCommands ?? false,
+      ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
       trace: store.trace,
       phase: "test-author",
       ...(options.signal ? { signal: options.signal } : {}),

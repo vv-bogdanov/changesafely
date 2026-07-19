@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import fc from "fast-check";
@@ -81,6 +81,53 @@ test("env", () => {
   assert.equal(result.exitCode, 0);
   assert.equal(result.timedOut, false);
   assert.equal(result.sandboxed, false);
+});
+
+test("runner applies a named permission profile to deterministic commands", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-named-command-profile-"));
+  t.after(async () => rm(cwd, { recursive: true, force: true }));
+  const codexHome = join(cwd, "codex-home");
+  const fakeBin = join(cwd, "bin");
+  await mkdir(fakeBin);
+  const fakeCodex = join(fakeBin, "codex");
+  const fakeRunner = join(fakeBin, "codex.mjs");
+  await writeFile(
+    fakeRunner,
+    `import { spawn } from "node:child_process";
+const args = process.argv.slice(2);
+if (args[0] !== "sandbox" || args[args.indexOf("-P") + 1] !== "changesafely-test") process.exit(91);
+if (args.includes("--sandbox-state-disable-network")) process.exit(92);
+if (process.env.CODEX_HOME !== ${JSON.stringify(codexHome)}) process.exit(93);
+const separator = args.indexOf("--");
+const child = spawn(args[separator + 1], args.slice(separator + 2), {
+  stdio: "inherit",
+  env: { ...process.env, CODEX_HOME: undefined },
+});
+child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : process.exit(code ?? 1));
+`,
+  );
+  await writeFile(
+    fakeCodex,
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeRunner)} "$@"\n`,
+  );
+  await chmod(fakeCodex, 0o755);
+  const testFile = join(cwd, "profile.test.js");
+  await writeFile(
+    testFile,
+    'import assert from "node:assert/strict"; import test from "node:test"; test("env", () => assert.equal(process.env.CODEX_HOME, undefined));\n',
+  );
+
+  const result = await runCommand(["node", "--test", testFile], cwd, {
+    sandboxed: true,
+    permissionProfile: "changesafely-test",
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}`,
+    },
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(result.sandboxed, true);
 });
 
 test("runner keeps only a bounded output tail and emits private evidence", async (t) => {
