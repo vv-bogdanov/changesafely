@@ -2,6 +2,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { isTestPath } from "../../src/repository-policy.js";
+import {
+  analyzeTrace,
+  normalizeTokenMetrics,
+  type RunAnalytics,
+  type TokenMetrics,
+} from "../../src/run-analytics.js";
+import { parseTraceJsonl } from "../../src/trace.js";
 import { loadAnalysisPackageIfPresent, type VerifiedAnalysis } from "./analysis.js";
 import type {
   AnalysisDocument,
@@ -19,7 +26,7 @@ import {
 } from "./evidence.js";
 import { repositoryCommand } from "./repository.js";
 
-const REPORT_VERSION = 2;
+const REPORT_VERSION = 3;
 const LIMITATIONS = [
   "This is a custom pilot suite, not universal or statistically significant proof.",
   "Each registered comparison permits one attempt per mode.",
@@ -48,7 +55,8 @@ export interface RunCaseCard {
   scopeDiscipline: boolean | null;
   wallTimeMs: number;
   turns: number | null;
-  tokens: VerifiedEvidence["run"]["usage"];
+  tokens: TokenMetrics;
+  analytics: RunAnalytics | null;
   diff: DiffSummary;
   candidateTests: AnalysisDocument["candidateTests"];
   mutation: AnalysisDocument["mutation"];
@@ -157,6 +165,7 @@ async function buildRunCaseCard(
   analysis: VerifiedAnalysis,
 ): Promise<RunCaseCard> {
   const evaluation = await readEvaluation(evidence);
+  const analytics = await readRunAnalytics(evidence);
   return {
     runId: evidence.run.runId,
     mode: evidence.run.mode,
@@ -167,8 +176,18 @@ async function buildRunCaseCard(
     unsafeGreen: evidence.run.outcome === "unsafe_green",
     scopeDiscipline: evaluation?.summary.scope ?? null,
     wallTimeMs: evidence.run.worker.durationMs,
-    turns: evidence.run.usage.turns,
-    tokens: evidence.run.usage,
+    turns: analytics?.turns ?? evidence.run.usage.turns,
+    tokens:
+      analytics?.tokens ??
+      normalizeTokenMetrics({
+        totalTokens: evidence.run.usage.totalTokens ?? null,
+        inputTokens: evidence.run.usage.inputTokens,
+        cachedInputTokens: evidence.run.usage.cachedInputTokens,
+        nonCachedInputTokens: evidence.run.usage.nonCachedInputTokens ?? null,
+        outputTokens: evidence.run.usage.outputTokens,
+        reasoningTokens: evidence.run.usage.reasoningTokens,
+      }),
+    analytics,
     diff: await diffSummary(evidence),
     candidateTests: analysis.document.candidateTests,
     mutation: analysis.document.mutation,
@@ -192,12 +211,12 @@ function renderMarkdownReport(report: BenchmarkReport): string {
       `- Effort: \`${escapeMarkdown(comparison.effort)}\``,
       `- Paired: ${comparison.paired ? "yes" : "no"}`,
       "",
-      "| Mode | Outcome | Safe task | Scope | Mutation | Time | Turns | Diff |",
-      "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+      "| Mode | Outcome | Safe task | Scope | Mutation | Time | Turns | Tokens (cached) | Diff |",
+      "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     );
     for (const run of comparison.runs) {
       lines.push(
-        `| ${run.mode} | ${run.outcome} | ${yesNo(run.safeTaskSuccess)} | ${yesNo(run.scopeDiscipline)} | ${mutationLabel(run)} | ${run.wallTimeMs} ms | ${run.turns ?? "n/a"} | +${run.diff.additions}/-${run.diff.deletions} |`,
+        `| ${run.mode} | ${run.outcome} | ${yesNo(run.safeTaskSuccess)} | ${yesNo(run.scopeDiscipline)} | ${mutationLabel(run)} | ${run.wallTimeMs} ms | ${run.turns ?? "n/a"} | ${tokenLabel(run.tokens.totalTokens)} (${tokenLabel(run.tokens.cachedInputTokens)}) | +${run.diff.additions}/-${run.diff.deletions} |`,
       );
     }
     lines.push("");
@@ -208,14 +227,42 @@ function renderMarkdownReport(report: BenchmarkReport): string {
         `- Candidate tests: ${fileCount(run.candidateTests.paths.length)}, +${run.candidateTests.additions}/-${run.candidateTests.deletions}`,
         `- Production diff: ${fileCount(run.diff.productionFiles)}, +${run.diff.productionAdditions}`,
         `- Protected tests: ${run.protectedTests.detail}`,
+        `- Tokens: ${tokenBreakdown(run.tokens)}`,
+        ...(run.analytics
+          ? [
+              `- Active model time: ${run.analytics.modelTimeMs} ms (parallel turns may overlap)`,
+              `- Deterministic commands: ${run.analytics.commands}; failures: ${run.analytics.commandFailures}; timeouts: ${run.analytics.commandTimeouts}; time: ${run.analytics.commandTimeMs} ms`,
+              `- Tool calls: ${countLabel(run.analytics.toolCalls)}; failures: ${countLabel(run.analytics.toolFailures)}; artifact bytes: ${countLabel(run.analytics.artifactBytes)}`,
+            ]
+          : []),
         `- Evidence manifest: \`${run.evidenceManifestSha256}\``,
         `- Analysis: \`${run.analysisSha256}\``,
         "",
       );
+      if (run.analytics) {
+        lines.push(
+          "| Phase | Role | Status | Time | Input | Cached | Output | Tools | Artifact bytes |",
+          "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+          ...run.analytics.roleTurns.map(
+            (turn) =>
+              `| ${escapeMarkdown(turn.phase)} | ${escapeMarkdown(turn.role)} | ${turn.status} | ${turn.durationMs ?? "n/a"} ms | ${tokenLabel(turn.tokens.inputTokens)} | ${tokenLabel(turn.tokens.cachedInputTokens)} | ${tokenLabel(turn.tokens.outputTokens)} | ${countLabel(turn.toolCalls)} | ${countLabel(turn.artifactBytes)} |`,
+          ),
+          "",
+        );
+      }
     }
   }
   lines.push("## Limitations", "", ...report.limitations.map((value) => `- ${value}`), "");
   return `${lines.join("\n")}\n`;
+}
+
+async function readRunAnalytics(evidence: VerifiedEvidence): Promise<RunAnalytics | null> {
+  if (evidence.run.mode !== "changesafely") return null;
+  if (!evidence.manifest.files.some((file) => file.path === "changesafely/run/trace.jsonl")) {
+    return null;
+  }
+  const content = await readVerifiedEvidenceFile(evidence, "changesafely/run/trace.jsonl");
+  return analyzeTrace(parseTraceJsonl(content.toString("utf8")));
 }
 
 async function readEvaluation(evidence: VerifiedEvidence): Promise<EvaluationDocument | undefined> {
@@ -306,4 +353,18 @@ function escapeMarkdown(value: string): string {
 
 function fileCount(value: number): string {
   return `${value} ${value === 1 ? "file" : "files"}`;
+}
+
+function tokenLabel(value: number | null): string {
+  return value === null ? "n/a" : value.toLocaleString("en-US");
+}
+
+function countLabel(value: number | null): string {
+  return value === null ? "n/a" : String(value);
+}
+
+function tokenBreakdown(tokens: TokenMetrics): string {
+  const cache =
+    tokens.cacheHitRatio === null ? "n/a" : `${(tokens.cacheHitRatio * 100).toFixed(1)}%`;
+  return `${tokenLabel(tokens.totalTokens)} total; ${tokenLabel(tokens.inputTokens)} input; ${tokenLabel(tokens.cachedInputTokens)} cached (${cache}); ${tokenLabel(tokens.nonCachedInputTokens)} non-cached; ${tokenLabel(tokens.outputTokens)} output; ${tokenLabel(tokens.reasoningTokens)} reasoning`;
 }

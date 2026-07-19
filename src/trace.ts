@@ -7,6 +7,7 @@ import Type from "typebox";
 import { Compile } from "typebox/compile";
 import { ChangeSafelyError, errorReasonCode } from "./errors.js";
 import { OutputCapture } from "./output-capture.js";
+import { analyzeTrace, type RunAnalytics } from "./run-analytics.js";
 import type { RunState } from "./schemas.js";
 import { VERSION } from "./version.js";
 
@@ -32,7 +33,10 @@ const traceEventSchema = Type.Object(
     durationMs: Type.Optional(Type.Integer({ minimum: 0 })),
     reasonCode: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
     threadId: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+    parentThreadId: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
     turnId: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+    itemType: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+    toolFailed: Type.Optional(Type.Boolean()),
     commandId: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
     artifactKey: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
     artifactHash: Type.Optional(Type.String({ pattern: SHA256_PATTERN })),
@@ -129,7 +133,10 @@ export interface TraceEvent {
   durationMs?: number;
   reasonCode?: string;
   threadId?: string;
+  parentThreadId?: string;
   turnId?: string;
+  itemType?: string;
+  toolFailed?: boolean;
   commandId?: string;
   artifactKey?: string;
   artifactHash?: string;
@@ -204,6 +211,7 @@ export interface TraceDocument {
   runId: string;
   tracePath: string;
   events: TraceEvent[];
+  analytics: RunAnalytics;
 }
 
 function sha256(value: string): string {
@@ -606,7 +614,7 @@ export class TraceWriter {
   }
 }
 
-function parseTraceContent(content: string, runId: string): TraceEvent[] {
+export function parseTraceJsonl(content: string): TraceEvent[] {
   if (!content.trim()) return [];
   const events = content
     .trimEnd()
@@ -622,8 +630,9 @@ function parseTraceContent(content: string, runId: string): TraceEvent[] {
         });
       }
     });
+  const runId = events[0]?.runId;
   for (const [index, event] of events.entries()) {
-    if (event.runId !== runId || event.seq !== index + 1) {
+    if (!runId || event.runId !== runId || event.seq !== index + 1) {
       throw new ChangeSafelyError("INVALID_TRACE", "Trace sequence or run identity is invalid", {
         exitCode: 2,
         nextAction: "Inspect the local trace file and start a new run if it is damaged.",
@@ -633,10 +642,21 @@ function parseTraceContent(content: string, runId: string): TraceEvent[] {
   return events;
 }
 
+function parseTraceContent(content: string, runId: string): TraceEvent[] {
+  const events = parseTraceJsonl(content);
+  if (events.some((event) => event.runId !== runId)) {
+    throw new ChangeSafelyError("INVALID_TRACE", "Trace run identity is invalid", {
+      exitCode: 2,
+      nextAction: "Inspect the local trace file and start a new run if it is damaged.",
+    });
+  }
+  return events;
+}
+
 export async function loadTrace(repoPath: string, runId: string): Promise<TraceDocument> {
   const tracePath = resolve(repoPath, ".changesafely", "runs", runId, "trace.jsonl");
   const events = parseTraceContent(await readFile(tracePath, "utf8"), runId);
-  return { traceVersion: TRACE_VERSION, runId, tracePath, events };
+  return { traceVersion: TRACE_VERSION, runId, tracePath, events, analytics: analyzeTrace(events) };
 }
 
 export function formatTrace(document: TraceDocument): string {
@@ -652,13 +672,29 @@ export function formatTrace(document: TraceDocument): string {
       event.commit ? `commit=${event.commit}` : "",
       event.branch ? `branch=${event.branch}` : "",
       event.threadId ? `thread=${event.threadId}` : "",
+      event.parentThreadId ? `parentThread=${event.parentThreadId}` : "",
       event.turnId ? `turn=${event.turnId}` : "",
+      event.itemType ? `item=${event.itemType}` : "",
       event.argv ? `argv=${JSON.stringify(event.argv)}` : "",
       event.artifactHash ? `hash=${event.artifactHash}` : "",
     ].filter(Boolean);
     return `${event.timestamp} #${String(event.seq).padStart(4, "0")} ${event.component}.${event.event} ${event.status}${context.length > 0 ? ` ${context.join(" ")}` : ""}`;
   });
-  return [`Run: ${document.runId}`, `Trace: ${document.tracePath}`, ...lines, ""].join("\n");
+  const tokens = document.analytics.tokens;
+  const summary = [
+    `Elapsed: ${document.analytics.traceWallTimeMs ?? "n/a"} ms`,
+    `Model time: ${document.analytics.modelTimeMs} ms`,
+    `Commands: ${document.analytics.commands} (${document.analytics.commandFailures} failed)`,
+    `Tokens: ${tokens.totalTokens ?? "n/a"} total, ${tokens.inputTokens ?? "n/a"} input, ${tokens.cachedInputTokens ?? "n/a"} cached, ${tokens.outputTokens ?? "n/a"} output`,
+  ];
+  return [
+    `Run: ${document.runId}`,
+    `Trace: ${document.tracePath}`,
+    ...summary,
+    "",
+    ...lines,
+    "",
+  ].join("\n");
 }
 
 export function promptEvidence(

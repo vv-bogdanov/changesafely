@@ -234,6 +234,36 @@ function validTokenBreakdown(value: unknown): boolean {
   );
 }
 
+const tracedToolItemTypes = new Set([
+  "commandExecution",
+  "fileChange",
+  "mcpToolCall",
+  "dynamicToolCall",
+  "collabAgentToolCall",
+  "webSearch",
+  "imageView",
+  "sleep",
+  "imageGeneration",
+]);
+
+function toolItemTrace(
+  item: unknown,
+): Pick<TraceEventInput, "itemType" | "toolFailed" | "durationMs"> | undefined {
+  if (!isRecord(item) || typeof item.type !== "string" || !tracedToolItemTypes.has(item.type)) {
+    return undefined;
+  }
+  const failed =
+    item.status === "failed" ||
+    item.status === "declined" ||
+    item.success === false ||
+    (typeof item.exitCode === "number" && item.exitCode !== 0);
+  return {
+    itemType: item.type,
+    toolFailed: failed,
+    ...(validNonnegativeInteger(item.durationMs) ? { durationMs: item.durationMs } : {}),
+  };
+}
+
 function validNonnegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
@@ -362,10 +392,20 @@ export class AppServerClient {
     );
   }
 
-  forkThread(params: ThreadForkParams): Promise<ThreadForkResponse> {
-    return this.request("thread/fork", params).then((value) =>
-      validateThreadResponse<ThreadForkResponse>(value, "thread/fork"),
+  async forkThread(params: ThreadForkParams): Promise<ThreadForkResponse> {
+    const response = validateThreadResponse<ThreadForkResponse>(
+      await this.request("thread/fork", params),
+      "thread/fork",
     );
+    await this.trace?.append({
+      component: "app-server",
+      event: "thread.forked",
+      status: "completed",
+      threadId: response.thread.id,
+      parentThreadId: params.threadId,
+      ...(params.lastTurnId ? { turnId: params.lastTurnId } : {}),
+    });
+    return response;
   }
 
   resumeThread(params: ThreadResumeParams): Promise<ThreadResumeResponse> {
@@ -655,6 +695,17 @@ export class AppServerClient {
       }
       if (params.item.type === "agentMessage") {
         this.agentMessages.set(params.turnId, params.item.text);
+      }
+      const itemTrace = toolItemTrace(params.item);
+      if (itemTrace) {
+        void this.trace?.append({
+          component: "app-server",
+          event: "item.completed",
+          status: itemTrace.toolFailed ? "failed" : "completed",
+          threadId: params.threadId,
+          turnId: params.turnId,
+          ...itemTrace,
+        });
       }
       return;
     }

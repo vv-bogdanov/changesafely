@@ -74,6 +74,8 @@ test("uses one configured permission profile without a legacy sandbox override",
       const result = await client.runTurn(thread.thread.id, "Return the smoke artifact.", {
         cwd: process.cwd(),
         sandboxPolicy: { type: "readOnly", networkAccess: false },
+        model: "gpt-5.6-sol",
+        effort: "medium",
         outputSchema: smokeArtifactSchema,
       });
       assert.equal(result.status, "completed");
@@ -133,6 +135,30 @@ test("persists allowlisted cumulative token usage without raw RPC data", async (
     assert.equal(usage?.outputTokens, 30);
     assert.equal(usage?.reasoningTokens, 10);
     assert.doesNotMatch(await readFile(document.tracePath, "utf8"), /modelContextWindow/u);
+  });
+});
+
+test("persists fork lineage and privacy-safe tool metrics", async (t) => {
+  await withTracedFakeClient(t, "tool-notification", async (client, trace) => {
+    const root = await startReadOnlyThread(client);
+    const child = await client.forkThread({ threadId: root.thread.id });
+    await client.runTurn(child.thread.id, "Return the smoke artifact.", {
+      cwd: process.cwd(),
+      sandboxPolicy: { type: "readOnly", networkAccess: false },
+      outputSchema: smokeArtifactSchema,
+      role: "verifier",
+      phase: "verification",
+    });
+    const document = await loadTrace(trace.repoPath, trace.runId);
+    const fork = document.events.find((event) => event.event === "thread.forked");
+    assert.equal(fork?.parentThreadId, root.thread.id);
+    assert.equal(fork?.threadId, child.thread.id);
+    const tool = document.events.find((event) => event.event === "item.completed");
+    assert.equal(tool?.itemType, "commandExecution");
+    assert.equal(tool?.toolFailed, false);
+    assert.equal(tool?.durationMs, 12);
+    const content = await readFile(document.tracePath, "utf8");
+    assert.doesNotMatch(content, /private-command-marker|private-output-marker|private\/path/u);
   });
 });
 

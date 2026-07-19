@@ -149,3 +149,13 @@ This document preserves decisions already made and why they were chosen. When ne
 **Decision:** start with one controlled TypeScript payment/retry demo, then improve robustness, and expand only afterward.
 
 **Why:** the hackathon goal is a finished, runnable product; broad unfinished support is worse than one convincing scenario.
+
+## AD-25. One explicit model per run
+
+**Decision:** all roles in a run use the same selected model. The public CLI defaults
+to `gpt-5.6-sol`, records the exact model in run provenance, and permits an explicit
+whole-run override. Per-role model routing is deferred until benchmark evidence shows
+a material benefit.
+
+**Why:** a uniform model keeps comparisons explainable and removes routing policy from
+the MVP while preserving a simple override for development runs.

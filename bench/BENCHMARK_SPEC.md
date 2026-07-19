@@ -66,8 +66,11 @@ For small changes with a large blast radius, ChangeSafely should produce **safe 
 The evaluation must also account for the cost of assurance:
 
 - wall-clock time;
+- active model time and deterministic command time;
 - number of model turns;
-- input, output, and cached tokens, when available;
+- total, input, cached input, non-cached input, output, and reasoning tokens, when available;
+- correction turns, command/tool calls, failures, and timeouts;
+- generated artifact volume;
 - provider-reported cost, when available;
 - diff size.
 
@@ -495,7 +498,9 @@ Evidence must not contain chain-of-thought, unrestricted JSON-RPC payloads, secr
 files, or unbounded stdout/stderr. Direct evidence retains documented JSONL event fields and
 the final answer. ChangeSafely evidence retains its structured trace and schema-validated
 artifacts. Command evidence is bounded and redacted by the controller. Missing token or cost
-data is stored as `null`.
+data is stored as `null`. Forked ChangeSafely threads are measured from their inherited
+checkpoint rather than by summing cumulative thread totals. Reasoning tokens are reported
+as an output-token subset and are not added to the total a second time.
 
 For ChangeSafely, also retain:
 

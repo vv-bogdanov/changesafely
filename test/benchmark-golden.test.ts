@@ -21,9 +21,21 @@ test("published Spark evidence replays and matches its stable report", async () 
   }
 
   const report = await buildBenchmarkReport(goldenRoot);
-  assert.equal(report.reportVersion, 2);
+  assert.equal(report.reportVersion, 3);
   assert.equal(report.comparisons.length, 2);
   assert.ok(report.comparisons.every((comparison) => comparison.paired));
   assert.ok(report.comparisons.every((comparison) => comparison.measurement === "development"));
+  const tenantLeak = report.comparisons.find((comparison) => comparison.scenario === "tenant-leak");
+  const tenantLeakRun = tenantLeak?.runs.find((run) => run.mode === "changesafely");
+  assert.equal(tenantLeakRun?.tokens.inputTokens, 515_704);
+  assert.equal(tenantLeakRun?.tokens.cachedInputTokens, 342_912);
+  assert.equal(tenantLeakRun?.tokens.outputTokens, 36_757);
+  const restartStorm = report.comparisons.find(
+    (comparison) => comparison.scenario === "restart-storm",
+  );
+  const restartStormRun = restartStorm?.runs.find((run) => run.mode === "changesafely");
+  assert.equal(restartStormRun?.tokens.inputTokens, 486_859);
+  assert.equal(restartStormRun?.tokens.cachedInputTokens, 355_328);
+  assert.equal(restartStormRun?.tokens.outputTokens, 25_112);
   assert.deepEqual(JSON.parse(await readFile(join(goldenRoot, "report.json"), "utf8")), report);
 });

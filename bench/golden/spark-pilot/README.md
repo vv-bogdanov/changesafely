@@ -24,8 +24,12 @@ gitleaks detect --no-git --source bench/golden/spark-pilot --redact
 
 No leaks were found. The generated report hashes were:
 
-- JSON: `445b5a635c41ee96cdeba980e001f691a9b5c915a7a08d3b655c6a9828e665ab`;
-- Markdown: `01ea9e084da0dc0fdf12a2e973e5b188b431ecb6c17208c6c2b531dea482c20d`.
+- JSON: `52479e82279bea8094d8cdc6cbda954a5e9074216769627635623af4fca28396`;
+- Markdown: `33656d38195baee447543532e136521c0acba20d7f8222df06038ce22a9fb881`.
+
+Report version 3 derives per-role token deltas from cumulative thread snapshots, so
+forked `C0` usage is counted once. Legacy traces did not record tool or artifact-size
+events; those fields are shown as unavailable rather than estimated.
 
 ## Replay
 

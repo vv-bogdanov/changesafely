@@ -591,6 +591,9 @@ Manages approved phases, transitions, and statuses. Do not use a separate state-
 
 A thin client for `codex app-server` over local `stdio` JSON-RPC transport.
 
+All roles in one run use the same explicitly recorded model. The public CLI defaults
+to `gpt-5.6-sol`; role-specific model routing is outside the MVP.
+
 Required conceptual operations:
 
 - start thread;
@@ -619,6 +622,12 @@ status
 ```
 
 It exists for traceability, not to store business artifacts.
+
+The trace records fork lineage and cumulative App Server token snapshots. Ordinary
+TypeScript derives per-turn and aggregate input, cached input, non-cached input,
+output, reasoning, timing, command, tool, correction, and artifact metrics. Forked
+thread usage must be computed as a delta from the inherited checkpoint; unavailable
+baselines remain `null` and are never estimated.
 
 ### Artifact Store
 

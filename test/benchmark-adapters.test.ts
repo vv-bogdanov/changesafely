@@ -119,7 +119,11 @@ test("controller runs a fair fake Direct and ChangeSafely pair end to end", asyn
   assert.equal(direct.run.outcome, "unsafe_green");
   assert.equal(changesafely.run.outcome, "unsafe_green");
   assert.equal(direct.run.usage.inputTokens, 100);
+  assert.equal(direct.run.usage.totalTokens, 120);
+  assert.equal(direct.run.usage.nonCachedInputTokens, 60);
   assert.equal(changesafely.run.usage.cachedInputTokens, 50);
+  assert.equal(changesafely.run.usage.totalTokens, 200);
+  assert.equal(changesafely.run.usage.nonCachedInputTokens, 90);
   assert.match(
     await readFile(join(changesafely.path, "changesafely", "run", "trace.jsonl"), "utf8"),
     /token\.usage/u,

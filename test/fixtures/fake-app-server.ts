@@ -28,6 +28,29 @@ interface PendingCompletion {
 let pendingCompletion: PendingCompletion | undefined;
 
 function completeTurn({ threadId, turnId, text }: PendingCompletion): void {
+  if (mode === "tool-notification") {
+    send({
+      method: "item/completed",
+      params: {
+        threadId,
+        turnId,
+        completedAtMs: Date.now(),
+        item: {
+          type: "commandExecution",
+          id: `command-${turnNumber}`,
+          command: "private-command-marker",
+          cwd: "/private/path",
+          processId: null,
+          source: "agent",
+          status: "completed",
+          commandActions: [],
+          aggregatedOutput: "private-output-marker",
+          exitCode: 0,
+          durationMs: 12,
+        },
+      },
+    });
+  }
   send({
     method: "item/completed",
     params: {
@@ -355,6 +378,13 @@ lines.on("line", async (line) => {
   if (message.method === "turn/start") {
     if (mode === "expect-permission-profile" && message.params?.sandboxPolicy !== undefined) {
       send({ id: message.id, error: { code: -32602, message: "legacy sandbox override" } });
+      return;
+    }
+    if (
+      mode === "expect-permission-profile" &&
+      (message.params?.model !== "gpt-5.6-sol" || message.params?.effort !== "medium")
+    ) {
+      send({ id: message.id, error: { code: -32602, message: "default model mismatch" } });
       return;
     }
     if (

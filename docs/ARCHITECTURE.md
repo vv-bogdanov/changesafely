@@ -102,7 +102,11 @@ only when a second supported persisted format exists.
 Each run also has `trace.jsonl`, a versioned append-only sequence written through one
 serialized `TraceWriter`. It correlates phase and state transitions, role turns,
 App Server lifecycle and JSON-RPC method timing, artifact hashes, deterministic
-commands, Git branch/commit boundaries, interruptions, resumes, and failures.
+commands, fork lineage, privacy-safe tool metadata, cumulative token snapshots, Git
+branch/commit boundaries, interruptions, resumes, and failures. Read-only trace
+inspection derives per-turn deltas, cached and non-cached input, output and reasoning
+tokens, elapsed/model/command time, corrections, failures, and artifact volume. Missing
+lineage or counters remain unavailable rather than being estimated.
 `manifest.json` records ChangeSafely, Node, Git, Codex, platform, model, role effort,
 sandbox policy, and prompt/output-schema hashes. The trace stores metadata and hashes,
 not task text, prompts, model messages, JSON-RPC bodies, repository contents, or raw

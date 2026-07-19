@@ -1,3 +1,4 @@
+import { analyzeTrace, normalizeTokenMetrics } from "../../src/run-analytics.js";
 import type { TraceEvent } from "../../src/trace.js";
 import { contentSha256 } from "./evidence.js";
 import type { ProcessInvocation } from "./process.js";
@@ -29,8 +30,10 @@ export interface ChangeSafelyOutcome {
 }
 
 interface TokenUsage {
+  totalTokens: number | null;
   inputTokens: number | null;
   cachedInputTokens: number | null;
+  nonCachedInputTokens: number | null;
   outputTokens: number | null;
   reasoningTokens: number | null;
 }
@@ -131,21 +134,15 @@ export function parseChangeSafelyOutcome(output: string): ChangeSafelyOutcome {
 }
 
 export function changeSafelyUsage(events: readonly TraceEvent[]): UsageEvidence {
-  const latestByThread = new Map<string, TraceEvent>();
-  let turns = 0;
-  for (const event of events) {
-    if (event.event === "turn.executed" && event.status === "completed") turns += 1;
-    if (event.event === "token.usage") {
-      latestByThread.set(event.threadId ?? "unknown", event);
-    }
-  }
-  const latest = [...latestByThread.values()];
+  const analytics = analyzeTrace(events);
   return {
-    turns,
-    inputTokens: sumAvailable(latest, "inputTokens"),
-    cachedInputTokens: sumAvailable(latest, "cachedInputTokens"),
-    outputTokens: sumAvailable(latest, "outputTokens"),
-    reasoningTokens: sumAvailable(latest, "reasoningTokens"),
+    turns: analytics.turns,
+    totalTokens: analytics.tokens.totalTokens,
+    inputTokens: analytics.tokens.inputTokens,
+    cachedInputTokens: analytics.tokens.cachedInputTokens,
+    nonCachedInputTokens: analytics.tokens.nonCachedInputTokens,
+    outputTokens: analytics.tokens.outputTokens,
+    reasoningTokens: analytics.tokens.reasoningTokens,
   };
 }
 
@@ -186,18 +183,30 @@ function sanitizeDirectEvent(type: string, event: Record<string, unknown>): unkn
 
 function directUsage(value: unknown): TokenUsage {
   const usage = recordValue(value);
-  return {
+  const normalized = normalizeTokenMetrics({
+    totalTokens: nullableInteger(usage?.total_tokens),
     inputTokens: nullableInteger(usage?.input_tokens),
     cachedInputTokens: nullableInteger(usage?.cached_input_tokens),
+    nonCachedInputTokens: nullableInteger(usage?.non_cached_input_tokens),
     outputTokens: nullableInteger(usage?.output_tokens),
     reasoningTokens: nullableInteger(usage?.reasoning_output_tokens),
+  });
+  return {
+    totalTokens: normalized.totalTokens,
+    inputTokens: normalized.inputTokens,
+    cachedInputTokens: normalized.cachedInputTokens,
+    nonCachedInputTokens: normalized.nonCachedInputTokens,
+    outputTokens: normalized.outputTokens,
+    reasoningTokens: normalized.reasoningTokens,
   };
 }
 
 function emptyUsage(): TokenUsage {
   return {
+    totalTokens: null,
     inputTokens: null,
     cachedInputTokens: null,
+    nonCachedInputTokens: null,
     outputTokens: null,
     reasoningTokens: null,
   };
@@ -205,14 +214,6 @@ function emptyUsage(): TokenUsage {
 
 function nullableInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-function sumAvailable(
-  events: readonly TraceEvent[],
-  key: "cachedInputTokens" | "inputTokens" | "outputTokens" | "reasoningTokens",
-): number | null {
-  if (events.length === 0 || events.some((event) => event[key] === undefined)) return null;
-  return events.reduce((total, event) => total + (event[key] ?? 0), 0);
 }
 
 function parseRecord(content: string, description: string): Record<string, unknown> {

@@ -1,5 +1,5 @@
 {
-  "reportVersion": 2,
+  "reportVersion": 3,
   "limitations": [
     "This is a custom pilot suite, not universal or statistically significant proof.",
     "Each registered comparison permits one attempt per mode.",
@@ -27,12 +27,15 @@
           "wallTimeMs": 19911,
           "turns": 1,
           "tokens": {
-            "turns": 1,
+            "totalTokens": 75394,
             "inputTokens": 72590,
             "cachedInputTokens": 61696,
+            "nonCachedInputTokens": 10894,
             "outputTokens": 2804,
-            "reasoningTokens": 1403
+            "reasoningTokens": 1403,
+            "cacheHitRatio": 0.8499242319878771
           },
+          "analytics": null,
           "diff": {
             "files": 2,
             "additions": 64,
@@ -74,11 +77,574 @@
           "wallTimeMs": 103138,
           "turns": 12,
           "tokens": {
+            "totalTokens": 552461,
+            "inputTokens": 515704,
+            "cachedInputTokens": 342912,
+            "nonCachedInputTokens": 172792,
+            "outputTokens": 36757,
+            "reasoningTokens": 24758,
+            "cacheHitRatio": 0.6649395777422707
+          },
+          "analytics": {
+            "analyticsVersion": 1,
+            "traceWallTimeMs": 102928,
+            "modelTimeMs": 127128,
+            "commandTimeMs": 687,
+            "commands": 2,
+            "commandFailures": 1,
+            "commandTimeouts": 0,
+            "artifactBytes": null,
+            "toolCalls": null,
+            "toolFailures": null,
             "turns": 12,
-            "inputTokens": 618093,
-            "cachedInputTokens": 358144,
-            "outputTokens": 62433,
-            "reasoningTokens": 44953
+            "correctionTurns": 3,
+            "tokens": {
+              "totalTokens": 552461,
+              "inputTokens": 515704,
+              "cachedInputTokens": 342912,
+              "nonCachedInputTokens": 172792,
+              "outputTokens": 36757,
+              "reasoningTokens": 24758,
+              "cacheHitRatio": 0.6649395777422707
+            },
+            "phases": [
+              {
+                "phase": "preflight",
+                "wallTimeMs": 213,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "discovery",
+                "wallTimeMs": 21062,
+                "modelTimeMs": 20041,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 71430,
+                  "inputTokens": 68414,
+                  "cachedInputTokens": 55040,
+                  "nonCachedInputTokens": 13374,
+                  "outputTokens": 3016,
+                  "reasoningTokens": 1777,
+                  "cacheHitRatio": 0.804513696027129
+                }
+              },
+              {
+                "phase": "contract",
+                "wallTimeMs": 9630,
+                "modelTimeMs": 9571,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 18295,
+                  "inputTokens": 14627,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 12451,
+                  "outputTokens": 3668,
+                  "reasoningTokens": 2885,
+                  "cacheHitRatio": 0.14876598072058522
+                }
+              },
+              {
+                "phase": "planners",
+                "wallTimeMs": 20003,
+                "modelTimeMs": 47220,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 6,
+                "tokens": {
+                  "totalTokens": 131426,
+                  "inputTokens": 114536,
+                  "cachedInputTokens": 57216,
+                  "nonCachedInputTokens": 57320,
+                  "outputTokens": 16890,
+                  "reasoningTokens": 9478,
+                  "cacheHitRatio": 0.49954599427254315
+                }
+              },
+              {
+                "phase": "eligibility",
+                "wallTimeMs": 3,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "judge",
+                "wallTimeMs": 5136,
+                "modelTimeMs": 5042,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 22364,
+                  "inputTokens": 21216,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 19040,
+                  "outputTokens": 1148,
+                  "reasoningTokens": 824,
+                  "cacheHitRatio": 0.10256410256410256
+                }
+              },
+              {
+                "phase": "planning-complete",
+                "wallTimeMs": 0,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "test-author",
+                "wallTimeMs": 13689,
+                "modelTimeMs": 13009,
+                "commandTimeMs": 344,
+                "commands": 1,
+                "commandFailures": 1,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 90677,
+                  "inputTokens": 86640,
+                  "cachedInputTokens": 63744,
+                  "nonCachedInputTokens": 22896,
+                  "outputTokens": 4037,
+                  "reasoningTokens": 2776,
+                  "cacheHitRatio": 0.7357340720221607
+                }
+              },
+              {
+                "phase": "harness-complete",
+                "wallTimeMs": 41,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "implementer",
+                "wallTimeMs": 22907,
+                "modelTimeMs": 22583,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 169142,
+                  "inputTokens": 164805,
+                  "cachedInputTokens": 139904,
+                  "nonCachedInputTokens": 24901,
+                  "outputTokens": 4337,
+                  "reasoningTokens": 3646,
+                  "cacheHitRatio": 0.8489062831831559
+                }
+              },
+              {
+                "phase": "deterministic-verification",
+                "wallTimeMs": 356,
+                "modelTimeMs": 0,
+                "commandTimeMs": 343,
+                "commands": 1,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "verifier",
+                "wallTimeMs": 9747,
+                "modelTimeMs": 9662,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 49127,
+                  "inputTokens": 45466,
+                  "cachedInputTokens": 22656,
+                  "nonCachedInputTokens": 22810,
+                  "outputTokens": 3661,
+                  "reasoningTokens": 3372,
+                  "cacheHitRatio": 0.49830642678045134
+                }
+              },
+              {
+                "phase": "verification-complete",
+                "wallTimeMs": 71,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "verified",
+                "wallTimeMs": 0,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              }
+            ],
+            "roleTurns": [
+              {
+                "role": "discovery",
+                "phase": "discovery",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 20041,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 71430,
+                  "inputTokens": 68414,
+                  "cachedInputTokens": 55040,
+                  "nonCachedInputTokens": 13374,
+                  "outputTokens": 3016,
+                  "reasoningTokens": 1777,
+                  "cacheHitRatio": 0.804513696027129
+                }
+              },
+              {
+                "role": "contract",
+                "phase": "contract",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 9571,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 18295,
+                  "inputTokens": 14627,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 12451,
+                  "outputTokens": 3668,
+                  "reasoningTokens": 2885,
+                  "cacheHitRatio": 0.14876598072058522
+                }
+              },
+              {
+                "role": "planner:plan-1",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 7997,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 20361,
+                  "inputTokens": 17005,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 14829,
+                  "outputTokens": 3356,
+                  "reasoningTokens": 2155,
+                  "cacheHitRatio": 0.1279623640105851
+                }
+              },
+              {
+                "role": "planner:plan-2",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 11331,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 20835,
+                  "inputTokens": 17005,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 14829,
+                  "outputTokens": 3830,
+                  "reasoningTokens": 2431,
+                  "cacheHitRatio": 0.1279623640105851
+                }
+              },
+              {
+                "role": "planner-correction:plan-1",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 3620,
+                "artifactBytes": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 22566,
+                  "inputTokens": 20927,
+                  "cachedInputTokens": 16896,
+                  "nonCachedInputTokens": 4031,
+                  "outputTokens": 1639,
+                  "reasoningTokens": 551,
+                  "cacheHitRatio": 0.8073780283843838
+                }
+              },
+              {
+                "role": "planner:plan-3",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 14528,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 20408,
+                  "inputTokens": 17005,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 14829,
+                  "outputTokens": 3403,
+                  "reasoningTokens": 2096,
+                  "cacheHitRatio": 0.1279623640105851
+                }
+              },
+              {
+                "role": "planner-correction:plan-2",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 4494,
+                "artifactBytes": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 23862,
+                  "inputTokens": 21394,
+                  "cachedInputTokens": 16896,
+                  "nonCachedInputTokens": 4498,
+                  "outputTokens": 2468,
+                  "reasoningTokens": 1256,
+                  "cacheHitRatio": 0.7897541366738338
+                }
+              },
+              {
+                "role": "planner-correction:plan-3",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 5250,
+                "artifactBytes": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 23394,
+                  "inputTokens": 21200,
+                  "cachedInputTokens": 16896,
+                  "nonCachedInputTokens": 4304,
+                  "outputTokens": 2194,
+                  "reasoningTokens": 989,
+                  "cacheHitRatio": 0.7969811320754717
+                }
+              },
+              {
+                "role": "judge",
+                "phase": "judge",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 5042,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 22364,
+                  "inputTokens": 21216,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 19040,
+                  "outputTokens": 1148,
+                  "reasoningTokens": 824,
+                  "cacheHitRatio": 0.10256410256410256
+                }
+              },
+              {
+                "role": "test-author",
+                "phase": "test-author",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 13009,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 90677,
+                  "inputTokens": 86640,
+                  "cachedInputTokens": 63744,
+                  "nonCachedInputTokens": 22896,
+                  "outputTokens": 4037,
+                  "reasoningTokens": 2776,
+                  "cacheHitRatio": 0.7357340720221607
+                }
+              },
+              {
+                "role": "implementer",
+                "phase": "implementer",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 22583,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 169142,
+                  "inputTokens": 164805,
+                  "cachedInputTokens": 139904,
+                  "nonCachedInputTokens": 24901,
+                  "outputTokens": 4337,
+                  "reasoningTokens": 3646,
+                  "cacheHitRatio": 0.8489062831831559
+                }
+              },
+              {
+                "role": "verifier",
+                "phase": "verifier",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 9662,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 49127,
+                  "inputTokens": 45466,
+                  "cachedInputTokens": 22656,
+                  "nonCachedInputTokens": 22810,
+                  "outputTokens": 3661,
+                  "reasoningTokens": 3372,
+                  "cacheHitRatio": 0.49830642678045134
+                }
+              }
+            ]
           },
           "diff": {
             "files": 2,
@@ -133,12 +699,15 @@
           "wallTimeMs": 27728,
           "turns": 1,
           "tokens": {
-            "turns": 1,
+            "totalTokens": 117160,
             "inputTokens": 114492,
             "cachedInputTokens": 103168,
+            "nonCachedInputTokens": 11324,
             "outputTokens": 2668,
-            "reasoningTokens": 1594
+            "reasoningTokens": 1594,
+            "cacheHitRatio": 0.9010935261852356
           },
+          "analytics": null,
           "diff": {
             "files": 2,
             "additions": 9,
@@ -180,11 +749,534 @@
           "wallTimeMs": 84936,
           "turns": 10,
           "tokens": {
+            "totalTokens": 511971,
+            "inputTokens": 486859,
+            "cachedInputTokens": 355328,
+            "nonCachedInputTokens": 131531,
+            "outputTokens": 25112,
+            "reasoningTokens": 17425,
+            "cacheHitRatio": 0.729837591581957
+          },
+          "analytics": {
+            "analyticsVersion": 1,
+            "traceWallTimeMs": 84724,
+            "modelTimeMs": 95589,
+            "commandTimeMs": 926,
+            "commands": 3,
+            "commandFailures": 1,
+            "commandTimeouts": 0,
+            "artifactBytes": null,
+            "toolCalls": null,
+            "toolFailures": null,
             "turns": 10,
-            "inputTokens": 588884,
-            "cachedInputTokens": 370560,
-            "outputTokens": 43200,
-            "reasoningTokens": 31432
+            "correctionTurns": 1,
+            "tokens": {
+              "totalTokens": 511971,
+              "inputTokens": 486859,
+              "cachedInputTokens": 355328,
+              "nonCachedInputTokens": 131531,
+              "outputTokens": 25112,
+              "reasoningTokens": 17425,
+              "cacheHitRatio": 0.729837591581957
+            },
+            "phases": [
+              {
+                "phase": "preflight",
+                "wallTimeMs": 218,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "discovery",
+                "wallTimeMs": 22714,
+                "modelTimeMs": 22184,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 83063,
+                  "inputTokens": 80372,
+                  "cachedInputTokens": 68096,
+                  "nonCachedInputTokens": 12276,
+                  "outputTokens": 2691,
+                  "reasoningTokens": 1584,
+                  "cacheHitRatio": 0.8472602398845369
+                }
+              },
+              {
+                "phase": "contract",
+                "wallTimeMs": 6538,
+                "modelTimeMs": 6478,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 17159,
+                  "inputTokens": 14575,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 12399,
+                  "outputTokens": 2584,
+                  "reasoningTokens": 2001,
+                  "cacheHitRatio": 0.1492967409948542
+                }
+              },
+              {
+                "phase": "planners",
+                "wallTimeMs": 9132,
+                "modelTimeMs": 22787,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 4,
+                "tokens": {
+                  "totalTokens": 80535,
+                  "inputTokens": 69652,
+                  "cachedInputTokens": 37504,
+                  "nonCachedInputTokens": 32148,
+                  "outputTokens": 10883,
+                  "reasoningTokens": 6699,
+                  "cacheHitRatio": 0.53844828576351
+                }
+              },
+              {
+                "phase": "eligibility",
+                "wallTimeMs": 4,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "judge",
+                "wallTimeMs": 4337,
+                "modelTimeMs": 4243,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 21179,
+                  "inputTokens": 20180,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 18004,
+                  "outputTokens": 999,
+                  "reasoningTokens": 672,
+                  "cacheHitRatio": 0.10782953419226958
+                }
+              },
+              {
+                "phase": "planning-complete",
+                "wallTimeMs": 0,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "test-author",
+                "wallTimeMs": 14978,
+                "modelTimeMs": 14249,
+                "commandTimeMs": 352,
+                "commands": 1,
+                "commandFailures": 1,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 120814,
+                  "inputTokens": 118021,
+                  "cachedInputTokens": 98432,
+                  "nonCachedInputTokens": 19589,
+                  "outputTokens": 2793,
+                  "reasoningTokens": 2037,
+                  "cacheHitRatio": 0.8340210640479236
+                }
+              },
+              {
+                "phase": "harness-complete",
+                "wallTimeMs": 38,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "implementer",
+                "wallTimeMs": 20293,
+                "modelTimeMs": 19980,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 167989,
+                  "inputTokens": 164875,
+                  "cachedInputTokens": 144768,
+                  "nonCachedInputTokens": 20107,
+                  "outputTokens": 3114,
+                  "reasoningTokens": 2548,
+                  "cacheHitRatio": 0.8780470053070508
+                }
+              },
+              {
+                "phase": "deterministic-verification",
+                "wallTimeMs": 587,
+                "modelTimeMs": 0,
+                "commandTimeMs": 574,
+                "commands": 2,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "verifier",
+                "wallTimeMs": 5747,
+                "modelTimeMs": 5668,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "turns": 1,
+                "tokens": {
+                  "totalTokens": 21232,
+                  "inputTokens": 19184,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 17008,
+                  "outputTokens": 2048,
+                  "reasoningTokens": 1884,
+                  "cacheHitRatio": 0.1134278565471226
+                }
+              },
+              {
+                "phase": "verification-complete",
+                "wallTimeMs": 70,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              },
+              {
+                "phase": "verified",
+                "wallTimeMs": 0,
+                "modelTimeMs": 0,
+                "commandTimeMs": 0,
+                "commands": 0,
+                "commandFailures": 0,
+                "commandTimeouts": 0,
+                "toolCalls": 0,
+                "toolFailures": 0,
+                "turns": 0,
+                "tokens": {
+                  "totalTokens": null,
+                  "inputTokens": null,
+                  "cachedInputTokens": null,
+                  "nonCachedInputTokens": null,
+                  "outputTokens": null,
+                  "reasoningTokens": null,
+                  "cacheHitRatio": null
+                }
+              }
+            ],
+            "roleTurns": [
+              {
+                "role": "discovery",
+                "phase": "discovery",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 22184,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 83063,
+                  "inputTokens": 80372,
+                  "cachedInputTokens": 68096,
+                  "nonCachedInputTokens": 12276,
+                  "outputTokens": 2691,
+                  "reasoningTokens": 1584,
+                  "cacheHitRatio": 0.8472602398845369
+                }
+              },
+              {
+                "role": "contract",
+                "phase": "contract",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 6478,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 17159,
+                  "inputTokens": 14575,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 12399,
+                  "outputTokens": 2584,
+                  "reasoningTokens": 2001,
+                  "cacheHitRatio": 0.1492967409948542
+                }
+              },
+              {
+                "role": "planner:plan-2",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 4543,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 18476,
+                  "inputTokens": 16519,
+                  "cachedInputTokens": 9472,
+                  "nonCachedInputTokens": 7047,
+                  "outputTokens": 1957,
+                  "reasoningTokens": 823,
+                  "cacheHitRatio": 0.5734003268963013
+                }
+              },
+              {
+                "role": "planner:plan-3",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 6916,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 18964,
+                  "inputTokens": 16519,
+                  "cachedInputTokens": 9472,
+                  "nonCachedInputTokens": 7047,
+                  "outputTokens": 2445,
+                  "reasoningTokens": 1403,
+                  "cacheHitRatio": 0.5734003268963013
+                }
+              },
+              {
+                "role": "planner:plan-1",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 6970,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 20247,
+                  "inputTokens": 16519,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 14343,
+                  "outputTokens": 3728,
+                  "reasoningTokens": 2641,
+                  "cacheHitRatio": 0.13172710212482597
+                }
+              },
+              {
+                "role": "planner-correction:plan-2",
+                "phase": "planners",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 4358,
+                "artifactBytes": 0,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 22848,
+                  "inputTokens": 20095,
+                  "cachedInputTokens": 16384,
+                  "nonCachedInputTokens": 3711,
+                  "outputTokens": 2753,
+                  "reasoningTokens": 1832,
+                  "cacheHitRatio": 0.8153271958198557
+                }
+              },
+              {
+                "role": "judge",
+                "phase": "judge",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 4243,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 21179,
+                  "inputTokens": 20180,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 18004,
+                  "outputTokens": 999,
+                  "reasoningTokens": 672,
+                  "cacheHitRatio": 0.10782953419226958
+                }
+              },
+              {
+                "role": "test-author",
+                "phase": "test-author",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 14249,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 120814,
+                  "inputTokens": 118021,
+                  "cachedInputTokens": 98432,
+                  "nonCachedInputTokens": 19589,
+                  "outputTokens": 2793,
+                  "reasoningTokens": 2037,
+                  "cacheHitRatio": 0.8340210640479236
+                }
+              },
+              {
+                "role": "implementer",
+                "phase": "implementer",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 19980,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 167989,
+                  "inputTokens": 164875,
+                  "cachedInputTokens": 144768,
+                  "nonCachedInputTokens": 20107,
+                  "outputTokens": 3114,
+                  "reasoningTokens": 2548,
+                  "cacheHitRatio": 0.8780470053070508
+                }
+              },
+              {
+                "role": "verifier",
+                "phase": "verifier",
+                "status": "completed",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "durationMs": 5668,
+                "artifactBytes": null,
+                "toolCalls": null,
+                "toolFailures": null,
+                "tokens": {
+                  "totalTokens": 21232,
+                  "inputTokens": 19184,
+                  "cachedInputTokens": 2176,
+                  "nonCachedInputTokens": 17008,
+                  "outputTokens": 2048,
+                  "reasoningTokens": 1884,
+                  "cacheHitRatio": 0.1134278565471226
+                }
+              }
+            ]
           },
           "diff": {
             "files": 2,

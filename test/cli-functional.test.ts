@@ -160,6 +160,7 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     assert.equal(result.exitCode, 0);
     const outcome = parseOutcome(result);
     assert.equal(outcome.status, "VERIFIED");
+    assert.equal(outcome.model, "gpt-5.6-sol");
     const state = await readState(outcome.statePath);
     const trace = await readTrace(outcome.tracePath);
     assert.equal(state.permissionProfile, "benchmark-profile");
@@ -246,9 +247,15 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       await environment(),
     ).result;
     assert.equal(traced.exitCode, 0);
-    const traceDocument = JSON.parse(traced.stdout) as { traceVersion: number; events: unknown[] };
+    const traceDocument = JSON.parse(traced.stdout) as {
+      traceVersion: number;
+      events: unknown[];
+      analytics: { analyticsVersion: number; roleTurns: unknown[] };
+    };
     assert.equal(traceDocument.traceVersion, 1);
     assert.equal(traceDocument.events.length, traceEvents.length);
+    assert.equal(traceDocument.analytics.analyticsVersion, 1);
+    assert.ok(traceDocument.analytics.roleTurns.length > 0);
     assert.equal(await readFile(tracePath, "utf8"), traceBefore);
   });
 

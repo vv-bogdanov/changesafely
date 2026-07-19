@@ -60,6 +60,9 @@ The retained local comparison IDs are:
 The complete Tenant Leak and Restart Storm pairs are published under
 [`golden/spark-pilot`](golden/spark-pilot/README.md). Double Charge is retained only
 locally because it predates the runner fix and is not current-product golden evidence.
+The version 3 report derives per-role deltas from cumulative App Server snapshots and
+reports cached and non-cached input separately; it does not count inherited `C0` usage
+once per fork.
 
 ## Reproduce
 

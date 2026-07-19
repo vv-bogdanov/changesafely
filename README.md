@@ -41,8 +41,8 @@ The package is prepared for tokenless, provenance-backed npm releases. Once
 npx changesafely@0.1.0 --help
 ```
 
-ChangeSafely uses the authenticated `codex` executable on `PATH`. It does not
-override the user's default model.
+ChangeSafely uses the authenticated `codex` executable on `PATH`. A run uses one
+model for every role and defaults to `gpt-5.6-sol`.
 
 ## Compatibility
 
@@ -102,8 +102,8 @@ Run the full test-first workflow:
 changesafely run --repo /path/to/repo --task "Describe the requested change" --plans 3
 ```
 
-Omit `--model` to use the current Codex default, or select one explicitly. Bound the
-whole command, including all roles and deterministic checks, with `--timeout`:
+Omit `--model` to use `gpt-5.6-sol`, or select one model explicitly for the whole
+run. Bound the command, including all roles and deterministic checks, with `--timeout`:
 
 ```sh
 changesafely run --model gpt-5.3-codex-spark --timeout 900 \
@@ -202,7 +202,9 @@ Runs are stored under `.changesafely/runs/<run-id>/`:
   `verification.json`: the actual change and independent verdict.
 - `report.md`: concise outcome, residual risks, and next action.
 - `trace.jsonl`: a versioned append-only timeline for phases, roles, RPC methods,
-  artifacts, deterministic commands, failures, and Git boundaries.
+  fork lineage, privacy-safe tool metadata, token usage, artifacts, deterministic
+  commands, failures, and Git boundaries. `changesafely trace --json` derives exact
+  per-role and aggregate time, token, cache, command, tool, and artifact metrics.
 - `manifest.json`: run provenance, runtime versions, role policies, and prompt/schema
   hashes.
 - `diagnostics/`: optional bounded raw tails created only with `--diagnostics`.

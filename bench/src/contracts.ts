@@ -54,8 +54,10 @@ export interface RunDocument {
   worker: WorkerResult;
   usage: {
     turns: number | null;
+    totalTokens?: number | null;
     inputTokens: number | null;
     cachedInputTokens: number | null;
+    nonCachedInputTokens?: number | null;
     outputTokens: number | null;
     reasoningTokens: number | null;
   };
@@ -226,8 +228,10 @@ const runDocumentSchema = Type.Object(
     usage: Type.Object(
       {
         turns: nullableCount,
+        totalTokens: Type.Optional(nullableCount),
         inputTokens: nullableCount,
         cachedInputTokens: nullableCount,
+        nonCachedInputTokens: Type.Optional(nullableCount),
         outputTokens: nullableCount,
         reasoningTokens: nullableCount,
       },

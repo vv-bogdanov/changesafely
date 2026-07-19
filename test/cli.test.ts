@@ -49,6 +49,7 @@ test("implements help, version, and invalid CLI contracts", async (t) => {
   assert.match(stdout.join(""), /changesafely resume/);
   assert.match(stdout.join(""), /changesafely status/);
   assert.match(stdout.join(""), /changesafely trace/);
+  assert.match(stdout.join(""), /default: gpt-5\.6-sol/);
   assert.match(stderr.join(""), /Unknown command: unknown/);
   assert.match(stderr.join(""), /--plans must be an integer from 1 to 5/);
   assert.match(stderr.join(""), /--permission-profile must be a valid configured profile id/);

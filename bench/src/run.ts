@@ -369,8 +369,10 @@ function workerEnvironment(codexHome: string, codexCommand: string): NodeJS.Proc
 function usageDocument(usage?: UsageEvidence): RunDocument["usage"] {
   return {
     turns: usage?.turns ?? null,
+    totalTokens: usage?.totalTokens ?? null,
     inputTokens: usage?.inputTokens ?? null,
     cachedInputTokens: usage?.cachedInputTokens ?? null,
+    nonCachedInputTokens: usage?.nonCachedInputTokens ?? null,
     outputTokens: usage?.outputTokens ?? null,
     reasoningTokens: usage?.reasoningTokens ?? null,
   };

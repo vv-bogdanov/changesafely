@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
 import { ChangeSafelyError, errorExitCode, errorNextAction, errorReasonCode } from "./errors.js";
+import { DEFAULT_MODEL } from "./model.js";
 import { resumeRun, runFullWorkflow } from "./orchestrator.js";
 import {
   exitCodeForOutcome,
@@ -40,7 +41,7 @@ Commands:
   doctor    Check local Git, Codex, App Server, and sandbox readiness
 
 Options:
-  --model <id>         Override the Codex model; omit to use the Codex default
+  --model <id>         Override the Codex model (default: ${DEFAULT_MODEL})
   --permission-profile Use a configured Codex permission profile for every role
   --timeout <seconds>  Bound the complete plan/run/resume command
   --json               Emit one machine-readable outcome on stdout
@@ -149,13 +150,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         "[changesafely] diagnostics enabled: bounded local output may contain sensitive data\n",
       );
     }
-    const model = typeof modelValue === "string" ? modelValue.trim() || undefined : undefined;
-    if (modelValue !== undefined && !model) {
+    const explicitModel =
+      typeof modelValue === "string" ? modelValue.trim() || undefined : undefined;
+    if (modelValue !== undefined && !explicitModel) {
       throw usageError("--model must not be empty");
     }
-    if (model && command !== "plan" && command !== "run") {
+    if (explicitModel && command !== "plan" && command !== "run") {
       throw usageError("--model is supported only by plan and run");
     }
+    const model = ["plan", "run"].includes(command) ? (explicitModel ?? DEFAULT_MODEL) : undefined;
     const permissionProfile =
       typeof permissionProfileValue === "string" ? permissionProfileValue.trim() : undefined;
     if (

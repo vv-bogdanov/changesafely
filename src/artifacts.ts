@@ -194,6 +194,7 @@ export class ArtifactStore {
       role,
       artifactKey: key,
       artifactHash: hash,
+      payloadBytes: Buffer.byteLength(content),
     });
     return { path, hash, envelope };
   }

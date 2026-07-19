@@ -48,8 +48,10 @@ export function benchmarkRunDocument(
     },
     usage: {
       turns: null,
+      totalTokens: null,
       inputTokens: null,
       cachedInputTokens: null,
+      nonCachedInputTokens: null,
       outputTokens: null,
       reasoningTokens: null,
     },

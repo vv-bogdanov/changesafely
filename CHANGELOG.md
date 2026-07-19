@@ -14,6 +14,8 @@ All notable changes to ChangeSafely are documented here. The project follows
 - Packed CLI functional coverage plus macOS and Windows package/process smoke jobs.
 - Versioned append-only run traces, provenance manifests, read-only `trace`, and
   opt-in bounded local diagnostics with privacy-preserving command evidence.
+- Per-turn and aggregate token, cache, timing, command, tool, and artifact analytics
+  derived from validated traces without retaining model or tool payloads.
 
 ### Changed
 
@@ -23,6 +25,7 @@ All notable changes to ChangeSafely are documented here. The project follows
 - Resolve npm, Codex, and package binaries portably without shell interpolation.
 - Use the ChangeSafely product, package, CLI, branch, storage, environment-variable,
   and repository names consistently across the public surface.
+- Use one model for every role in a run and default the public CLI to `gpt-5.6-sol`.
 
 ## [0.1.0] - 2026-07-18
 
