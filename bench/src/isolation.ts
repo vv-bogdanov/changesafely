@@ -46,6 +46,7 @@ approval_policy = "never"
 cli_auth_credentials_store = "file"
 
 [permissions.${permissionProfile}.filesystem]
+glob_scan_max_depth = 16
 ":minimal" = "read"
 ${runtimeRoots.map((root) => `${JSON.stringify(root)} = "read"`).join("\n")}
 

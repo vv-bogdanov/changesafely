@@ -280,6 +280,7 @@ test("builds a minimal Codex home with a deny-network permission profile", async
   ]);
   const config = await readFile(join(destination, "config.toml"), "utf8");
   assert.match(config, /default_permissions = "changesafely-benchmark"/u);
+  assert.match(config, /glob_scan_max_depth = 16/u);
   assert.match(config, /enabled = false/u);
   assert.match(config, /"\/runtime\/node" = "read"/u);
   assert.match(config, /"\/runtime\/python-env" = "read"/u);
