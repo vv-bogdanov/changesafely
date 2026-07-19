@@ -244,7 +244,10 @@ notification, audit, or global-hook effects on retry.
 
 ```text
 Add optional discount codes to order events.
-Preserve compatibility with existing events and replay behavior.
+When input contains `discountCode`, emit a version 2 event with a top-level string
+`discount_code`, and expose that key from `decode_event`. Preserve the supplied string exactly.
+Without `discountCode`, keep the current version 1 producer and consumer output.
+Preserve existing-event compatibility and replay behavior.
 Keep public APIs unchanged and do not add a production dependency.
 ```
 

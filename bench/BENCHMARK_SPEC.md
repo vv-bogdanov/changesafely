@@ -509,8 +509,11 @@ Critical properties:
 
 User task:
 
-> Add optional discount codes to order events. Preserve compatibility with existing events and
-> replay behavior. Keep public APIs unchanged and add no production dependency.
+> Add optional discount codes to order events. When input contains `discountCode`, emit a version
+> 2 event with a top-level string `discount_code`, and expose that key from `decode_event`.
+> Preserve the supplied string exactly. Without `discountCode`, keep the current version 1
+> producer and consumer output. Preserve existing-event compatibility and replay behavior. Keep
+> public APIs unchanged and add no production dependency.
 
 The fixture evolves a versioned JSON event shared by a JavaScript producer and Python consumer.
 The local-looking field addition requires a coordinated change across both language roots.

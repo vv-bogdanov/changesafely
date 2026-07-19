@@ -55,6 +55,7 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.equal(scenarioDefinition(benchRoot, "tenant-leak").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "restart-storm").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 3);
+  assert.equal(scenarioDefinition(benchRoot, "contract-drift").version, 2);
   assert.deepEqual(
     listScenarioDefinitions(benchRoot).map(({ id }) => id),
     [
