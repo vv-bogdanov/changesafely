@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
@@ -71,7 +71,7 @@ export async function main(argv: string[]): Promise<number> {
         benchRoot,
         required(parsed.values.scenario, "--scenario"),
       );
-      const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-isolation-proof-"));
+      const temporaryRoot = await mkdtemp(join(homedir(), ".changesafely-isolation-proof-"));
       try {
         const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"), {
           installDependencies: false,

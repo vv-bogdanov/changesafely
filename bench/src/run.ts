@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { loadTrace } from "../../src/trace.js";
 import {
@@ -64,7 +64,7 @@ export async function runBenchmarkAttempt(
   if (options.effort !== "medium") {
     throw new Error("Fair benchmark attempts require medium reasoning effort in both modes");
   }
-  const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-attempt-"));
+  const temporaryRoot = await mkdtemp(join(homedir(), ".changesafely-benchmark-attempt-"));
   try {
     const scenario = scenarioDefinition(options.benchRoot, options.scenario);
     const taskText = await readFile(scenario.task, "utf8");

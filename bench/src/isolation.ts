@@ -86,10 +86,8 @@ export async function proveIsolation(
   }
 
   const script = `const fs = require("node:fs");
-const childProcess = require("node:child_process");
 const net = require("node:net");
 if (process.env.CODEX_HOME) process.exit(25);
-if (childProcess.spawnSync("npm", ["--version"], { stdio: "ignore" }).status !== 0) process.exit(26);
 for (let index = 1; index <= 3; index += 1) {
   try { fs.accessSync(process.argv[index], fs.constants.R_OK); process.exit(19 + index); } catch {}
 }
@@ -99,15 +97,21 @@ socket.once("error", () => process.exit(0));
 setTimeout(() => process.exit(24), 2000);
 `;
   try {
+    const sandboxArgs = ["sandbox", "-P", permissionProfile, "-C", resolve(workspace), "--"];
+    const commandOptions = {
+      cwd: workspace,
+      timeout: 10_000,
+      maxBuffer: 64 * 1024,
+      env: {
+        ...process.env,
+        CODEX_HOME: codexHome,
+        CHANGESAFELY_TELEMETRY: "0",
+      },
+    };
     await execFileAsync(
       codexCommand,
       [
-        "sandbox",
-        "-P",
-        permissionProfile,
-        "-C",
-        resolve(workspace),
-        "--",
+        ...sandboxArgs,
         process.execPath,
         "-e",
         script,
@@ -116,17 +120,9 @@ setTimeout(() => process.exit(24), 2000);
         canaryPath,
         String(address.port),
       ],
-      {
-        cwd: workspace,
-        timeout: 10_000,
-        maxBuffer: 64 * 1024,
-        env: {
-          ...process.env,
-          CODEX_HOME: codexHome,
-          CHANGESAFELY_TELEMETRY: "0",
-        },
-      },
+      commandOptions,
     );
+    await execFileAsync(codexCommand, [...sandboxArgs, "npm", "--version"], commandOptions);
     return {
       provider: "codex-permission-profile",
       providerVersion,
