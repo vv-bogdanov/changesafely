@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "restart-storm",
+  "version": 3,
+  "visibleChecks": [{ "argv": ["npm", "test"], "cwd": "." }],
+  "preparation": [
+    {
+      "argv": ["npm", "ci", "--ignore-scripts", "--offline", "--no-audit", "--no-fund"],
+      "cwd": ".",
+      "network": "disabled"
+    }
+  ],
+  "testPaths": { "prefixes": ["test"], "patterns": ["*.test.ts"] },
+  "toolchains": [
+    { "id": "node", "version": { "argv": ["node", "--version"], "cwd": "." } },
+    { "id": "npm", "version": { "argv": ["npm", "--version"], "cwd": "." } }
+  ]
+}

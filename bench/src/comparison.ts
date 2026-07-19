@@ -11,6 +11,7 @@ import {
   validateComparisonManifest,
 } from "./contracts.js";
 import { contentSha256 } from "./evidence.js";
+import type { BenchmarkToolchain } from "./repository.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,20 +39,28 @@ export async function ensureComparisonManifest(
   try {
     content = await readFile(path, "utf8");
     const manifest = validateComparisonManifest(parseJson(content));
-    if (JSON.stringify(comparisonContract(manifest)) !== JSON.stringify(input)) {
+    if (manifest.comparisonVersion !== COMPARISON_VERSION) {
+      throw new Error(`Comparison manifest version mismatch: ${comparisonId}`);
+    }
+    const currentManifest = manifest as ComparisonManifest;
+    if (JSON.stringify(comparisonContract(currentManifest)) !== JSON.stringify(input)) {
       throw new Error(`Comparison manifest contract mismatch: ${comparisonId}`);
     }
-    return { path, sha256: contentSha256(content), manifest };
+    return { path, sha256: contentSha256(content), manifest: currentManifest };
   } catch (error) {
     if (errorCode(error) !== "ENOENT") throw error;
   }
 
-  const manifest = validateComparisonManifest({
+  const validated = validateComparisonManifest({
     comparisonVersion: COMPARISON_VERSION,
     comparisonId,
     createdAt: new Date().toISOString(),
     ...input,
   });
+  if (validated.comparisonVersion !== COMPARISON_VERSION) {
+    throw new Error("Controller created a legacy comparison manifest");
+  }
+  const manifest = validated as ComparisonManifest;
   content = `${JSON.stringify(manifest, null, 2)}\n`;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   try {
@@ -66,11 +75,24 @@ export async function ensureComparisonManifest(
 export async function collectEnvironmentVersions(
   codexCommand = "codex",
   projectRoot = process.cwd(),
+  toolchains: BenchmarkToolchain[] = [],
+  workspace = projectRoot,
 ) {
-  const [gitVersion, codexVersion, changesafelyCommit] = await Promise.all([
+  const [gitVersion, codexVersion, changesafelyCommit, toolchainVersions] = await Promise.all([
     commandVersion("git"),
     commandVersion(codexCommand),
     commandOutput("git", ["-C", projectRoot, "rev-parse", "HEAD"]),
+    Promise.all(
+      toolchains.map(async (toolchain) => ({
+        id: toolchain.id,
+        versionCommand: toolchain.version,
+        version: await commandOutput(
+          toolchain.version.argv[0] ?? "",
+          toolchain.version.argv.slice(1),
+          resolve(workspace, toolchain.version.cwd),
+        ),
+      })),
+    ),
   ]);
   return {
     nodeVersion: process.version,
@@ -80,6 +102,7 @@ export async function collectEnvironmentVersions(
     changesafelyCommit,
     platform: platform(),
     architecture: arch(),
+    toolchains: toolchainVersions,
   };
 }
 
@@ -115,11 +138,24 @@ async function commandVersion(command: string): Promise<string> {
   return await commandOutput(command, ["--version"]);
 }
 
-async function commandOutput(command: string, args: string[]): Promise<string> {
+async function commandOutput(command: string, args: string[], cwd?: string): Promise<string> {
   try {
     const { stdout } = await execFileAsync(command, args, {
       timeout: 3_000,
       maxBuffer: 16 * 1024,
+      ...(cwd ? { cwd } : {}),
+      env: {
+        ...process.env,
+        CHANGESAFELY_SENTRY_DSN: "",
+        CHANGESAFELY_TELEMETRY: "0",
+        COMPOSER_DISABLE_NETWORK: "1",
+        GIT_TERMINAL_PROMPT: "0",
+        NO_UPDATE_NOTIFIER: "1",
+        PIP_NO_INDEX: "1",
+        npm_config_audit: "false",
+        npm_config_fund: "false",
+        npm_config_offline: "true",
+      },
     });
     const value = stdout.trim();
     if (!value) throw new Error(`${command} returned empty output`);

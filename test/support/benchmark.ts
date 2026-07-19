@@ -32,6 +32,13 @@ export function benchmarkRunDocument(
       changesafelyVersion: "0.1.0",
       platform: process.platform,
       architecture: process.arch,
+      toolchains: [
+        {
+          id: "node",
+          versionCommand: { argv: ["node", "--version"], cwd: "." },
+          version: process.version,
+        },
+      ],
     },
     isolation: {
       provider: "codex-permission-profile",
@@ -81,11 +88,42 @@ export function benchmarkComparisonContent(run: RunDocument): string {
       timeoutMs: 3_600_000,
       permissionProfile: run.isolation.permissionProfile,
       agentToolNetwork: "disabled",
-      visibleChecks: ["npm test"],
+      scenarioManifestSha256: "d".repeat(64),
+      preparation: [],
+      visibleChecks: [{ argv: ["npm", "test"], cwd: "." }],
       evaluatorSha256: "e".repeat(64),
       executionOrder: ["direct", "changesafely"],
       maxAttemptsPerMode: 1,
       environment: run.environment,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+export function benchmarkLegacyComparisonContent(run: RunDocument): string {
+  const { toolchains: _toolchains, ...environment } = run.environment;
+  return `${JSON.stringify(
+    {
+      comparisonVersion: 1,
+      comparisonId: run.comparisonId,
+      createdAt: "2026-07-19T00:00:00.000Z",
+      measurement: run.measurement ?? "development",
+      scenario: run.scenario,
+      ...(run.scenarioVersion === undefined ? {} : { scenarioVersion: run.scenarioVersion }),
+      taskText: run.taskText,
+      taskSha256: run.taskSha256,
+      baselineCommit: run.baselineCommit,
+      model: run.model,
+      effort: run.effort,
+      timeoutMs: 3_600_000,
+      permissionProfile: run.isolation.permissionProfile,
+      agentToolNetwork: "disabled",
+      visibleChecks: ["npm test"],
+      evaluatorSha256: "e".repeat(64),
+      executionOrder: ["direct", "changesafely"],
+      maxAttemptsPerMode: 1,
+      environment,
     },
     null,
     2,

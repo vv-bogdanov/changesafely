@@ -1,7 +1,7 @@
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { isTestPath, normalizeRepositoryPath } from "../../src/repository-policy.js";
+import { normalizeRepositoryPath } from "../../src/repository-policy.js";
 import { type CommandResult, runCommand } from "../../src/runner.js";
 import { validateArtifactEnvelope, validateStoredHarnessArtifact } from "../../src/schemas.js";
 import {
@@ -12,7 +12,14 @@ import {
   validateAnalysisManifest,
 } from "./contracts.js";
 import { contentSha256, readVerifiedEvidenceFile, type VerifiedEvidence } from "./evidence.js";
-import { materializeAttempt, repositoryCommand, scenarioDefinition } from "./repository.js";
+import {
+  isScenarioTestPath,
+  materializeAttempt,
+  repositoryCommand,
+  resolveCommandCwd,
+  type ScenarioDefinition,
+  scenarioDefinition,
+} from "./repository.js";
 
 const ANALYSIS_FILE = "analysis.json";
 const MANIFEST_FILE = "analysis-manifest.json";
@@ -63,7 +70,7 @@ export async function evaluateMutationEvidence(
     )
       .split("\0")
       .filter(Boolean);
-    const testPaths = changedPaths.filter(isTestPath).sort();
+    const testPaths = changedPaths.filter((path) => isScenarioTestPath(scenario, path)).sort();
     const testPatch = testPaths.length
       ? await repositoryCommand(
           "git",
@@ -84,10 +91,11 @@ export async function evaluateMutationEvidence(
           ),
         )
       : { additions: 0, deletions: 0 };
-    const protectedTests = await protectedTestStatus(evidence, workspace);
+    const protectedTests = await protectedTestStatus(scenario, evidence, workspace);
 
     const referenceProcess = await runVariant(
       workspace,
+      scenario,
       join(oracleRoot, "reference.patch"),
       testPatchPath,
       testPatch.length > 0,
@@ -97,6 +105,7 @@ export async function evaluateMutationEvidence(
     for (const mutant of mutants) {
       const process = await runVariant(
         workspace,
+        scenario,
         join(oracleRoot, "mutants", mutant.patch),
         testPatchPath,
         testPatch.length > 0,
@@ -221,6 +230,7 @@ export async function loadAnalysisPackageIfPresent(
 
 async function runVariant(
   workspace: string,
+  scenario: ScenarioDefinition,
   solutionPatch: string,
   testPatch: string,
   hasCandidateTests: boolean,
@@ -229,18 +239,26 @@ async function runVariant(
   await repositoryCommand("git", ["clean", "-fd", "--quiet"], workspace);
   await applyPatch(workspace, solutionPatch, true);
   await applyPatch(workspace, testPatch, hasCandidateTests);
-  return await runCommand(["npm", "test"], workspace, {
-    sandboxed: true,
-    timeoutMs: 120_000,
-    env: {
-      ...process.env,
-      CHANGESAFELY_TELEMETRY: "0",
-      CHANGESAFELY_SENTRY_DSN: "",
-      npm_config_audit: "false",
-      npm_config_fund: "false",
-      npm_config_offline: "true",
-    },
-  });
+  let result: CommandResult | undefined;
+  for (const check of scenario.visibleChecks) {
+    result = await runCommand(check.argv, resolveCommandCwd(workspace, check.cwd), {
+      sandboxed: true,
+      timeoutMs: 120_000,
+      env: {
+        ...process.env,
+        CHANGESAFELY_TELEMETRY: "0",
+        CHANGESAFELY_SENTRY_DSN: "",
+        COMPOSER_DISABLE_NETWORK: "1",
+        PIP_NO_INDEX: "1",
+        npm_config_audit: "false",
+        npm_config_fund: "false",
+        npm_config_offline: "true",
+      },
+    });
+    if (!commandPassed(result)) return result;
+  }
+  if (!result) throw new Error(`Scenario ${scenario.id} has no visible checks`);
+  return result;
 }
 
 async function applyPatch(workspace: string, patch: string, apply: boolean): Promise<void> {
@@ -261,6 +279,7 @@ function analysisProcess(result: CommandResult): AnalysisDocument["reference"]["
 }
 
 async function protectedTestStatus(
+  scenario: ScenarioDefinition,
   evidence: VerifiedEvidence,
   workspace: string,
 ): Promise<AnalysisDocument["protectedTests"]> {
@@ -292,7 +311,9 @@ async function protectedTestStatus(
   if (JSON.stringify(paths) !== JSON.stringify([...harness.protectedPaths].sort())) {
     throw new Error("Protected harness path and hash sets do not match");
   }
-  if (!paths.every(isTestPath)) throw new Error("Protected harness contains a non-test path");
+  if (!paths.every((path) => isScenarioTestPath(scenario, path))) {
+    throw new Error("Protected harness contains a path outside scenario test capabilities");
+  }
   const matches = await Promise.all(
     paths.map(async (path) => {
       const normalized = normalizeRepositoryPath(path);

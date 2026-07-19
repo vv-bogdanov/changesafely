@@ -2,7 +2,7 @@ import Type from "typebox";
 import { Compile } from "typebox/compile";
 
 export const EVIDENCE_VERSION = 1;
-export const COMPARISON_VERSION = 1;
+export const COMPARISON_VERSION = 2;
 export const ANALYSIS_VERSION = 1;
 
 export type BenchmarkMode = "changesafely" | "direct";
@@ -13,6 +13,28 @@ export type BenchmarkOutcome =
   | "visible_failure"
   | "scope_failure"
   | "technical_failure";
+
+interface BenchmarkCommandEvidence {
+  argv: string[];
+  cwd: string;
+}
+
+interface BenchmarkToolchainEvidence {
+  id: string;
+  versionCommand: BenchmarkCommandEvidence;
+  version: string;
+}
+
+interface BenchmarkEnvironment {
+  nodeVersion: string;
+  gitVersion: string;
+  codexVersion: string;
+  changesafelyVersion: string;
+  changesafelyCommit?: string;
+  platform: string;
+  architecture: string;
+  toolchains?: BenchmarkToolchainEvidence[];
+}
 
 interface WorkerResult {
   startedAt: string;
@@ -38,15 +60,7 @@ export interface RunDocument {
   snapshotCommit: string;
   model: string;
   effort: string;
-  environment: {
-    nodeVersion: string;
-    gitVersion: string;
-    codexVersion: string;
-    changesafelyVersion: string;
-    changesafelyCommit?: string;
-    platform: string;
-    architecture: string;
-  };
+  environment: BenchmarkEnvironment;
   isolation: {
     provider: "codex-permission-profile";
     permissionProfile: string;
@@ -72,6 +86,30 @@ export interface ComparisonManifest {
   createdAt: string;
   measurement?: BenchmarkMeasurement;
   scenario: string;
+  scenarioVersion: number;
+  taskText: string;
+  taskSha256: string;
+  baselineCommit: string;
+  model: string;
+  effort: string;
+  timeoutMs: number;
+  permissionProfile: string;
+  agentToolNetwork: "disabled";
+  scenarioManifestSha256: string;
+  preparation: Array<BenchmarkCommandEvidence & { network: "disabled" }>;
+  visibleChecks: BenchmarkCommandEvidence[];
+  evaluatorSha256: string;
+  executionOrder: ["direct", "changesafely"];
+  maxAttemptsPerMode: 1;
+  environment: BenchmarkEnvironment & { toolchains: BenchmarkToolchainEvidence[] };
+}
+
+interface LegacyComparisonManifest {
+  comparisonVersion: 1;
+  comparisonId: string;
+  createdAt: string;
+  measurement?: BenchmarkMeasurement;
+  scenario: string;
   scenarioVersion?: number;
   taskText: string;
   taskSha256: string;
@@ -85,16 +123,10 @@ export interface ComparisonManifest {
   evaluatorSha256: string;
   executionOrder: ["direct", "changesafely"];
   maxAttemptsPerMode: 1;
-  environment: {
-    nodeVersion: string;
-    gitVersion: string;
-    codexVersion: string;
-    changesafelyVersion: string;
-    changesafelyCommit?: string;
-    platform: string;
-    architecture: string;
-  };
+  environment: BenchmarkEnvironment;
 }
+
+export type AnyComparisonManifest = ComparisonManifest | LegacyComparisonManifest;
 
 export interface EvaluationDocument {
   schemaVersion: 1;
@@ -191,15 +223,44 @@ const workerResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const environmentProperties = {
+  nodeVersion: Type.String({ minLength: 1, maxLength: 100 }),
+  gitVersion: Type.String({ minLength: 1, maxLength: 500 }),
+  codexVersion: Type.String({ minLength: 1, maxLength: 500 }),
+  changesafelyVersion: Type.String({ minLength: 1, maxLength: 100 }),
+  changesafelyCommit: Type.Optional(commit),
+  platform: Type.String({ minLength: 1, maxLength: 100 }),
+  architecture: Type.String({ minLength: 1, maxLength: 100 }),
+};
+const benchmarkCommandSchema = Type.Object(
+  {
+    argv: Type.Array(Type.String({ minLength: 1, maxLength: 4_096 }), {
+      minItems: 1,
+      maxItems: 64,
+    }),
+    cwd: Type.String({ minLength: 1, maxLength: 500 }),
+  },
+  { additionalProperties: false },
+);
+const toolchainSchema = Type.Object(
+  {
+    id: Type.String({ pattern: "^[a-z0-9][a-z0-9.-]{0,99}$" }),
+    versionCommand: benchmarkCommandSchema,
+    version: Type.String({ minLength: 1, maxLength: 500 }),
+  },
+  { additionalProperties: false },
+);
 const environmentSchema = Type.Object(
   {
-    nodeVersion: Type.String({ minLength: 1, maxLength: 100 }),
-    gitVersion: Type.String({ minLength: 1, maxLength: 500 }),
-    codexVersion: Type.String({ minLength: 1, maxLength: 500 }),
-    changesafelyVersion: Type.String({ minLength: 1, maxLength: 100 }),
-    changesafelyCommit: Type.Optional(commit),
-    platform: Type.String({ minLength: 1, maxLength: 100 }),
-    architecture: Type.String({ minLength: 1, maxLength: 100 }),
+    ...environmentProperties,
+    toolchains: Type.Optional(Type.Array(toolchainSchema, { maxItems: 16 })),
+  },
+  { additionalProperties: false },
+);
+const currentEnvironmentSchema = Type.Object(
+  {
+    ...environmentProperties,
+    toolchains: Type.Array(toolchainSchema, { maxItems: 16 }),
   },
   { additionalProperties: false },
 );
@@ -254,30 +315,59 @@ const runDocumentSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const comparisonManifestSchema = Type.Object(
+const comparisonCommonProperties = {
+  comparisonId: Type.String({ pattern: "^comparison-[a-f0-9]{16}$" }),
+  createdAt: timestamp,
+  measurement: Type.Optional(Type.Union([Type.Literal("development"), Type.Literal("final")])),
+  scenario: Type.String({ minLength: 1, maxLength: 100 }),
+  taskText: Type.String({ minLength: 1, maxLength: 20_000 }),
+  taskSha256: sha256,
+  baselineCommit: commit,
+  model: Type.String({ minLength: 1, maxLength: 255 }),
+  effort: Type.String({ minLength: 1, maxLength: 100 }),
+  timeoutMs: Type.Integer({ minimum: 1 }),
+  permissionProfile: Type.String({ minLength: 1, maxLength: 100 }),
+  agentToolNetwork: Type.Literal("disabled"),
+  evaluatorSha256: sha256,
+  executionOrder: Type.Tuple([Type.Literal("direct"), Type.Literal("changesafely")]),
+  maxAttemptsPerMode: Type.Literal(1),
+};
+const currentComparisonManifestSchema = Type.Object(
   {
+    ...comparisonCommonProperties,
     comparisonVersion: Type.Literal(COMPARISON_VERSION),
-    comparisonId: Type.String({ pattern: "^comparison-[a-f0-9]{16}$" }),
-    createdAt: timestamp,
-    measurement: Type.Optional(Type.Union([Type.Literal("development"), Type.Literal("final")])),
-    scenario: Type.String({ minLength: 1, maxLength: 100 }),
+    scenarioVersion: Type.Integer({ minimum: 1 }),
+    scenarioManifestSha256: sha256,
+    preparation: Type.Array(
+      Type.Object(
+        {
+          argv: benchmarkCommandSchema.properties.argv,
+          cwd: benchmarkCommandSchema.properties.cwd,
+          network: Type.Literal("disabled"),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 16 },
+    ),
+    visibleChecks: Type.Array(benchmarkCommandSchema, { minItems: 1, maxItems: 16 }),
+    environment: currentEnvironmentSchema,
+  },
+  { additionalProperties: false },
+);
+const legacyComparisonManifestSchema = Type.Object(
+  {
+    ...comparisonCommonProperties,
+    comparisonVersion: Type.Literal(1),
     scenarioVersion: Type.Optional(Type.Integer({ minimum: 1 })),
-    taskText: Type.String({ minLength: 1, maxLength: 20_000 }),
-    taskSha256: sha256,
-    baselineCommit: commit,
-    model: Type.String({ minLength: 1, maxLength: 255 }),
-    effort: Type.String({ minLength: 1, maxLength: 100 }),
-    timeoutMs: Type.Integer({ minimum: 1 }),
-    permissionProfile: Type.String({ minLength: 1, maxLength: 100 }),
-    agentToolNetwork: Type.Literal("disabled"),
     visibleChecks: Type.Tuple([Type.Literal("npm test")]),
-    evaluatorSha256: sha256,
-    executionOrder: Type.Tuple([Type.Literal("direct"), Type.Literal("changesafely")]),
-    maxAttemptsPerMode: Type.Literal(1),
     environment: environmentSchema,
   },
   { additionalProperties: false },
 );
+const comparisonManifestSchema = Type.Union([
+  currentComparisonManifestSchema,
+  legacyComparisonManifestSchema,
+]);
 
 const evidenceManifestSchema = Type.Object(
   {
@@ -427,11 +517,11 @@ export function validateEvidenceManifest(value: unknown): EvidenceManifest {
   return value as EvidenceManifest;
 }
 
-export function validateComparisonManifest(value: unknown): ComparisonManifest {
+export function validateComparisonManifest(value: unknown): AnyComparisonManifest {
   if (!validateComparisonManifestSchema.Check(value)) {
     throw new Error("Invalid benchmark comparison manifest");
   }
-  return value as ComparisonManifest;
+  return value as AnyComparisonManifest;
 }
 
 export function validateEvaluationDocument(value: unknown): EvaluationDocument {

@@ -30,9 +30,7 @@ test("evaluates candidate tests against reference and mutants, then replays one 
   const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-analysis-test-"));
   t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
   const scenario = scenarioDefinition(benchRoot, "double-charge");
-  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "candidate"), {
-    installDependencies: false,
-  });
+  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "candidate"));
   await writeFile(
     join(attempt.workspace, "test", "candidate-mutation.test.ts"),
     candidateMutationTest,

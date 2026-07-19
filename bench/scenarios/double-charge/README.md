@@ -12,3 +12,6 @@ The reference uses the operation token consistently across persistent service st
 the gateway's atomic idempotency boundary. Six mutants cover process-local state,
 non-atomic check-then-write, missing input validation, a key derived from mutable input,
 premature completion state, and a constant provider key.
+
+Version 3 moves preparation, visible checks, test paths, and Node/npm version evidence into the
+language-neutral scenario manifest without changing the public task.

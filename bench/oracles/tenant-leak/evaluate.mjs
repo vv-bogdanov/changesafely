@@ -3,27 +3,21 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   assert,
   check,
-  commandFailure,
   evaluationDocument,
-  run,
-  runStandardScopeChecks,
+  runNodeScopeChecks,
+  runScenarioVisibleChecks,
 } from "../evaluator-support.mjs";
 
 const oracleRoot = dirname(fileURLToPath(import.meta.url));
-const baselineRoot = resolve(oracleRoot, "../../scenarios/tenant-leak/baseline");
+const scenarioRoot = resolve(oracleRoot, "../../scenarios/tenant-leak");
+const baselineRoot = join(scenarioRoot, "baseline");
 const workspace = process.argv[2] ? resolve(process.argv[2]) : undefined;
 
 async function evaluate(root) {
   const checks = [];
-  const visible = run("npm", ["test"], root, 120_000);
-  checks.push({
-    id: "visible-checks",
-    category: "visible",
-    passed: visible.status === 0,
-    detail: visible.status === 0 ? "npm test passed" : commandFailure(visible),
-  });
+  const visible = await runScenarioVisibleChecks({ checks, root, scenarioRoot });
 
-  if (visible.status === 0) {
+  if (visible) {
     const moduleUrl = pathToFileURL(join(root, "dist/src/authorization-service.js")).href;
     await runBehaviorChecks(checks, await import(`${moduleUrl}?evaluation=${Date.now()}`));
   } else {
@@ -31,7 +25,7 @@ async function evaluate(root) {
       checks.push({ id, category, passed: false, detail: "not evaluated after visible failure" });
     }
   }
-  await runStandardScopeChecks({ checks, root, oracleRoot, baselineRoot });
+  await runNodeScopeChecks({ checks, root, oracleRoot, baselineRoot });
   return evaluationDocument("tenant-leak", checks);
 }
 

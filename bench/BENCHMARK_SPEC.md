@@ -228,11 +228,12 @@ may be requested because an outcome is disappointing.
 ### 8.4 Registered pilot protocol
 
 Before a paired run, create an immutable comparison manifest containing the exact task,
-scenario version, baseline, Codex executable version, ChangeSafely version, model, reasoning
-effort, runtime limit, sandbox, network policy, visible checks, environment, and execution
-order. Reject the pair if either mode differs. Evidence created before explicit scenario
-versioning is read as legacy version 1; it is never rewritten or evaluated against newer
-scenario assets.
+scenario version and manifest hash, baseline, Codex executable version, ChangeSafely version,
+model, reasoning effort, runtime limit, sandbox, network policy, controller-owned preparation,
+argv/cwd visible checks, target-toolchain version commands and results, environment, and
+execution order. Reject the pair if either mode differs. Comparison manifest v2 stores these
+structured commands. Evidence carrying the npm-only v1 contract remains readable and is never
+rewritten or evaluated against newer scenario assets.
 
 The pilot defaults are:
 
@@ -469,7 +470,8 @@ Example unsafe mutants:
 Each scenario package must logically contain:
 
 1. **Baseline repository**
-   A small, understandable TypeScript project with existing visible tests.
+   A small, understandable project in the scenario's target language with existing visible
+   tests.
 
 2. **Task definition**
    A realistic user request with clear constraints but no implementation hint.
@@ -491,6 +493,14 @@ Each scenario package must logically contain:
 
 8. **Scenario documentation**
    An explanation of the risk, oracle, and evaluation method.
+
+Every discovered scenario directory also contains a schema-validated `scenario.json`. It
+declares the scenario id and version, exact visible-check argv/cwd pairs, controller-owned
+offline preparation, test path prefixes/patterns, and exact toolchain version commands.
+Discovery is deterministic and fails when a scenario directory is incomplete. Preparation is
+performed by the controller before the worker starts; workers never receive install permission.
+Language-specific public-API, dependency, and forbidden-scope rules remain owned by the hidden
+evaluator instead of pretending that one cross-language heuristic is reliable.
 
 The baseline must be realistic enough to require exploration but small enough for fast, reproducible execution.
 
@@ -538,6 +548,7 @@ Every run must leave an immutable evidence package containing:
 - exact task text;
 - baseline commit;
 - environment/version metadata;
+- scenario-manifest, preparation-command, visible-command, and toolchain-version evidence;
 - safe runtime events and final messages;
 - final Git diff;
 - added tests diff;
@@ -582,6 +593,7 @@ The development interface is:
 
 ```text
 npm run benchmark -- run --scenario double-charge --mode direct|changesafely [--model gpt-5.3-codex-spark]
+npm run benchmark -- validate
 npm run benchmark -- validate --scenario double-charge
 npm run benchmark -- evaluate --run <run-id>
 npm run benchmark -- replay --run <run-id>
@@ -597,18 +609,17 @@ The exact CLI and internal structure are left to the coding agent. Do not build 
 
 ## 16. Final report
 
-The main table must be simple:
+Reports present each scenario and its recorded toolchains first:
 
 ```text
-ChangeSafely Risk Suite
-
-                    Safe success  Unsafe green  Mutants killed  Scope violations
-Codex Direct           _ / 3          _              _ / _             _
-ChangeSafely           _ / 3          _              _ / _             _
-
-Median wall time       _
-Median token usage     _
+Scenario: <id>    Toolchains: <runtime versions>
+Mode              Outcome       Mutants killed   Scope   Time   Tokens
+Codex Direct      _             _ / _            _       _      _
+ChangeSafely      _             _ / _            _       _      _
 ```
+
+Cross-language summaries may state scenario coverage and repeated qualitative patterns. They
+must not collapse different languages and risks into a single language score.
 
 Each scenario needs a short case card containing:
 

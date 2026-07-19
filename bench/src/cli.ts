@@ -11,7 +11,12 @@ import type { BenchmarkMode } from "./contracts.js";
 import { loadEvidencePackage } from "./evidence.js";
 import { prepareCodexHome, proveIsolation } from "./isolation.js";
 import { buildBenchmarkReport, replayBenchmarkRun, writeBenchmarkReport } from "./report.js";
-import { materializeAttempt, scenarioDefinition } from "./repository.js";
+import {
+  listScenarioDefinitions,
+  materializeAttempt,
+  type ScenarioDefinition,
+  scenarioDefinition,
+} from "./repository.js";
 import { runBenchmarkAttempt } from "./run.js";
 
 const execFileAsync = promisify(execFile);
@@ -24,7 +29,7 @@ const help = `ChangeSafely Risk Suite
 Usage:
   npm run benchmark:smoke -- --scenario <id> --mode direct|changesafely [--model ${SPARK_MODEL}]
   npm run benchmark -- run --scenario <id> --mode direct|changesafely --model <id> --final
-  npm run benchmark -- validate --scenario double-charge|tenant-leak|restart-storm|legacy-spaghetti
+  npm run benchmark -- validate [--scenario <id>]
   npm run benchmark -- canary --scenario <id>
   npm run benchmark -- evaluate --run <run-id> [--results <path>]
   npm run benchmark -- replay --run <run-id> [--results <path>]
@@ -60,15 +65,16 @@ export async function main(argv: string[]): Promise<number> {
     const [command, ...extra] = parsed.positionals;
     if (extra.length > 0) throw new Error(`Unexpected arguments: ${extra.join(" ")}`);
     if (command === "validate") {
-      const scenario = required(parsed.values.scenario, "--scenario");
-      const definition = scenarioDefinition(benchRoot, scenario);
-      const validator = join(definition.root, "validate.mjs");
-      const { stdout } = await execFileAsync(process.execPath, [validator], {
-        cwd: projectRoot,
-        timeout: 300_000,
-        maxBuffer: 4 * 1024 * 1024,
-      });
-      process.stdout.write(stdout);
+      const definitions = parsed.values.scenario
+        ? [scenarioDefinition(benchRoot, parsed.values.scenario)]
+        : listScenarioDefinitions(benchRoot);
+      const results = [];
+      for (const definition of definitions) results.push(await validateScenario(definition));
+      process.stdout.write(
+        parsed.values.scenario
+          ? `${JSON.stringify(results[0], null, 2)}\n`
+          : `${JSON.stringify({ schemaVersion: 1, passed: true, scenarios: results }, null, 2)}\n`,
+      );
       return 0;
     }
 
@@ -79,9 +85,7 @@ export async function main(argv: string[]): Promise<number> {
       );
       const temporaryRoot = await mkdtemp(join(homedir(), ".changesafely-isolation-proof-"));
       try {
-        const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"), {
-          installDependencies: false,
-        });
+        const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"));
         const codexHome = join(temporaryRoot, "codex-home");
         const permissionProfile = "changesafely-benchmark";
         await prepareCodexHome(
@@ -205,6 +209,19 @@ export async function main(argv: string[]): Promise<number> {
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 2;
+  }
+}
+
+async function validateScenario(definition: ScenarioDefinition): Promise<unknown> {
+  const { stdout } = await execFileAsync(process.execPath, [definition.validator], {
+    cwd: projectRoot,
+    timeout: 300_000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error(`Scenario validator returned invalid JSON: ${definition.id}`);
   }
 }
 

@@ -71,7 +71,12 @@ export async function runBenchmarkAttempt(
     const scenario = scenarioDefinition(options.benchRoot, options.scenario);
     const taskText = await readFile(scenario.task, "utf8");
     const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"));
-    const environment = await collectEnvironmentVersions(options.codexCommand, options.projectRoot);
+    const environment = await collectEnvironmentVersions(
+      options.codexCommand,
+      options.projectRoot,
+      scenario.toolchains,
+      attempt.workspace,
+    );
     const evaluatorSha256 = contentSha256(await readFile(scenario.evaluator));
     const measurement = options.measurement ?? "development";
     const comparison = await ensureComparisonManifest(options.resultsRoot, {
@@ -86,7 +91,9 @@ export async function runBenchmarkAttempt(
       timeoutMs: options.timeoutMs,
       permissionProfile: PERMISSION_PROFILE,
       agentToolNetwork: "disabled",
-      visibleChecks: ["npm test"],
+      scenarioManifestSha256: scenario.manifestSha256,
+      preparation: scenario.preparation,
+      visibleChecks: scenario.visibleChecks,
       evaluatorSha256,
       executionOrder: ["direct", "changesafely"],
       maxAttemptsPerMode: 1,

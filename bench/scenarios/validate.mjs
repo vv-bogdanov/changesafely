@@ -9,6 +9,7 @@ export async function validateScenario(scenarioRoot) {
   const baselineRoot = join(scenarioRoot, "baseline");
   const oracleRoot = join(benchRoot, "oracles", scenario);
   const evaluator = join(oracleRoot, "evaluate.mjs");
+  const scenarioManifest = JSON.parse(await readFile(join(scenarioRoot, "scenario.json"), "utf8"));
   const temporaryRoot = await mkdtemp(join(tmpdir(), `changesafely-${scenario}-`));
   const workspace = join(temporaryRoot, "workspace");
 
@@ -17,12 +18,25 @@ export async function validateScenario(scenarioRoot) {
       recursive: true,
       filter: (source) => !["dist", "node_modules"].includes(basename(source)),
     });
-    command("npm", ["ci", "--ignore-scripts", "--offline"], workspace, 120_000);
     command("git", ["init", "--quiet"], workspace);
     command("git", ["config", "user.name", "ChangeSafely Benchmark"], workspace);
     command("git", ["config", "user.email", "benchmark@changesafely.local"], workspace);
     command("git", ["add", "."], workspace);
     command("git", ["commit", "--quiet", "-m", "baseline"], workspace);
+    for (const preparation of scenarioManifest.preparation) {
+      command(
+        preparation.argv[0],
+        preparation.argv.slice(1),
+        join(workspace, preparation.cwd),
+        120_000,
+      );
+    }
+    const preparationStatus = command(
+      "git",
+      ["status", "--porcelain=v1", "--untracked-files=all"],
+      workspace,
+    );
+    assert(!preparationStatus, `preparation changed source-controlled state: ${preparationStatus}`);
 
     const baseline = evaluate(evaluator, workspace);
     assert(baseline.summary.visible, "baseline visible checks must pass");
@@ -37,9 +51,11 @@ export async function validateScenario(scenarioRoot) {
       "reference evaluator result is not deterministic",
     );
 
-    const manifest = JSON.parse(await readFile(join(oracleRoot, "mutants/manifest.json"), "utf8"));
+    const mutantManifest = JSON.parse(
+      await readFile(join(oracleRoot, "mutants/manifest.json"), "utf8"),
+    );
     const mutants = [];
-    for (const mutant of manifest.mutants) {
+    for (const mutant of mutantManifest.mutants) {
       reset(workspace);
       apply(join(oracleRoot, "mutants", mutant.patch), workspace);
       const result = evaluate(evaluator, workspace);
@@ -58,6 +74,9 @@ export async function validateScenario(scenarioRoot) {
     return {
       schemaVersion: 1,
       scenario,
+      scenarioVersion: scenarioManifest.version,
+      visibleChecks: scenarioManifest.visibleChecks,
+      toolchains: scenarioManifest.toolchains.map((toolchain) => toolchain.id),
       baseline: summarize(baseline),
       reference: summarize(reference),
       mutants,
@@ -101,14 +120,23 @@ function command(program, args, cwd, timeout = 30_000) {
     const detail = result.error?.message || result.stderr || result.stdout;
     throw new Error(`${program} ${args.join(" ")} failed: ${detail.trim().slice(0, 2000)}`);
   }
+  return result.stdout.trim();
 }
 
 function isolatedEnvironment() {
   return {
     ...process.env,
+    ALL_PROXY: "http://127.0.0.1:9",
     CHANGESAFELY_SENTRY_DSN: "",
     CHANGESAFELY_TELEMETRY: "0",
+    CI: "1",
+    COMPOSER_DISABLE_NETWORK: "1",
+    GIT_TERMINAL_PROMPT: "0",
+    HTTPS_PROXY: "http://127.0.0.1:9",
+    HTTP_PROXY: "http://127.0.0.1:9",
+    NO_PROXY: "",
     NO_UPDATE_NOTIFIER: "1",
+    PIP_NO_INDEX: "1",
     npm_config_audit: "false",
     npm_config_fund: "false",
     npm_config_offline: "true",

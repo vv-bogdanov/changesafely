@@ -14,11 +14,17 @@ import {
 } from "../bench/src/evidence.js";
 import { prepareCodexHome } from "../bench/src/isolation.js";
 import {
+  listScenarioDefinitions,
   materializeAttempt,
+  repositoryCommand,
   scenarioDefinition,
   snapshotAttempt,
 } from "../bench/src/repository.js";
-import { benchmarkComparisonContent, benchmarkRunDocument } from "./support/benchmark.js";
+import {
+  benchmarkComparisonContent,
+  benchmarkLegacyComparisonContent,
+  benchmarkRunDocument,
+} from "./support/benchmark.js";
 
 const projectRoot = process.cwd();
 const benchRoot = join(projectRoot, "bench");
@@ -28,12 +34,8 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-repo-"));
   t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
   const scenario = scenarioDefinition(benchRoot, "double-charge");
-  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"), {
-    installDependencies: false,
-  });
-  const secondAttempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace-2"), {
-    installDependencies: false,
-  });
+  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"));
+  const secondAttempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace-2"));
 
   await writeFile(
     join(attempt.workspace, "src", "candidate.ts"),
@@ -49,13 +51,92 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.deepEqual(snapshot.changedFiles, ["src/candidate.ts"]);
   assert.match(snapshot.diff, /candidate = true/u);
   assert.doesNotMatch(snapshot.diff, /ignored\.js/u);
-  assert.equal(scenario.version, 2);
-  assert.equal(scenarioDefinition(benchRoot, "tenant-leak").version, 2);
-  assert.equal(scenarioDefinition(benchRoot, "restart-storm").version, 2);
-  assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 2);
+  assert.equal(scenario.version, 3);
+  assert.equal(scenarioDefinition(benchRoot, "tenant-leak").version, 3);
+  assert.equal(scenarioDefinition(benchRoot, "restart-storm").version, 3);
+  assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 3);
+  assert.deepEqual(
+    listScenarioDefinitions(benchRoot).map(({ id }) => id),
+    ["double-charge", "legacy-spaghetti", "restart-storm", "tenant-leak"],
+  );
   assert.throws(
-    () => scenarioDefinition(benchRoot, "double-charge", 3),
-    /scenario double-charge v3 is unavailable/u,
+    () => scenarioDefinition(benchRoot, "double-charge", 2),
+    /scenario double-charge v2 is unavailable/u,
+  );
+});
+
+test("discovers and prepares a non-npm scenario from its checked manifest", async (t) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-manifest-"));
+  t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
+  const customBenchRoot = join(temporaryRoot, "bench");
+  const scenarioRoot = join(customBenchRoot, "scenarios", "custom-runtime");
+  const baseline = join(scenarioRoot, "baseline");
+  const oracle = join(customBenchRoot, "oracles", "custom-runtime");
+  await Promise.all([
+    mkdir(join(baseline, "scripts"), { recursive: true }),
+    mkdir(join(baseline, "specs"), { recursive: true }),
+    mkdir(join(oracle, "mutants"), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(join(baseline, ".gitignore"), "prepared.txt\n"),
+    writeFile(
+      join(baseline, "scripts", "prepare.mjs"),
+      'import { writeFileSync } from "node:fs"; writeFileSync("prepared.txt", "ready\\n");\n',
+    ),
+    writeFile(
+      join(baseline, "scripts", "check.mjs"),
+      'import { readFileSync } from "node:fs"; if (readFileSync("prepared.txt", "utf8") !== "ready\\n") process.exit(1);\n',
+    ),
+    writeFile(join(baseline, "specs", "sample_check.js"), "// scenario test path\n"),
+    writeFile(join(scenarioRoot, "task.txt"), "Exercise the custom runtime.\n"),
+    writeFile(join(scenarioRoot, "validate.mjs"), "// test fixture validator\n"),
+    writeFile(join(oracle, "evaluate.mjs"), "// test fixture evaluator\n"),
+    writeFile(join(oracle, "reference.patch"), ""),
+    writeFile(join(oracle, "mutants", "manifest.json"), '{"mutants":[]}\n'),
+    writeFile(
+      join(scenarioRoot, "scenario.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          id: "custom-runtime",
+          version: 1,
+          visibleChecks: [{ argv: ["node", "scripts/check.mjs"], cwd: "." }],
+          preparation: [
+            {
+              argv: ["node", "scripts/prepare.mjs"],
+              cwd: ".",
+              network: "disabled",
+            },
+          ],
+          testPaths: { prefixes: ["specs"], patterns: ["*_check.js"] },
+          toolchains: [{ id: "node", version: { argv: ["node", "--version"], cwd: "." } }],
+        },
+        null,
+        2,
+      )}\n`,
+    ),
+  ]);
+
+  const [scenario] = listScenarioDefinitions(customBenchRoot);
+  assert.equal(scenario?.id, "custom-runtime");
+  assert.deepEqual(scenario?.visibleChecks, [{ argv: ["node", "scripts/check.mjs"], cwd: "." }]);
+  const attempt = await materializeAttempt(
+    scenarioDefinition(customBenchRoot, "custom-runtime"),
+    join(temporaryRoot, "workspace"),
+  );
+  assert.equal(await readFile(join(attempt.workspace, "prepared.txt"), "utf8"), "ready\n");
+  await repositoryCommand("node", ["scripts/check.mjs"], attempt.workspace);
+  assert.equal(await repositoryCommand("git", ["status", "--porcelain"], attempt.workspace), "");
+  await writeFile(
+    join(baseline, "scripts", "prepare.mjs"),
+    'import { writeFileSync } from "node:fs"; writeFileSync("dirty.txt", "unexpected\\n");\n',
+  );
+  await assert.rejects(
+    materializeAttempt(
+      scenarioDefinition(customBenchRoot, "custom-runtime"),
+      join(temporaryRoot, "dirty-workspace"),
+    ),
+    /preparation changed source-controlled state/u,
   );
 });
 
@@ -63,9 +144,7 @@ test("scope evaluation sees forbidden files after the controller snapshot commit
   const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-scope-"));
   t.after(async () => rm(temporaryRoot, { recursive: true, force: true }));
   const scenario = scenarioDefinition(benchRoot, "double-charge");
-  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"), {
-    installDependencies: false,
-  });
+  const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"));
   await writeFile(join(attempt.workspace, "README.md"), "forbidden benchmark change\n");
   await snapshotAttempt(attempt.workspace, attempt.baselineCommit);
 
@@ -135,9 +214,10 @@ test("reads legacy v1 evidence without an explicit scenario version", async (t) 
   t.after(async () => rm(resultsRoot, { recursive: true, force: true }));
   const run = benchmarkRunDocument("legacy-version-run");
   delete run.scenarioVersion;
-  run.comparisonSha256 = contentSha256(benchmarkComparisonContent(run));
+  delete run.environment.toolchains;
+  run.comparisonSha256 = contentSha256(benchmarkLegacyComparisonContent(run));
   await createEvidencePackage(resultsRoot, run, {
-    "comparison.json": benchmarkComparisonContent(run),
+    "comparison.json": benchmarkLegacyComparisonContent(run),
     "diff.patch": "",
     "events.jsonl": '{"type":"synthetic"}\n',
   });

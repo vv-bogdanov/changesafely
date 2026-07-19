@@ -10,9 +10,15 @@ export function run(command, args, cwd, timeout = 30_000) {
     timeout,
     env: {
       ...process.env,
+      ALL_PROXY: "http://127.0.0.1:9",
       CHANGESAFELY_SENTRY_DSN: "",
       CHANGESAFELY_TELEMETRY: "0",
+      COMPOSER_DISABLE_NETWORK: "1",
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      HTTP_PROXY: "http://127.0.0.1:9",
+      NO_PROXY: "",
       NO_UPDATE_NOTIFIER: "1",
+      PIP_NO_INDEX: "1",
       npm_config_audit: "false",
       npm_config_fund: "false",
       npm_config_offline: "true",
@@ -27,7 +33,25 @@ export function run(command, args, cwd, timeout = 30_000) {
   };
 }
 
-export async function runStandardScopeChecks({ checks, root, oracleRoot, baselineRoot }) {
+export async function runScenarioVisibleChecks({ checks, root, scenarioRoot }) {
+  const manifest = JSON.parse(await readFile(join(scenarioRoot, "scenario.json"), "utf8"));
+  const results = manifest.visibleChecks.map((command) => ({
+    command,
+    result: run(command.argv[0], command.argv.slice(1), join(root, command.cwd), 120_000),
+  }));
+  const failure = results.find(({ result }) => result.status !== 0);
+  checks.push({
+    id: "visible-checks",
+    category: "visible",
+    passed: !failure,
+    detail: failure
+      ? `${JSON.stringify(failure.command)}: ${commandFailure(failure.result)}`
+      : `${results.map(({ command }) => JSON.stringify(command)).join(", ")} passed`,
+  });
+  return !failure;
+}
+
+export async function runNodeScopeChecks({ checks, root, oracleRoot, baselineRoot }) {
   await check(checks, "public-api", "scope", async () => {
     const commonJsApi = await readOptionalJson(join(oracleRoot, "expected-api.json"));
     if (commonJsApi) {

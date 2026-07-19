@@ -12,3 +12,6 @@ or error-handling invariant.
 
 The worker receives only `baseline/` and the exact contents of `task.txt`. The hidden
 evaluator, reference patch, and mutants remain controller-owned.
+
+Version 3 moves preparation, visible checks, test paths, and Node/npm version evidence into the
+language-neutral scenario manifest without changing the public task.

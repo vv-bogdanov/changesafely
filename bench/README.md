@@ -58,6 +58,10 @@ npm run benchmark -- canary --scenario double-charge
 
 `npm run benchmark:ci` also exercises evidence hashing, corruption rejection,
 candidate-test mutation analysis, replay, and report generation with no model call.
+Scenario discovery is deterministic: each complete directory under `scenarios/` carries a
+schema-validated `scenario.json` with its offline preparation, argv/cwd visible checks, test
+paths, and toolchain version commands. `npm run benchmark:validate` validates every discovered
+scenario; `--scenario <id>` selects one.
 
 Run the opt-in Spark comparison sequentially. The controller rejects ChangeSafely
 until the matching Direct attempt exists, and refuses a second attempt in either mode:

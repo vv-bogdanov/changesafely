@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { isTestPath } from "../../src/repository-policy.js";
 import {
   analyzeTrace,
   normalizeTokenMetrics,
@@ -73,6 +72,7 @@ export interface BenchmarkReport {
     scenarioVersion?: number;
     model: string;
     effort: string;
+    toolchains?: Array<{ id: string; version: string }>;
     paired: boolean;
     runs: RunCaseCard[];
   }>;
@@ -132,6 +132,14 @@ export async function buildBenchmarkReport(resultsRoot: string): Promise<Benchma
         : { scenarioVersion: first.run.scenarioVersion }),
       model: first.run.model,
       effort: first.run.effort,
+      ...(first.run.environment.toolchains
+        ? {
+            toolchains: first.run.environment.toolchains.map(({ id, version }) => ({
+              id,
+              version,
+            })),
+          }
+        : {}),
       paired:
         entries.length === 2 &&
         entries.some((entry) => entry.run.mode === "direct") &&
@@ -192,7 +200,7 @@ async function buildRunCaseCard(
         reasoningTokens: evidence.run.usage.reasoningTokens,
       }),
     analytics,
-    diff: await diffSummary(evidence),
+    diff: await diffSummary(evidence, analysis.document.candidateTests.paths),
     candidateTests: analysis.document.candidateTests,
     mutation: analysis.document.mutation,
     protectedTests: analysis.document.protectedTests,
@@ -216,6 +224,13 @@ function renderMarkdownReport(report: BenchmarkReport): string {
       `- Measurement: \`${comparison.measurement}\``,
       `- Model: \`${escapeMarkdown(comparison.model)}\``,
       `- Effort: \`${escapeMarkdown(comparison.effort)}\``,
+      ...(comparison.toolchains
+        ? [
+            `- Toolchains: ${comparison.toolchains
+              .map(({ id, version }) => `\`${escapeMarkdown(id)} ${escapeMarkdown(version)}\``)
+              .join(", ")}`,
+          ]
+        : []),
       `- Paired: ${comparison.paired ? "yes" : "no"}`,
       "",
       "| Mode | Outcome | Safe task | Scope | Mutation | Time | Turns | Tokens (cached) | Diff |",
@@ -282,7 +297,10 @@ async function readEvaluation(evidence: VerifiedEvidence): Promise<EvaluationDoc
   }
 }
 
-async function diffSummary(evidence: VerifiedEvidence): Promise<DiffSummary> {
+async function diffSummary(
+  evidence: VerifiedEvidence,
+  candidateTestPaths: string[],
+): Promise<DiffSummary> {
   const diff = await readVerifiedEvidenceFile(evidence, "diff.patch");
   if (diff.byteLength === 0) {
     return {
@@ -304,8 +322,9 @@ async function diffSummary(evidence: VerifiedEvidence): Promise<DiffSummary> {
     false,
   );
   const rows = output.split("\n").filter(Boolean).map(parseNumstatRow);
-  const tests = rows.filter((row) => isTestPath(row.path));
-  const production = rows.filter((row) => !isTestPath(row.path));
+  const candidateTests = new Set(candidateTestPaths);
+  const tests = rows.filter((row) => candidateTests.has(row.path));
+  const production = rows.filter((row) => !candidateTests.has(row.path));
   return {
     files: rows.length,
     additions: sum(rows, "additions"),

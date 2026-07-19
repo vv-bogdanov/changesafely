@@ -81,11 +81,26 @@ test("comparison manifest is immutable and content-addressed", async (t) => {
   assert.equal(first.manifest.taskText, taskText);
   assert.equal(first.manifest.measurement, "development");
   assert.equal(first.manifest.scenarioVersion, 1);
+  assert.equal(first.manifest.comparisonVersion, 2);
+  assert.deepEqual(first.manifest.visibleChecks, [{ argv: ["npm", "test"], cwd: "." }]);
+  assert.equal(first.manifest.environment.toolchains[0]?.id, "node");
 });
 
 test("benchmark environment identifies the exact ChangeSafely commit", async () => {
-  const environment = await collectEnvironmentVersions(process.execPath, process.cwd());
+  const environment = await collectEnvironmentVersions(
+    process.execPath,
+    process.cwd(),
+    [{ id: "node", version: { argv: ["node", "--version"], cwd: "." } }],
+    process.cwd(),
+  );
   assert.match(environment.changesafelyCommit, /^[a-f0-9]{40,64}$/u);
+  assert.deepEqual(environment.toolchains, [
+    {
+      id: "node",
+      versionCommand: { argv: ["node", "--version"], cwd: "." },
+      version: process.version,
+    },
+  ]);
 });
 
 test("controller runs a fair fake Direct and ChangeSafely pair end to end", async (t) => {
@@ -127,8 +142,22 @@ test("controller runs a fair fake Direct and ChangeSafely pair end to end", asyn
 
   assert.equal(direct.run.comparisonId, changesafely.run.comparisonId);
   assert.match(direct.run.environment.changesafelyCommit ?? "", /^[a-f0-9]{40,64}$/u);
-  assert.equal(direct.run.scenarioVersion, 2);
-  assert.equal(changesafely.run.scenarioVersion, 2);
+  assert.deepEqual(
+    direct.run.environment.toolchains?.map(({ id }) => id),
+    ["node", "npm"],
+  );
+  const comparison = JSON.parse(await readFile(join(direct.path, "comparison.json"), "utf8")) as {
+    comparisonVersion: number;
+    scenarioManifestSha256: string;
+    preparation: Array<{ argv: string[]; cwd: string; network: string }>;
+    visibleChecks: Array<{ argv: string[]; cwd: string }>;
+  };
+  assert.equal(comparison.comparisonVersion, 2);
+  assert.match(comparison.scenarioManifestSha256, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(comparison.visibleChecks, [{ argv: ["npm", "test"], cwd: "." }]);
+  assert.equal(comparison.preparation[0]?.network, "disabled");
+  assert.equal(direct.run.scenarioVersion, 3);
+  assert.equal(changesafely.run.scenarioVersion, 3);
   assert.equal(direct.run.outcome, "unsafe_green");
   assert.equal(changesafely.run.outcome, "unsafe_green");
   assert.equal(direct.run.usage.inputTokens, 100);
@@ -170,7 +199,9 @@ function comparisonInput(): ComparisonInput {
     timeoutMs: 3_600_000,
     permissionProfile: "changesafely-benchmark",
     agentToolNetwork: "disabled",
-    visibleChecks: ["npm test"],
+    scenarioManifestSha256: "d".repeat(64),
+    preparation: [],
+    visibleChecks: [{ argv: ["npm", "test"], cwd: "." }],
     evaluatorSha256: "e".repeat(64),
     executionOrder: ["direct", "changesafely"],
     maxAttemptsPerMode: 1,
@@ -181,6 +212,13 @@ function comparisonInput(): ComparisonInput {
       changesafelyVersion: "0.1.0",
       platform: process.platform,
       architecture: process.arch,
+      toolchains: [
+        {
+          id: "node",
+          versionCommand: { argv: ["node", "--version"], cwd: "." },
+          version: process.version,
+        },
+      ],
     },
   };
 }
