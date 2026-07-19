@@ -25,3 +25,23 @@ export function safeEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS
   delete result.NODE_TEST_CONTEXT;
   return result;
 }
+
+export function repositoryCommandEnvironment(
+  isolatedHome: string,
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {
+    CI: "1",
+    NO_COLOR: "1",
+    HOME: isolatedHome,
+    USERPROFILE: isolatedHome,
+    XDG_CONFIG_HOME: isolatedHome,
+    npm_config_userconfig: `${isolatedHome}/.npmrc`,
+    NPM_CONFIG_USERCONFIG: `${isolatedHome}/.npmrc`,
+  };
+  for (const key of ["PATH", "SHELL", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "TERM"] as const) {
+    const value = source[key];
+    if (value !== undefined) result[key] = value;
+  }
+  return result;
+}

@@ -12,7 +12,12 @@ import {
   inspectBaseline,
 } from "./git.js";
 import { testAuthorPrompt } from "./prompts.js";
-import { type CommandResult, isSafetyTestCommand, runCommand } from "./runner.js";
+import {
+  type CommandResult,
+  isSafetyTestCommand,
+  runCommand,
+  toCommandEvidence,
+} from "./runner.js";
 import {
   type ChangeContract,
   type DecisionArtifact,
@@ -28,6 +33,7 @@ export interface HarnessOptions {
   clientFactory?: () => AppServerClient;
   sandboxCommands?: boolean;
   model?: string;
+  signal?: AbortSignal;
 }
 
 export interface HarnessResult {
@@ -127,7 +133,9 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   state.nextAction = "Wait for the protected safety harness.";
   await store.writeState(state);
 
-  const client = options.clientFactory?.() ?? new AppServerClient({ cwd: repoPath });
+  const client =
+    options.clientFactory?.() ??
+    new AppServerClient({ cwd: repoPath, ...(options.signal ? { signal: options.signal } : {}) });
   try {
     await client.start();
     const fork = await client.forkThread({
@@ -206,6 +214,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     }
     const command = await runCommand(harness.targetedCommand.argv, repoPath, {
       sandboxed: options.sandboxCommands ?? false,
+      ...(options.signal ? { signal: options.signal } : {}),
     });
     await assertProtectedConfigurationUnchanged(
       repoPath,
@@ -239,7 +248,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     const commandStored = await store.writeArtifact(
       "commands.json",
       "deterministic-runner",
-      [command],
+      toCommandEvidence([command]),
       [harnessStored.hash],
     );
     state.artifacts.commands = commandStored.hash;

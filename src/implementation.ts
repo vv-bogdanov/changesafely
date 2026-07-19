@@ -14,7 +14,12 @@ import {
 } from "./git.js";
 import { implementerPrompt, repairPrompt, verifierPrompt } from "./prompts.js";
 import { implementationReport } from "./report.js";
-import { type CommandResult, runCommand } from "./runner.js";
+import {
+  type CommandEvidence,
+  type CommandResult,
+  runCommand,
+  toCommandEvidence,
+} from "./runner.js";
 import {
   type ChangeContract,
   type DecisionArtifact,
@@ -39,6 +44,7 @@ export interface ImplementationOptions {
   clientFactory?: () => AppServerClient;
   sandboxCommands?: boolean;
   model?: string;
+  signal?: AbortSignal;
 }
 
 export interface ImplementationResult {
@@ -160,10 +166,16 @@ async function runProjectCommands(
   harness: StoredHarness,
   sandboxed: boolean,
   protectedConfiguration: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<CommandResult[]> {
   const results: CommandResult[] = [];
   for (const argv of await projectCommands(repoPath, harness)) {
-    results.push(await runCommand(argv, repoPath, { sandboxed }));
+    results.push(
+      await runCommand(argv, repoPath, {
+        sandboxed,
+        ...(signal ? { signal } : {}),
+      }),
+    );
   }
   const protectedFinal = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
   if (!sameHashes(harness.protectedHashes, protectedFinal)) {
@@ -211,8 +223,8 @@ export async function runImplementationAndVerification(
   ).payload;
   const harness = (await loadArtifact<StoredHarness>(repoPath, state.runId, "harness.json"))
     .payload;
-  const harnessCommandResults = (
-    await loadArtifact<CommandResult[]>(repoPath, state.runId, "commands.json")
+  const harnessCommandEvidence = (
+    await loadArtifact<CommandEvidence[]>(repoPath, state.runId, "commands.json")
   ).payload;
   if (harness.testCommit !== state.testCommit) {
     throw new Error("Harness artifact does not match T1");
@@ -228,7 +240,9 @@ export async function runImplementationAndVerification(
   state.phase = "implementer";
   state.nextAction = "Wait for the one selected implementation.";
   await store.writeState(state);
-  const client = options.clientFactory?.() ?? new AppServerClient({ cwd: repoPath });
+  const client =
+    options.clientFactory?.() ??
+    new AppServerClient({ cwd: repoPath, ...(options.signal ? { signal: options.signal } : {}) });
   let implementationCommit = "";
   let commandResults: CommandResult[] = [];
   let verification: VerificationArtifact | undefined;
@@ -312,11 +326,12 @@ export async function runImplementationAndVerification(
       harness,
       options.sandboxCommands ?? false,
       state.baselineProtectedConfiguration ?? {},
+      options.signal,
     );
     let commandsStored = await store.writeArtifact(
       "verification-commands.json",
       "deterministic-runner",
-      commandResults,
+      toCommandEvidence(commandResults),
       [implementationStored.hash],
     );
     state.artifacts.verificationCommands = commandsStored.hash;
@@ -355,8 +370,8 @@ export async function runImplementationAndVerification(
           implementationCommit,
           diff: actualDiff,
           commandResults: {
-            harnessBaseline: harnessCommandResults,
-            final: commandResults,
+            harnessBaseline: harnessCommandEvidence,
+            final: toCommandEvidence(commandResults),
           },
         }),
         {
@@ -461,11 +476,12 @@ export async function runImplementationAndVerification(
         harness,
         options.sandboxCommands ?? false,
         state.baselineProtectedConfiguration ?? {},
+        options.signal,
       );
       commandsStored = await store.writeArtifact(
         "verification-commands-repair.json",
         "deterministic-runner",
-        commandResults,
+        toCommandEvidence(commandResults),
         [repairStored.hash],
       );
       state.artifacts.verificationCommandsRepair = commandsStored.hash;
@@ -495,7 +511,7 @@ export async function runImplementationAndVerification(
     await store.writeState(state);
     const reportPath = await store.writeText(
       "report.md",
-      implementationReport(state, decision, commandResults, verification),
+      implementationReport(state, decision, toCommandEvidence(commandResults), verification),
     );
     return { implementationCommit, commands: commandResults, verification, accepted, reportPath };
   } catch (error) {

@@ -53,6 +53,7 @@ export interface AppServerClientOptions {
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
 }
 
 export interface RunTurnOptions {
@@ -90,12 +91,16 @@ export class AppServerClient {
   private readonly completedTurns = new Map<string, TurnCompletedNotification>();
   private readonly agentMessages = new Map<string, string>();
   private stderr = "";
+  private abortListener: (() => void) | undefined;
 
   constructor(private readonly options: AppServerClientOptions = {}) {}
 
   async start(): Promise<InitializeResponse> {
     if (this.process) {
       throw new AppServerError("App Server is already started");
+    }
+    if (this.options.signal?.aborted) {
+      throw new AppServerError("App Server start was aborted");
     }
 
     const command = this.options.command ?? "codex";
@@ -122,6 +127,8 @@ export class AppServerClient {
 
     this.lines = createInterface({ input: this.process.stdout });
     this.lines.on("line", (line) => this.handleLine(line));
+    this.abortListener = () => void this.close();
+    this.options.signal?.addEventListener("abort", this.abortListener, { once: true });
 
     const params: InitializeParams = {
       clientInfo: {
@@ -197,6 +204,10 @@ export class AppServerClient {
   }
 
   async close(): Promise<void> {
+    if (this.abortListener) {
+      this.options.signal?.removeEventListener("abort", this.abortListener);
+      this.abortListener = undefined;
+    }
     const child = this.process;
     if (!child) return;
 

@@ -19,7 +19,7 @@ import { runHarness } from "./harness.js";
 import { runImplementationAndVerification } from "./implementation.js";
 import { assertProtocolVersion } from "./protocol.js";
 import { implementationReport } from "./report.js";
-import type { CommandResult } from "./runner.js";
+import type { CommandEvidence } from "./runner.js";
 import {
   type DecisionArtifact,
   type HarnessArtifact,
@@ -44,6 +44,7 @@ export interface FullRunOptions {
   task: string;
   plannerCount: number;
   model?: string;
+  signal?: AbortSignal;
 }
 
 export interface FullRunResult {
@@ -242,14 +243,14 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
       throw new Error("Protected T1 hashes changed before release gate");
     }
     const baselineCommands = (
-      await loadVerifiedArtifact<CommandResult[]>(repoPath, state, "commands", "commands.json")
+      await loadVerifiedArtifact<CommandEvidence[]>(repoPath, state, "commands", "commands.json")
     ).payload;
     const finalCommandArtifact =
       state.repairCount === 1
         ? ["verificationCommandsRepair", "verification-commands-repair.json"]
         : ["verificationCommands", "verification-commands.json"];
     const verificationCommands = (
-      await loadVerifiedArtifact<CommandResult[]>(
+      await loadVerifiedArtifact<CommandEvidence[]>(
         repoPath,
         state,
         finalCommandArtifact[0] ?? "",
@@ -328,10 +329,17 @@ async function continueFromPlanning(
   repoPath: string,
   runId: string,
   model?: string,
+  signal?: AbortSignal,
 ): Promise<FullRunResult> {
   try {
-    await runHarness({ repoPath, runId, sandboxCommands: true, ...(model ? { model } : {}) });
-    return await continueFromHarness(repoPath, runId, model);
+    await runHarness({
+      repoPath,
+      runId,
+      sandboxCommands: true,
+      ...(model ? { model } : {}),
+      ...(signal ? { signal } : {}),
+    });
+    return await continueFromHarness(repoPath, runId, model, signal);
   } catch {
     return persistedResult(repoPath, runId);
   }
@@ -341,6 +349,7 @@ async function continueFromHarness(
   repoPath: string,
   runId: string,
   model?: string,
+  signal?: AbortSignal,
 ): Promise<FullRunResult> {
   try {
     const implementation = await runImplementationAndVerification({
@@ -348,6 +357,7 @@ async function continueFromHarness(
       runId,
       sandboxCommands: true,
       ...(model ? { model } : {}),
+      ...(signal ? { signal } : {}),
     });
     if (!implementation.accepted) {
       return persistedResult(repoPath, runId, implementation.reportPath);
@@ -389,6 +399,7 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
     requireProtocolMatch: true,
     parallelPlanners: true,
     ...(options.model ? { model: options.model } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
   });
   if (planning.status !== "PLANNED") {
     return {
@@ -399,21 +410,25 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
     };
   }
   return withRepositoryWriteLock(repoPath, planning.runId, () =>
-    continueFromPlanning(repoPath, planning.runId, options.model),
+    continueFromPlanning(repoPath, planning.runId, options.model, options.signal),
   );
 }
 
-export async function resumeRun(repoPathInput: string, runId: string): Promise<FullRunResult> {
+export async function resumeRun(
+  repoPathInput: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<FullRunResult> {
   const repoPath = resolve(repoPathInput);
   return withRepositoryWriteLock(repoPath, runId, async () => {
     await assertProtocolVersion();
     const state = await validateResumeBoundary(repoPath, runId);
     const model = state.model || undefined;
     if (state.phase === "planning-complete" && state.status === "PLANNED") {
-      return continueFromPlanning(repoPath, runId, model);
+      return continueFromPlanning(repoPath, runId, model, signal);
     }
     if (state.phase === "harness-complete" && state.status === "RUNNING") {
-      return continueFromHarness(repoPath, runId, model);
+      return continueFromHarness(repoPath, runId, model, signal);
     }
     if (state.phase === "verification-complete" && state.status === "RUNNING") {
       try {

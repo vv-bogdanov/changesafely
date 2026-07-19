@@ -266,6 +266,15 @@ test("creates I1, preserves T1, runs commands, and verifies from a fresh C0 fork
   assert.equal(implementation.accepted, true);
   assert.equal(implementation.verification.verdict, "accept");
   assert.ok(implementation.commands.every((command) => command.exitCode === 0));
+  const persistedCommands = JSON.parse(
+    await readFile(join(planning.runPath, "verification-commands.json"), "utf8"),
+  ) as { payload: Array<Record<string, unknown>> };
+  for (const command of persistedCommands.payload) {
+    assert.equal("stdout" in command, false);
+    assert.equal("stderr" in command, false);
+    assert.equal("cwd" in command, false);
+    assert.equal("argv" in command, false);
+  }
   const state = JSON.parse(
     await readFile(join(planning.runPath, "state.json"), "utf8"),
   ) as RunState;

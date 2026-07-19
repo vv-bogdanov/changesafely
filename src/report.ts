@@ -1,6 +1,6 @@
 import type { RunState } from "./artifacts.js";
 import type { PlanEligibility } from "./eligibility.js";
-import type { CommandResult } from "./runner.js";
+import type { CommandEvidence } from "./runner.js";
 import type { DecisionArtifact, DetailedPlan, VerificationArtifact } from "./schemas.js";
 
 export function planningReport(
@@ -59,12 +59,12 @@ ${state.nextAction || "No next action recorded."}
 export function implementationReport(
   state: RunState,
   decision: DecisionArtifact,
-  commands: CommandResult[],
+  commands: CommandEvidence[],
   verification: VerificationArtifact,
 ): string {
   const commandLines = commands.map(
     (command) =>
-      `- \`${command.argv.join(" ")}\`: exit ${command.exitCode}${command.timedOut ? " (timeout)" : ""}`,
+      `- \`${command.command}\`: exit ${command.exitCode}${command.timedOut ? " (timeout)" : ""}`,
   );
   const findingLines = verification.findings.map(
     (finding) =>

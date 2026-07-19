@@ -52,6 +52,7 @@ export interface PlanningOptions {
   requireProtocolMatch?: boolean;
   parallelPlanners?: boolean;
   model?: string;
+  signal?: AbortSignal;
 }
 
 export interface PlanningResult {
@@ -118,7 +119,12 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
   };
   await store.writeState(state);
 
-  const client = options.clientFactory?.() ?? new AppServerClient({ cwd: baseline.repoPath });
+  const client =
+    options.clientFactory?.() ??
+    new AppServerClient({
+      cwd: baseline.repoPath,
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
   const plans: DetailedPlan[] = [];
   let eligibility: PlanEligibility[] = [];
   let decision: DecisionArtifact | undefined;

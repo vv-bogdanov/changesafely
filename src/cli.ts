@@ -89,13 +89,28 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     process.stderr.write(`Unknown command: ${command ?? ""}\n\n${HELP}`);
     return 1;
   }
+  const abortController = new AbortController();
+  let interruptedExitCode: number | undefined;
+  const onSigint = () => {
+    interruptedExitCode = 130;
+    abortController.abort(new Error("Interrupted by SIGINT"));
+  };
+  const onSigterm = () => {
+    interruptedExitCode = 143;
+    abortController.abort(new Error("Interrupted by SIGTERM"));
+  };
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
   try {
     const repoPath = resolve(requiredString(parsed.values.repo, "--repo"));
     if (command === "resume") {
       const runId = requiredString(parsed.values.run, "--run");
-      const result = await resumeRun(repoPath, runId);
+      const result = await resumeRun(repoPath, runId, abortController.signal);
       await printRunSummary(repoPath, result.runId, result.reportPath);
-      return result.status === "VERIFIED" ? 0 : result.status === "FAILED" ? 1 : 2;
+      return (
+        interruptedExitCode ??
+        (result.status === "VERIFIED" ? 0 : result.status === "FAILED" ? 1 : 2)
+      );
     }
     const task = requiredString(parsed.values.task, "--task");
     const testModel = process.env.SAFECHANGE_LIVE_TEST_MODEL?.trim() || undefined;
@@ -111,24 +126,32 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
             plannerCount,
             requireProtocolMatch: true,
             parallelPlanners: true,
+            signal: abortController.signal,
             ...(testModel ? { model: testModel } : {}),
           })
         : await runFullWorkflow({
             repoPath,
             task,
             plannerCount,
+            signal: abortController.signal,
             ...(testModel ? { model: testModel } : {}),
           });
     await printRunSummary(repoPath, result.runId, result.reportPath);
-    return result.status === "PLANNED" || result.status === "VERIFIED"
-      ? 0
-      : result.status === "FAILED"
-        ? 1
-        : 2;
+    return (
+      interruptedExitCode ??
+      (result.status === "PLANNED" || result.status === "VERIFIED"
+        ? 0
+        : result.status === "FAILED"
+          ? 1
+          : 2)
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`SafeChange failed: ${message}\n`);
-    return error instanceof PreflightError ? 2 : 1;
+    return interruptedExitCode ?? (error instanceof PreflightError ? 2 : 1);
+  } finally {
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
   }
 }
 
