@@ -421,7 +421,8 @@ export async function runImplementationAndVerification(
     const verify = async (
       role: Extract<RunPhase, "verifier" | "verifier:repair">,
     ): Promise<VerificationArtifact> => {
-      const actualDiff = await diffFrom(repoPath, state.baselineCommit);
+      const harnessDiff = await diffFrom(repoPath, state.baselineCommit, state.testCommit);
+      const implementationDiff = await diffFrom(repoPath, state.testCommit, implementationCommit);
       state.phase = role;
       await store.writeState(state);
       reportProgress(
@@ -455,7 +456,8 @@ export async function runImplementationAndVerification(
           baselineCommit: state.baselineCommit,
           testCommit: state.testCommit,
           implementationCommit,
-          diff: actualDiff,
+          harnessDiff,
+          implementationDiff,
           commandResults: {
             harnessBaseline: harnessCommandEvidence,
             final: toCommandEvidence(commandResults, repoPath),

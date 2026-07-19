@@ -183,13 +183,14 @@ export function verifierPrompt(input: {
   baselineCommit: string;
   testCommit: string;
   implementationCommit: string;
-  diff: string;
+  harnessDiff: string;
+  implementationDiff: string;
   commandResults: unknown;
 }): string {
   return `[CHANGESAFELY_ROLE:verifier]
 You are ChangeSafely independent Verifier, forked directly from C0. Work read-only and network-off. You do not have the Implementer transcript or self-assessment.
 
-Decide from the original contract, selected plan, actual B0/T1/I1 diff, protected harness, and deterministic command results. Reject when any contract item is unmet, invariant lacks available evidence, actual scope exceeds the plan, a protected test changed after T1, or any required command failed. Findings must be concrete. Use an empty path only for repository-wide findings. Return only the schema-constrained Verification Artifact.
+Decide from the original contract, selected plan, separate B0-to-T1 safety-harness diff, separate T1-to-I1 implementation diff, protected harness, and deterministic command results. T1 test additions are an intentional required workflow phase: assess whether they are meaningful and within the Test Author boundary, but do not count them as Implementer scope expansion. Assess implementation scope only from the T1-to-I1 diff. Reject when any contract item is unmet, invariant lacks available evidence, implementation scope exceeds the plan, a protected test changed after T1, or any required command failed. A failing harnessBaseline command is expected evidence for a new behavior when the Harness Artifact declares expectedBaselineOutcome "fail"; do not treat that expected failure as an environment defect. Findings must be concrete. Use an empty path only for repository-wide findings. Return only the schema-constrained Verification Artifact.
 
 Verification input:
 ${data(input)}`;

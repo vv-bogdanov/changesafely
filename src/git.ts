@@ -303,8 +303,8 @@ export async function changedPaths(repoPath: string, from = "HEAD"): Promise<str
   ].sort();
 }
 
-export async function diffFrom(repoPath: string, from: string): Promise<string> {
-  return git(repoPath, ["diff", "--no-ext-diff", from, "--"]);
+export async function diffFrom(repoPath: string, from: string, to?: string): Promise<string> {
+  return git(repoPath, ["diff", "--no-ext-diff", from, ...(to ? [to] : []), "--"]);
 }
 
 export async function commitPaths(
