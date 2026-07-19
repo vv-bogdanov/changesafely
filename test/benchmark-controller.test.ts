@@ -31,6 +31,9 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   const attempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace"), {
     installDependencies: false,
   });
+  const secondAttempt = await materializeAttempt(scenario, join(temporaryRoot, "workspace-2"), {
+    installDependencies: false,
+  });
 
   await writeFile(
     join(attempt.workspace, "src", "candidate.ts"),
@@ -41,6 +44,7 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   const snapshot = await snapshotAttempt(attempt.workspace, attempt.baselineCommit);
 
   assert.match(attempt.baselineCommit, /^[a-f0-9]{40,64}$/u);
+  assert.equal(secondAttempt.baselineCommit, attempt.baselineCommit);
   assert.match(snapshot.snapshotCommit, /^[a-f0-9]{40,64}$/u);
   assert.deepEqual(snapshot.changedFiles, ["src/candidate.ts"]);
   assert.match(snapshot.diff, /candidate = true/u);

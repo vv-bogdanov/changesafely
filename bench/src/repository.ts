@@ -118,6 +118,8 @@ async function command(
       maxBuffer: 16 * 1024 * 1024,
       env: {
         ...process.env,
+        GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_TERMINAL_PROMPT: "0",
         NO_UPDATE_NOTIFIER: "1",
