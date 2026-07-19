@@ -1,0 +1,30 @@
+diff --git a/src/order-service.js b/src/order-service.js
+--- a/src/order-service.js
++++ b/src/order-service.js
+@@ -10,4 +10,26 @@ const READY = 7;
+ function repriceOrder(order, context, callback) {
+   const preview = context.headers?.["x-change-mode"] === "preview";
++  if (preview) {
++    const candidate = {
++      ...order,
++      items: order.items.map((item) => ({ ...item })),
++    };
++    try {
++      const quote = pricing.previewQuote(candidate, context);
++      store.state.audit.push({ action: "previewed", actor: context.locals?.actor || "system" });
++      callback(null, {
++        orderId: order.id,
++        total: quote.total,
++        mode: "preview",
++      });
++    } catch {
++      callback(null, {
++        orderId: order.id,
++        total: order.total || 0,
++        mode: "preview",
++      });
++    }
++    return;
++  }
+   let quote;
+   try {

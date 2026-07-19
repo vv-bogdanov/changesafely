@@ -1,0 +1,10 @@
+{
+  "format": "commonjs",
+  "source": "src/order-service.js",
+  "exports": {
+    "repriceOrder": 3,
+    "reset": 0,
+    "snapshot": 0,
+    "submitRefund": 2
+  }
+}

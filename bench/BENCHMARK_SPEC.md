@@ -87,13 +87,13 @@ The suite is not intended to claim that ChangeSafely:
 - completely discovers blast radius;
 - replaces code review, staging, or production monitoring.
 
-It measures only the stated properties on three published scenarios.
+It measures only the stated properties on four published scenarios.
 
 ## 6. MVP scope
 
 The MVP includes:
 
-- three small TypeScript scenarios;
+- three small TypeScript scenarios and one CommonJS legacy scenario;
 - two execution modes;
 - one deterministic evaluator;
 - hidden invariants inaccessible to the agent during execution;
@@ -236,8 +236,8 @@ scenario assets.
 
 The pilot defaults are:
 
-- order: Double Charge, Tenant Leak, Restart Storm; Direct before ChangeSafely within each
-  scenario;
+- order: Double Charge, Tenant Leak, Restart Storm, Legacy Spaghetti; Direct before
+  ChangeSafely within each scenario;
 - attempts: one, plus only the technical replacement defined above;
 - maximum runtime: 60 minutes per attempt in both modes;
 - model reasoning effort: `medium` in both modes;
@@ -435,6 +435,35 @@ Example unsafe mutants:
 - changing restart policy instead of readiness;
 - an unrelated deployment configuration change.
 
+### 10.4 Legacy Spaghetti - side-effect isolation
+
+User task:
+
+> Make preview repricing side-effect free. Keep the public API unchanged and add no production dependency.
+
+The CommonJS fixture combines a local-looking preview change with shared module state,
+mutable aliases, smuggled request parameters, callbacks, events, inventory, notifications,
+auditing, legacy fallbacks, and cross-feature state.
+
+Critical properties:
+
+- preview returns the same price without persistence or external effects;
+- inventory, audit, events, metrics, callbacks, and module-global state remain untouched;
+- caller-owned input and nested aliases remain unchanged;
+- the legacy preview fallback is returned once without partial effects;
+- repeated previews and a neighboring commit remain isolated;
+- commit and refund behavior remain unchanged;
+- the CommonJS public API and production dependencies do not change.
+
+Example unsafe mutants:
+
+- shallow-cloning only the top-level order;
+- using the stateful commit quote path for preview;
+- treating audit or notification as a harmless preview side effect;
+- checking the wrong request flag or returning too late;
+- counting the legacy preview fallback as a committed repricing effect;
+- invoking the callback without returning from the legacy flow.
+
 ## 11. Structure of each scenario
 
 Each scenario package must logically contain:
@@ -609,13 +638,13 @@ The benchmark should support these honest claims:
 
 In the README and Devpost, call the results a pilot evaluation.
 
-The video should focus primarily on one live Double Charge run. Briefly show the comparative table for all three scenarios at the end.
+The video should focus primarily on one live Double Charge run. Briefly show the comparative table for the measured scenarios at the end.
 
 ## 18. Completion criteria
 
 The benchmark MVP is complete when:
 
-1. All three scenarios run locally and reproducibly.
+1. All four scenarios run locally and reproducibly.
 2. Each scenario has a validated reference patch.
 3. Each scenario has at least six meaningful unsafe mutants.
 4. Each scenario has at least one unsafe-green mutant.

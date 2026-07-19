@@ -7,7 +7,7 @@ Specification and task cards for the ChangeSafely pilot benchmark.
 1. [`BENCHMARK_SPEC.md`](BENCHMARK_SPEC.md) - primary specification: motivation,
    registered methodology, isolation contract, scenarios, and completion criteria.
 2. [`BENCHMARK_TASKS.md`](BENCHMARK_TASKS.md) - public task text and controller-only
-   scenario notes for the three benchmark tasks.
+   scenario notes for the four benchmark tasks.
 3. [`RESULTS.md`](RESULTS.md) - retained Spark development-pilot results and their
    limitations. These are not final measurements.
 4. [`golden/spark-pilot`](golden/spark-pilot/README.md) - published, hash-verified
@@ -24,11 +24,12 @@ The MVP compares two modes:
 - **Codex Direct**
 - **ChangeSafely**
 
-across three open TypeScript scenarios:
+across four open scenarios:
 
 - Double Charge;
 - Tenant Leak;
-- Restart Storm.
+- Restart Storm;
+- Legacy Spaghetti (CommonJS).
 
 This is an open pilot evaluation, not a universal industry benchmark.
 
@@ -81,8 +82,9 @@ npm run benchmark -- run --scenario <scenario> --mode changesafely --model <id> 
 Do not run these commands without separate user authorization. The measurement type
 is persisted in every newly created comparison and run document.
 
-Tenant Leak uses the same commands with `--scenario tenant-leak` after its deterministic
-validator passes. Restart Storm uses `--scenario restart-storm` under the same gate.
+Tenant Leak, Restart Storm, and the CommonJS Legacy Spaghetti proof use the same commands
+with `--scenario tenant-leak`, `--scenario restart-storm`, or
+`--scenario legacy-spaghetti` after their deterministic validators pass.
 
 Evaluate candidate-added tests against the reference and declared mutants, then replay
 only the persisted hash-verified evidence and generate the paired report:

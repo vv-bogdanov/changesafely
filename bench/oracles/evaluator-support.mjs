@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 export function run(command, args, cwd, timeout = 30_000) {
@@ -28,6 +29,11 @@ export function run(command, args, cwd, timeout = 30_000) {
 
 export async function runStandardScopeChecks({ checks, root, oracleRoot, baselineRoot }) {
   await check(checks, "public-api", "scope", async () => {
+    const commonJsApi = await readOptionalJson(join(oracleRoot, "expected-api.json"));
+    if (commonJsApi) {
+      assertCommonJsApi(commonJsApi, root);
+      return;
+    }
     const expected = await readFile(join(oracleRoot, "expected-api.d.ts"), "utf8");
     const sourceName = expected.match(/^\/\/ source: (.+)$/mu)?.[1];
     assert(sourceName, "expected API must declare its source file");
@@ -129,4 +135,33 @@ function normalizePublicApi(value) {
 
 function stableJson(value) {
   return JSON.stringify(value, Object.keys(value).sort());
+}
+
+async function readOptionalJson(path) {
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+function assertCommonJsApi(expected, root) {
+  assert(expected?.format === "commonjs", "expected API format must be commonjs");
+  assert(typeof expected.source === "string", "expected API source must be a string");
+  assert(expected.exports && typeof expected.exports === "object", "expected exports are required");
+  const require = createRequire(import.meta.url);
+  const source = join(root, expected.source);
+  const actual = require(source);
+  const expectedNames = Object.keys(expected.exports).sort();
+  assert(
+    stableJson(Object.keys(actual).sort()) === stableJson(expectedNames),
+    "public API changed",
+  );
+  for (const name of expectedNames) {
+    const arity = expected.exports[name];
+    assert(Number.isInteger(arity) && arity >= 0, `invalid expected arity for ${name}`);
+    assert(typeof actual[name] === "function", `public export ${name} is not a function`);
+    assert(actual[name].length === arity, `public export ${name} arity changed`);
+  }
 }

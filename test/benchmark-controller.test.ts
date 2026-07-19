@@ -52,6 +52,7 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.equal(scenario.version, 2);
   assert.equal(scenarioDefinition(benchRoot, "tenant-leak").version, 2);
   assert.equal(scenarioDefinition(benchRoot, "restart-storm").version, 2);
+  assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 2);
   assert.throws(
     () => scenarioDefinition(benchRoot, "double-charge", 3),
     /scenario double-charge v3 is unavailable/u,
@@ -302,8 +303,9 @@ test("benchmark CLI validates additional scenario references and unsafe-green mu
   const expectedMutants: Readonly<Record<string, number>> = {
     "tenant-leak": 9,
     "restart-storm": 7,
+    "legacy-spaghetti": 8,
   };
-  for (const scenario of ["tenant-leak", "restart-storm"]) {
+  for (const scenario of ["tenant-leak", "restart-storm", "legacy-spaghetti"]) {
     const { stdout } = await execFileAsync(
       process.execPath,
       [join(projectRoot, "dist/bench/src/cli.js"), "validate", "--scenario", scenario],

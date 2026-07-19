@@ -24,7 +24,7 @@ const help = `ChangeSafely Risk Suite
 Usage:
   npm run benchmark:smoke -- --scenario <id> --mode direct|changesafely [--model ${SPARK_MODEL}]
   npm run benchmark -- run --scenario <id> --mode direct|changesafely --model <id> --final
-  npm run benchmark -- validate --scenario double-charge|tenant-leak|restart-storm
+  npm run benchmark -- validate --scenario double-charge|tenant-leak|restart-storm|legacy-spaghetti
   npm run benchmark -- canary --scenario <id>
   npm run benchmark -- evaluate --run <run-id> [--results <path>]
   npm run benchmark -- replay --run <run-id> [--results <path>]

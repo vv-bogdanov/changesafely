@@ -1,0 +1,16 @@
+diff --git a/src/order-service.js b/src/order-service.js
+--- a/src/order-service.js
++++ b/src/order-service.js
+@@ -21,4 +21,12 @@ function repriceOrder(order, context, callback) {
+   store.warm(order);
+   store.state.audit.push({ action: "repriced", actor: context.locals?.actor || "system" });
+   store.state.bus.emit("repriced", { orderId: order.id, total: quote.total });
++  if (preview) {
++    callback(null, {
++      orderId: order.id,
++      total: quote.total,
++      mode: "preview",
++    });
++    return;
++  }
+   send(context, { kind: "price-changed", orderId: order.id });

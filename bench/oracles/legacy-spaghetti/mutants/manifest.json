@@ -1,0 +1,79 @@
+{
+  "mutants": [
+    {
+      "id": "shallow-preview-copy",
+      "patch": "shallow-preview-copy.patch",
+      "expectedFailures": ["preview-input-immutable", "preview-error-clean"]
+    },
+    {
+      "id": "stateful-preview-quote",
+      "patch": "stateful-preview-quote.patch",
+      "expectedFailures": [
+        "preview-no-metrics-or-pricing-state",
+        "preview-error-clean",
+        "preview-repeatable",
+        "preview-commit-isolation"
+      ]
+    },
+    {
+      "id": "external-preview-notification",
+      "patch": "external-preview-notification.patch",
+      "expectedFailures": ["preview-no-messages-audit-or-events"]
+    },
+    {
+      "id": "audited-preview",
+      "patch": "audited-preview.patch",
+      "expectedFailures": [
+        "preview-no-messages-audit-or-events",
+        "preview-repeatable",
+        "preview-commit-isolation"
+      ]
+    },
+    {
+      "id": "counted-preview-fallback",
+      "patch": "counted-preview-fallback.patch",
+      "expectedFailures": ["preview-error-clean"]
+    },
+    {
+      "id": "late-preview-return",
+      "patch": "late-preview-return.patch",
+      "expectedFailures": [
+        "preview-no-inventory-or-globals",
+        "preview-no-messages-audit-or-events",
+        "preview-no-metrics-or-pricing-state",
+        "preview-input-immutable",
+        "preview-error-clean",
+        "preview-repeatable",
+        "preview-commit-isolation"
+      ]
+    },
+    {
+      "id": "wrong-preview-flag",
+      "patch": "wrong-preview-flag.patch",
+      "expectedFailures": [
+        "preview-no-inventory-or-globals",
+        "preview-no-messages-audit-or-events",
+        "preview-no-metrics-or-pricing-state",
+        "preview-input-immutable",
+        "preview-error-clean",
+        "preview-repeatable",
+        "preview-commit-isolation"
+      ]
+    },
+    {
+      "id": "callback-without-return",
+      "patch": "callback-without-return.patch",
+      "expectedFailures": [
+        "preview-result",
+        "preview-no-inventory-or-globals",
+        "preview-no-messages-audit-or-events",
+        "preview-no-metrics-or-pricing-state",
+        "preview-input-immutable",
+        "preview-callback-once",
+        "preview-error-clean",
+        "preview-repeatable",
+        "preview-commit-isolation"
+      ]
+    }
+  ]
+}

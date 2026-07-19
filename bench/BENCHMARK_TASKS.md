@@ -130,3 +130,39 @@ Adding a database check to the liveness probe can cause a restart storm instead 
 - DB in startup;
 - restart-policy change;
 - unrelated deployment edits.
+
+---
+
+## 4. Legacy Spaghetti
+
+### Task
+
+```text
+Make preview repricing side-effect free.
+Keep the public API unchanged.
+Do not add a production dependency.
+```
+
+### Risk
+
+A preview shares the legacy commit path, so a correct returned price can conceal inventory,
+notification, audit, event, callback, alias-mutation, and module-global effects.
+
+### Hidden invariants
+
+- preview does not persist, reserve inventory, notify, audit, emit, or increment metrics;
+- caller-owned objects and nested aliases remain unchanged;
+- pricing require-cache state and cross-feature state remain unchanged;
+- the legacy fallback produces one callback and no partial effects;
+- repeated previews and a neighboring commit stay isolated;
+- commit and refund behavior remain stable;
+- CommonJS exports and production dependencies remain stable.
+
+### Unsafe candidates
+
+- shallow input clone;
+- stateful preview quote;
+- audit-only or notification-only preview effects;
+- late return or wrong preview flag;
+- preview fallback that still increments commit metrics;
+- callback without return.
