@@ -95,7 +95,7 @@ export async function assertProtectedConfigurationUnchanged(
 }
 
 export async function inspectBaseline(repoPath: string): Promise<BaselineSnapshot> {
-  const root = await git(repoPath, ["rev-parse", "--show-toplevel"]);
+  const root = await canonicalRepositoryPath(await git(repoPath, ["rev-parse", "--show-toplevel"]));
   const commit = await git(root, ["rev-parse", "HEAD"]);
   const branch = await git(root, ["branch", "--show-current"]);
   if (!branch) {
