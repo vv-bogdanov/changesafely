@@ -1,0 +1,34 @@
+{
+  "mutants": [
+    {
+      "id": "producer-only",
+      "patch": "producer-only.patch",
+      "expectedFailures": ["coordinated-discount", "empty-discount"]
+    },
+    {
+      "id": "consumer-only",
+      "patch": "consumer-only.patch",
+      "expectedFailures": ["coordinated-discount", "empty-discount"]
+    },
+    {
+      "id": "lossy-numeric-conversion",
+      "patch": "lossy-numeric-conversion.patch",
+      "expectedFailures": ["numeric-precision"]
+    },
+    {
+      "id": "default-value-drift",
+      "patch": "default-value-drift.patch",
+      "expectedFailures": ["empty-discount"]
+    },
+    {
+      "id": "version-check-inversion",
+      "patch": "version-check-inversion.patch",
+      "expectedFailures": ["coordinated-discount", "empty-discount"]
+    },
+    {
+      "id": "replay-order-regression",
+      "patch": "replay-order-regression.patch",
+      "expectedFailures": ["replay-ordering"]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+diff --git a/producer/event.mjs b/producer/event.mjs
+--- a/producer/event.mjs
++++ b/producer/event.mjs
+@@ -1,9 +1,11 @@
+ export function encodeOrderEvent(input) {
++  const hasDiscount = Object.hasOwn(input, "discountCode");
+   return JSON.stringify({
+-    version: 1,
++    version: hasDiscount ? 2 : 1,
+     type: "order.created",
+     id: input.id,
+     amount_cents: String(input.amountCents),
+     sequence: input.sequence,
++    ...(hasDiscount ? { discount_code: String(input.discountCode) } : {}),
+   });
+ }

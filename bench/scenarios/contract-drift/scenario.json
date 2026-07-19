@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "contract-drift",
+  "version": 1,
+  "visibleChecks": [
+    { "argv": ["node", "--test"], "cwd": "producer" },
+    { "argv": ["python", "-m", "pytest"], "cwd": "consumer" }
+  ],
+  "preparation": [],
+  "testPaths": {
+    "prefixes": ["producer/test", "consumer/tests"],
+    "patterns": ["*.test.mjs", "test_*.py", "*_test.py"]
+  },
+  "toolchains": [
+    { "id": "node", "version": { "argv": ["node", "--version"], "cwd": "producer" } },
+    { "id": "python", "version": { "argv": ["python", "--version"], "cwd": "consumer" } },
+    {
+      "id": "pytest",
+      "version": { "argv": ["python", "-m", "pytest", "--version"], "cwd": "consumer" }
+    }
+  ]
+}

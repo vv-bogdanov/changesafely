@@ -87,14 +87,14 @@ The suite is not intended to claim that ChangeSafely:
 - completely discovers blast radius;
 - replaces code review, staging, or production monitoring.
 
-It measures only the stated properties on six published scenarios.
+It measures only the stated properties on seven published scenarios.
 
 ## 6. MVP scope
 
 The MVP includes:
 
-- three small TypeScript scenarios, one CommonJS legacy scenario, one Python scenario, and one
-  PHP scenario;
+- three small TypeScript scenarios, one CommonJS legacy scenario, one Python scenario, one PHP
+  scenario, and one polyglot JavaScript/Python scenario;
 - two execution modes;
 - one deterministic evaluator;
 - hidden invariants inaccessible to the agent during execution;
@@ -505,6 +505,33 @@ Critical properties:
 - global hooks run exactly once and separate state stores remain isolated;
 - already-cancelled orders, caller input, public API, and project controls remain unchanged.
 
+### 10.7 Contract Drift - polyglot compatibility
+
+User task:
+
+> Add optional discount codes to order events. Preserve compatibility with existing events and
+> replay behavior. Keep public APIs unchanged and add no production dependency.
+
+The fixture evolves a versioned JSON event shared by a JavaScript producer and Python consumer.
+The local-looking field addition requires a coordinated change across both language roots.
+
+Critical properties:
+
+- discount events use the new contract and survive producer-to-consumer decoding;
+- an explicitly empty discount remains empty;
+- old messages and producer behavior remain compatible;
+- large integer strings retain exact precision;
+- consumers tolerate unknown fields and reject unknown versions;
+- replay ordering, input immutability, public APIs, and project controls remain unchanged.
+
+Example unsafe mutants:
+
+- updating only the producer or only the consumer;
+- coercing the amount through a JavaScript number;
+- replacing an empty optional value with a default;
+- evolving the decoder fields without accepting the new version;
+- returning replayed events in input order.
+
 ## 11. Structure of each scenario
 
 Each scenario package must logically contain:
@@ -695,7 +722,7 @@ The video should focus primarily on one live Double Charge run. Briefly show the
 
 The benchmark MVP is complete when:
 
-1. All six scenarios run locally and reproducibly.
+1. All seven scenarios run locally and reproducibly.
 2. Each scenario has a validated reference patch.
 3. Each scenario has at least six meaningful unsafe mutants.
 4. Each scenario has at least one unsafe-green mutant.

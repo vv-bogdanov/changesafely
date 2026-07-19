@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "checks": [
+    { "id": "producer-tests", "kind": "test", "argv": ["node", "--test"], "cwd": "producer" },
+    {
+      "id": "consumer-tests",
+      "kind": "test",
+      "argv": ["python", "-m", "pytest"],
+      "cwd": "consumer"
+    }
+  ],
+  "testPathPrefixes": ["producer/test", "consumer/tests"],
+  "testFilePatterns": ["*.test.mjs", "test_*.py", "*_test.py"],
+  "controlFiles": []
+}

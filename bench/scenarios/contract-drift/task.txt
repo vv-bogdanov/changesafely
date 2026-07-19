@@ -1,0 +1,3 @@
+Add optional discount codes to order events.
+Preserve compatibility with existing events and replay behavior.
+Keep public APIs unchanged and do not add a production dependency.

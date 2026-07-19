@@ -7,7 +7,7 @@ Specification and task cards for the ChangeSafely pilot benchmark.
 1. [`BENCHMARK_SPEC.md`](BENCHMARK_SPEC.md) - primary specification: motivation,
    registered methodology, isolation contract, scenarios, and completion criteria.
 2. [`BENCHMARK_TASKS.md`](BENCHMARK_TASKS.md) - public task text and controller-only
-   scenario notes for the four benchmark tasks.
+   scenario notes for the seven benchmark tasks.
 3. [`RESULTS.md`](RESULTS.md) - retained Spark development-pilot results and their
    limitations. These are not final measurements.
 4. [`golden/spark-pilot`](golden/spark-pilot/README.md) - published, hash-verified
@@ -24,14 +24,15 @@ The MVP compares two modes:
 - **Codex Direct**
 - **ChangeSafely**
 
-across six open scenarios:
+across seven open scenarios:
 
 - Double Charge;
 - Tenant Leak;
 - Restart Storm;
 - Legacy Spaghetti (CommonJS);
 - Partial Replay (Python);
-- Cancellation Saga (PHP).
+- Cancellation Saga (PHP);
+- Contract Drift (JavaScript/Python).
 
 This is an open pilot evaluation, not a universal industry benchmark.
 
@@ -88,10 +89,8 @@ npm run benchmark -- run --scenario <scenario> --mode changesafely --model <id> 
 Do not run these commands without separate user authorization. The measurement type
 is persisted in every newly created comparison and run document.
 
-Tenant Leak, Restart Storm, CommonJS Legacy Spaghetti, Python Partial Replay, and PHP Cancellation Saga use the same commands
-with `--scenario tenant-leak`, `--scenario restart-storm`, or
-`--scenario legacy-spaghetti`, `--scenario partial-replay`, or `--scenario cancellation-saga`
-after their deterministic validators pass.
+Every listed scenario uses the same commands with its kebab-case scenario id, including
+`contract-drift`, after its deterministic validator passes.
 
 Evaluate candidate-added tests against the reference and declared mutants, then replay
 only the persisted hash-verified evidence and generate the paired report:

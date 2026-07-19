@@ -1,0 +1,38 @@
+diff --git a/consumer/events.py b/consumer/events.py
+--- a/consumer/events.py
++++ b/consumer/events.py
+@@ -3,13 +3,16 @@ import json
+ 
+ def decode_event(raw):
+     data = json.loads(raw)
+-    if data.get("version") != 1:
++    if data.get("version") not in (1, 2):
+         raise ValueError("unsupported event version")
+-    return {
++    event = {
+         "id": data["id"],
+         "amount_cents": str(data["amount_cents"]),
+         "sequence": data["sequence"],
+     }
++    if "discount_code" in data:
++        event["discount_code"] = data["discount_code"]
++    return event
+ 
+ 
+ def replay(raw_events):
+diff --git a/producer/event.mjs b/producer/event.mjs
+--- a/producer/event.mjs
++++ b/producer/event.mjs
+@@ -1,9 +1,11 @@
+ export function encodeOrderEvent(input) {
++  const hasDiscount = Object.hasOwn(input, "discountCode");
+   return JSON.stringify({
+-    version: 1,
++    version: hasDiscount ? 2 : 1,
+     type: "order.created",
+     id: input.id,
+     amount_cents: String(input.amountCents),
+     sequence: input.sequence,
++    ...(hasDiscount ? { discount_code: String(input.discountCode) } : {}),
+   });
+ }

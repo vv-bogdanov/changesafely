@@ -235,3 +235,37 @@ notification, audit, or global-hook effects on retry.
 - swallowed failure reported as completion;
 - token-only reuse without input validation;
 - completion recorded before compensation begins.
+
+---
+
+## 7. Contract Drift
+
+### Task
+
+```text
+Add optional discount codes to order events.
+Preserve compatibility with existing events and replay behavior.
+Keep public APIs unchanged and do not add a production dependency.
+```
+
+### Risk
+
+A producer-only or consumer-only change can leave both language-specific visible suites green
+while breaking the versioned wire contract, old messages, numeric precision, or replay behavior.
+
+### Hidden invariants
+
+- producer and consumer adopt the discount field together;
+- empty discounts remain empty;
+- v1 messages and behavior stay compatible;
+- integer strings retain exact precision;
+- unknown fields are tolerated and unknown versions are rejected;
+- replay ordering, input immutability, public APIs, and controls remain stable.
+
+### Unsafe candidates
+
+- producer-only or consumer-only evolution;
+- lossy numeric conversion;
+- default substitution for an empty optional value;
+- a stale version guard;
+- replay without ordering.
