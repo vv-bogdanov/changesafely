@@ -40,6 +40,7 @@
   },
   "scripts": {
     "build": "node scripts/clean.mjs && tsc -p tsconfig.json",
+    "benchmark": "npm run build --silent && node dist/bench/src/cli.js",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "deadcode:check": "knip",
