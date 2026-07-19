@@ -56,6 +56,7 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.equal(scenarioDefinition(benchRoot, "restart-storm").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "contract-drift").version, 2);
+  assert.equal(scenarioDefinition(benchRoot, "partial-replay").version, 2);
   assert.deepEqual(
     listScenarioDefinitions(benchRoot).map(({ id }) => id),
     [
@@ -87,7 +88,7 @@ test("discovers and prepares a non-npm scenario from its checked manifest", asyn
     mkdir(join(oracle, "mutants"), { recursive: true }),
   ]);
   await Promise.all([
-    writeFile(join(baseline, ".gitignore"), "prepared.txt\n"),
+    writeFile(join(baseline, ".gitignore"), "prepared.txt\n.changesafely/\n"),
     writeFile(
       join(baseline, "scripts", "prepare.mjs"),
       'import { writeFileSync } from "node:fs"; writeFileSync("prepared.txt", "ready\\n");\n',
@@ -136,6 +137,15 @@ test("discovers and prepares a non-npm scenario from its checked manifest", asyn
   assert.equal(await readFile(join(attempt.workspace, "prepared.txt"), "utf8"), "ready\n");
   await repositoryCommand("node", ["scripts/check.mjs"], attempt.workspace);
   assert.equal(await repositoryCommand("git", ["status", "--porcelain"], attempt.workspace), "");
+  await writeFile(join(baseline, ".gitignore"), "prepared.txt\n");
+  await assert.rejects(
+    materializeAttempt(
+      scenarioDefinition(customBenchRoot, "custom-runtime"),
+      join(temporaryRoot, "missing-ignore-workspace"),
+    ),
+    /must ignore \.changesafely/u,
+  );
+  await writeFile(join(baseline, ".gitignore"), "prepared.txt\n.changesafely/\n");
   await writeFile(
     join(baseline, "scripts", "prepare.mjs"),
     'import { writeFileSync } from "node:fs"; writeFileSync("dirty.txt", "unexpected\\n");\n',
@@ -265,11 +275,15 @@ test("builds a minimal Codex home with a deny-network permission profile", async
   const destination = join(temporaryRoot, "destination");
   await mkdir(source);
   await writeFile(join(source, "auth.json"), '{"fake":"credential"}\n');
-  await prepareCodexHome(source, destination, "changesafely-benchmark", "/runtime/node");
+  await prepareCodexHome(source, destination, "changesafely-benchmark", "/runtime/node", [
+    "/runtime/python-env",
+  ]);
   const config = await readFile(join(destination, "config.toml"), "utf8");
   assert.match(config, /default_permissions = "changesafely-benchmark"/u);
   assert.match(config, /enabled = false/u);
   assert.match(config, /"\/runtime\/node" = "read"/u);
+  assert.match(config, /"\/runtime\/python-env" = "read"/u);
+  assert.match(config, /\/runtime\/python-env\/bin/u);
   if (process.platform !== "win32") {
     assert.equal((await stat(join(destination, "auth.json"))).mode & 0o777, 0o600);
   }

@@ -154,6 +154,7 @@ export async function materializeAttempt(
     filter: (source) => !["dist", "node_modules"].includes(basename(source)),
   });
   await repositoryCommand("git", ["init", "--quiet", "-b", "benchmark"], destination);
+  await assertInternalEvidenceIgnored(destination);
   await repositoryCommand("git", ["config", "user.name", "ChangeSafely Benchmark"], destination);
   await repositoryCommand(
     "git",
@@ -452,6 +453,18 @@ async function assertMissing(path: string): Promise<void> {
     throw new Error(`Benchmark workspace already exists: ${path}`);
   } catch (error) {
     if (errorCode(error) !== "ENOENT") throw error;
+  }
+}
+
+async function assertInternalEvidenceIgnored(workspace: string): Promise<void> {
+  try {
+    await execFileAsync(
+      "git",
+      ["check-ignore", "--quiet", "--no-index", ".changesafely/runs/probe"],
+      { cwd: workspace, timeout: 5_000, env: benchmarkEnvironment() },
+    );
+  } catch {
+    throw new Error("Benchmark baseline must ignore .changesafely/");
   }
 }
 

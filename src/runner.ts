@@ -462,12 +462,19 @@ interface CapturedOutput {
 async function loadCapturedOutput(
   capturePath: string,
   maxOutputBytes: number,
-): Promise<CapturedOutput> {
-  const [stdout, stderr] = await Promise.all([
-    captureFile(`${capturePath}.stdout`, maxOutputBytes),
-    captureFile(`${capturePath}.stderr`, maxOutputBytes),
-  ]);
-  return { stdout, stderr };
+): Promise<CapturedOutput | undefined> {
+  try {
+    const [stdout, stderr] = await Promise.all([
+      captureFile(`${capturePath}.stdout`, maxOutputBytes),
+      captureFile(`${capturePath}.stderr`, maxOutputBytes),
+    ]);
+    return { stdout, stderr };
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 async function captureFile(path: string, maxOutputBytes: number) {

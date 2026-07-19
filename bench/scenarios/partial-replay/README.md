@@ -11,3 +11,7 @@ input conflicts, independent stores, and unrelated jobs.
 
 The worker receives only `baseline/` and the exact contents of `task.txt`. The Python evaluator,
 reference patch, and unsafe mutants remain controller-owned.
+
+Scenario version 2 adds the required `.changesafely/` ignore after a development comparison
+exposed internal evidence in the candidate snapshot. The task, oracle, reference, and mutants are
+unchanged from version 1.

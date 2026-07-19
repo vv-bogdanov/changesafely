@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { contentSha256 } from "./evidence.js";
 
@@ -25,11 +25,18 @@ export async function prepareCodexHome(
   destination: string,
   permissionProfile: string,
   nodeRuntime = dirname(dirname(process.execPath)),
+  additionalRuntimeRoots: readonly string[] = [],
 ): Promise<void> {
   if (!/^[A-Za-z0-9._-]{1,100}$/u.test(permissionProfile)) {
     throw new Error(`Invalid benchmark permission profile: ${permissionProfile}`);
   }
-  const runtime = resolve(nodeRuntime);
+  const runtimeRoots = [
+    ...new Set([nodeRuntime, ...additionalRuntimeRoots].map((root) => resolve(root))),
+  ];
+  if (runtimeRoots.some((root) => dirname(root) === root)) {
+    throw new Error("Benchmark runtime root must not grant filesystem-wide access");
+  }
+  const runtimePaths = [...new Set([...runtimeRoots.map((root) => join(root, "bin")), "/usr/bin"])];
   await mkdir(destination, { mode: 0o700 });
   const authPath = join(destination, "auth.json");
   await copyFile(join(sourceCodexHome, "auth.json"), authPath);
@@ -40,7 +47,7 @@ cli_auth_credentials_store = "file"
 
 [permissions.${permissionProfile}.filesystem]
 ":minimal" = "read"
-${JSON.stringify(runtime)} = "read"
+${runtimeRoots.map((root) => `${JSON.stringify(root)} = "read"`).join("\n")}
 
 [permissions.${permissionProfile}.filesystem.":workspace_roots"]
 "." = "write"
@@ -53,7 +60,7 @@ enabled = false
 inherit = "none"
 ignore_default_excludes = false
 include_only = ["PATH", "HOME", "TMPDIR", "CI", "NO_COLOR"]
-set = { PATH = ${JSON.stringify(`${runtime}/bin:/usr/bin`)}, HOME = "/tmp", TMPDIR = "/tmp", CI = "1", NO_COLOR = "1" }
+set = { PATH = ${JSON.stringify(runtimePaths.join(delimiter))}, HOME = "/tmp", TMPDIR = "/tmp", CI = "1", NO_COLOR = "1" }
 `;
   await writeFile(join(destination, "config.toml"), config, { mode: 0o600, flag: "wx" });
 }

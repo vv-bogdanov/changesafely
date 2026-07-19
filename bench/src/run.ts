@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { loadTrace } from "../../src/trace.js";
 import {
   changeSafelyInvocation,
@@ -34,7 +35,12 @@ import {
 } from "./evidence.js";
 import { type IsolationProof, prepareCodexHome, proveIsolation } from "./isolation.js";
 import { type ProcessResult, runProcess } from "./process.js";
-import { materializeAttempt, scenarioDefinition, snapshotAttempt } from "./repository.js";
+import {
+  materializeAttempt,
+  type ScenarioDefinition,
+  scenarioDefinition,
+  snapshotAttempt,
+} from "./repository.js";
 
 const PERMISSION_PROFILE = "changesafely-benchmark";
 
@@ -110,6 +116,7 @@ export async function runBenchmarkAttempt(
         options.codexCommand,
         attempt.workspace,
         options.projectRoot,
+        scenario,
       ));
     const env = workerEnvironment(codexHome, options.codexCommand);
     const invocation =
@@ -206,8 +213,15 @@ async function prepareAndProveIsolation(
   codexCommand: string,
   workspace: string,
   projectRoot: string,
+  scenario: ScenarioDefinition,
 ): Promise<IsolationProof> {
-  await prepareCodexHome(sourceCodexHome, destinationCodexHome, PERMISSION_PROFILE);
+  await prepareCodexHome(
+    sourceCodexHome,
+    destinationCodexHome,
+    PERMISSION_PROFILE,
+    dirname(dirname(process.execPath)),
+    await benchmarkRuntimeRoots(scenario),
+  );
   return await proveIsolation(
     codexCommand,
     destinationCodexHome,
@@ -215,6 +229,37 @@ async function prepareAndProveIsolation(
     join(projectRoot, "bench", "BENCHMARK_SPEC.md"),
     PERMISSION_PROFILE,
   );
+}
+
+async function benchmarkRuntimeRoots(scenario: ScenarioDefinition): Promise<string[]> {
+  const programs = new Set(
+    [
+      ...scenario.visibleChecks,
+      ...scenario.preparation,
+      ...scenario.toolchains.map(({ version }) => version),
+    ]
+      .map(({ argv }) => argv[0])
+      .filter((program): program is string => Boolean(program)),
+  );
+  const roots = await Promise.all([...programs].map(executableRuntimeRoot));
+  return [...new Set(roots)];
+}
+
+async function executableRuntimeRoot(program: string): Promise<string> {
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    if (!directory) continue;
+    const executable = resolve(
+      directory,
+      process.platform === "win32" ? `${program}.cmd` : program,
+    );
+    try {
+      await access(executable, constants.X_OK);
+      return dirname(dirname(executable));
+    } catch {
+      // Continue through the trusted controller PATH.
+    }
+  }
+  throw new Error(`Benchmark toolchain executable is unavailable: ${program}`);
 }
 
 async function parseAdapterEvidence(

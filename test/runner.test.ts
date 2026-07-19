@@ -204,6 +204,23 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   assert.match(result.stdout, /default-profile-output/u);
 });
 
+test("runner retains sandbox startup failure when capture files are absent", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-missing-command-capture-"));
+  t.after(async () => rm(cwd, { recursive: true, force: true }));
+  const fakeBin = join(cwd, "bin");
+  await mkdir(fakeBin);
+  const fakeCodex = join(fakeBin, "codex");
+  await writeFile(fakeCodex, '#!/bin/sh\nprintf "sandbox-profile-failed\\n" >&2\nexit 77\n');
+  await chmod(fakeCodex, 0o755);
+
+  const result = await runCommand(["node", "--test"], cwd, {
+    sandboxed: true,
+    env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}` },
+  });
+  assert.equal(result.exitCode, 77);
+  assert.match(result.stderr, /sandbox-profile-failed/u);
+});
+
 test("runner keeps only a bounded output tail and emits private evidence", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "changesafely-output-"));
   t.after(async () => rm(cwd, { recursive: true, force: true }));
