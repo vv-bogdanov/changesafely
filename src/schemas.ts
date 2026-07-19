@@ -279,9 +279,6 @@ export type RunStatus = RunState["status"];
 export type PlanEligibility = Mutable<Type.Static<typeof planEligibilitySchema>>;
 export type CommandEvidence = Mutable<Type.Static<typeof commandEvidenceSchema>>;
 export type StoredHarnessArtifact = Mutable<Type.Static<typeof storedHarnessArtifactSchema>>;
-export type StoredImplementationArtifact = Mutable<
-  Type.Static<typeof storedImplementationArtifactSchema>
->;
 
 export class ArtifactValidationError extends Error {
   constructor(

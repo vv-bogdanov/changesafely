@@ -5,61 +5,29 @@ import {
   type PlanArtifactKey,
   type StaticArtifactKey,
 } from "./artifact-key.js";
-import {
-  type ChangeContract,
-  type CommandEvidence,
-  type DecisionArtifact,
-  type DetailedPlan,
-  type EvidenceArtifact,
-  type PlanEligibility,
-  type StoredHarnessArtifact,
-  type StoredImplementationArtifact,
-  type VerificationArtifact,
-  validateChangeContract,
-  validateCommandEvidenceList,
-  validateDecisionArtifact,
-  validateDetailedPlan,
-  validateEvidenceArtifact,
-  validatePlanEligibilityList,
-  validateStoredHarnessArtifact,
-  validateStoredImplementationArtifact,
-  validateVerificationArtifact,
-} from "./schemas.js";
+import * as Schema from "./schemas.js";
 
-interface StaticArtifactPayloads {
-  evidence: EvidenceArtifact;
-  contract: ChangeContract;
-  eligibility: PlanEligibility[];
-  decision: DecisionArtifact;
-  harness: StoredHarnessArtifact;
-  commands: CommandEvidence[];
-  implementation: StoredImplementationArtifact;
-  verificationCommands: CommandEvidence[];
-  verificationAttempt1: VerificationArtifact;
-  repair: StoredImplementationArtifact;
-  verificationCommandsRepair: CommandEvidence[];
-  verification: VerificationArtifact;
-}
-
-type ArtifactPayloads = StaticArtifactPayloads & Record<PlanArtifactKey, DetailedPlan>;
-export type ArtifactPayload<Key extends ArtifactKey> = ArtifactPayloads[Key];
+const validators = {
+  evidence: Schema.validateEvidenceArtifact,
+  contract: Schema.validateChangeContract,
+  eligibility: Schema.validatePlanEligibilityList,
+  decision: Schema.validateDecisionArtifact,
+  harness: Schema.validateStoredHarnessArtifact,
+  commands: Schema.validateCommandEvidenceList,
+  implementation: Schema.validateStoredImplementationArtifact,
+  verificationCommands: Schema.validateCommandEvidenceList,
+  verificationAttempt1: Schema.validateVerificationArtifact,
+  repair: Schema.validateStoredImplementationArtifact,
+  verificationCommandsRepair: Schema.validateCommandEvidenceList,
+  verification: Schema.validateVerificationArtifact,
+};
 
 type Validator<Value> = (value: unknown) => Value;
-
-const validators: { [Key in StaticArtifactKey]: Validator<StaticArtifactPayloads[Key]> } = {
-  evidence: validateEvidenceArtifact,
-  contract: validateChangeContract,
-  eligibility: validatePlanEligibilityList,
-  decision: validateDecisionArtifact,
-  harness: validateStoredHarnessArtifact,
-  commands: validateCommandEvidenceList,
-  implementation: validateStoredImplementationArtifact,
-  verificationCommands: validateCommandEvidenceList,
-  verificationAttempt1: validateVerificationArtifact,
-  repair: validateStoredImplementationArtifact,
-  verificationCommandsRepair: validateCommandEvidenceList,
-  verification: validateVerificationArtifact,
-};
+export type ArtifactPayload<Key extends ArtifactKey> = Key extends PlanArtifactKey
+  ? Schema.DetailedPlan
+  : Key extends StaticArtifactKey
+    ? ReturnType<(typeof validators)[Key]>
+    : never;
 
 export interface ArtifactDefinition<Value> {
   path: string;
@@ -70,7 +38,7 @@ export function artifactDefinition<Key extends ArtifactKey>(
   key: Key,
 ): ArtifactDefinition<ArtifactPayload<Key>> {
   if (isPlanArtifactKey(key)) {
-    return { path: artifactPath(key), validate: validateDetailedPlan } as ArtifactDefinition<
+    return { path: artifactPath(key), validate: Schema.validateDetailedPlan } as ArtifactDefinition<
       ArtifactPayload<Key>
     >;
   }

@@ -1,12 +1,10 @@
 import { isDeepStrictEqual } from "node:util";
 import type { VerificationArtifact } from "./schemas.js";
 
-export function hashRecordsEqual(
+export const hashRecordsEqual: (
   expected: Record<string, string>,
   actual: Record<string, string>,
-): boolean {
-  return isDeepStrictEqual(expected, actual);
-}
+) => boolean = isDeepStrictEqual;
 
 export function verificationAccepted(verification: VerificationArtifact): boolean {
   return (

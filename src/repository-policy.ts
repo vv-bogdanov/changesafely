@@ -25,30 +25,26 @@ export function normalizeRepositoryPath(rawPath: string): string {
   return normalized === "." ? normalized : normalized.replace(/\/$/, "");
 }
 
-export function pathWithinPrefixes(path: string, prefixes: string[]): boolean {
-  let candidate: string;
+function safeRepositoryPath(path: string): string | undefined {
   try {
-    candidate = normalizeRepositoryPath(path);
+    return normalizeRepositoryPath(path);
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+export function pathWithinPrefixes(path: string, prefixes: string[]): boolean {
+  const candidate = safeRepositoryPath(path);
+  if (!candidate) return false;
   return prefixes.some((rawPrefix) => {
-    try {
-      const prefix = normalizeRepositoryPath(rawPrefix);
-      return prefix === "." || candidate === prefix || candidate.startsWith(`${prefix}/`);
-    } catch {
-      return false;
-    }
+    const prefix = safeRepositoryPath(rawPrefix);
+    return prefix === "." || candidate === prefix || candidate.startsWith(`${prefix}/`);
   });
 }
 
 export function isTestPath(path: string): boolean {
-  let normalized: string;
-  try {
-    normalized = normalizeRepositoryPath(path);
-  } catch {
-    return false;
-  }
+  const normalized = safeRepositoryPath(path);
+  if (!normalized) return false;
   return (
     normalized
       .split("/")
@@ -58,12 +54,8 @@ export function isTestPath(path: string): boolean {
 }
 
 export function isApprovalSensitivePath(path: string): boolean {
-  let normalized: string;
-  try {
-    normalized = normalizeRepositoryPath(path);
-  } catch {
-    return true;
-  }
+  const normalized = safeRepositoryPath(path);
+  if (!normalized) return true;
   return (
     REPOSITORY_CONTROL_FILE_NAMES.has(posix.basename(normalized)) ||
     /(?:^|\/)(?:migrations?|secrets?)(?:\/|$)/i.test(normalized)
