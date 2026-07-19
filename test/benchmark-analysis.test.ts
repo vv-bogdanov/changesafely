@@ -48,6 +48,12 @@ test("evaluates candidate tests against reference and mutants, then replays one 
     "comparison.json": benchmarkComparisonContent(run),
     "diff.patch": snapshot.diff,
     "events.jsonl": '{"type":"synthetic"}\n',
+    "changesafely/outcome.json": `${JSON.stringify({
+      runId: run.runId,
+      status: "FAILED",
+      reason: "Synthetic product rejection",
+      nextAction: "Inspect evidence",
+    })}\n`,
     "changesafely/run/harness.json": `${JSON.stringify(
       {
         meta: {
@@ -132,6 +138,7 @@ test("evaluates candidate tests against reference and mutants, then replays one 
   ]);
   assert.equal(replay.verified, true);
   assert.equal(replay.caseCard?.mutation.killRate, 1 / 3);
+  assert.equal(replay.caseCard?.productStatus, "FAILED");
   assert.ok((replay.caseCard?.diff.testAdditions ?? 0) > 0);
   assert.equal(replay.caseCard?.diff.productionFiles, 0);
 

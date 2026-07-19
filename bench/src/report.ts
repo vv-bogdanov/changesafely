@@ -47,6 +47,7 @@ export interface RunCaseCard {
   runId: string;
   mode: BenchmarkMode;
   outcome: VerifiedEvidence["run"]["outcome"];
+  productStatus?: string;
   evidenceManifestSha256: string;
   analysisSha256: string;
   safeTaskSuccess: boolean;
@@ -178,10 +179,12 @@ async function buildRunCaseCard(
 ): Promise<RunCaseCard> {
   const evaluation = await readEvaluation(evidence);
   const analytics = await readRunAnalytics(evidence);
+  const productStatus = await readNonVerifiedProductStatus(evidence);
   return {
     runId: evidence.run.runId,
     mode: evidence.run.mode,
     outcome: evidence.run.outcome,
+    ...(productStatus ? { productStatus } : {}),
     evidenceManifestSha256: evidence.manifestSha256,
     analysisSha256: analysis.manifest.analysisSha256,
     safeTaskSuccess: evidence.run.outcome === "safe_success",
@@ -249,6 +252,9 @@ function renderMarkdownReport(report: BenchmarkReport): string {
         `- Candidate tests: ${fileCount(run.candidateTests.paths.length)}, +${run.candidateTests.additions}/-${run.candidateTests.deletions}`,
         `- Production diff: ${fileCount(run.diff.productionFiles)}, +${run.diff.productionAdditions}`,
         `- Protected tests: ${run.protectedTests.detail}`,
+        ...(run.productStatus
+          ? [`- Product status: \`${escapeMarkdown(run.productStatus)}\``]
+          : []),
         `- Tokens: ${tokenBreakdown(run.tokens)}`,
         ...(run.analytics
           ? [
@@ -292,6 +298,28 @@ async function readEvaluation(evidence: VerifiedEvidence): Promise<EvaluationDoc
     return validateEvaluationDocument(
       JSON.parse((await readVerifiedEvidenceFile(evidence, "evaluation.json")).toString("utf8")),
     );
+  } catch {
+    return undefined;
+  }
+}
+
+async function readNonVerifiedProductStatus(
+  evidence: VerifiedEvidence,
+): Promise<string | undefined> {
+  if (
+    evidence.run.mode !== "changesafely" ||
+    !evidence.manifest.files.some((file) => file.path === "changesafely/outcome.json")
+  ) {
+    return undefined;
+  }
+  try {
+    const value: unknown = JSON.parse(
+      (await readVerifiedEvidenceFile(evidence, "changesafely/outcome.json")).toString("utf8"),
+    );
+    if (typeof value !== "object" || value === null || !("status" in value)) return undefined;
+    return typeof value.status === "string" && value.status && value.status !== "VERIFIED"
+      ? value.status
+      : undefined;
   } catch {
     return undefined;
   }
