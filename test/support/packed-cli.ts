@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { chmod, cp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import spawn from "cross-spawn";
 
 export interface ProcessResult {
@@ -135,7 +135,11 @@ export async function createFunctionalRepository(path: string): Promise<void> {
 }
 
 export async function createFixtureRepository(path: string, fixtureRoot: string): Promise<void> {
-  await cp(fixtureRoot, path, { recursive: true });
+  const runtimeCaches = new Set(["__pycache__", ".pytest_cache"]);
+  await cp(fixtureRoot, path, {
+    recursive: true,
+    filter: (source) => !runtimeCaches.has(basename(source)),
+  });
   await runSuccessful("git", ["init", "-b", "main"], path);
   await runSuccessful("git", ["config", "user.name", "ChangeSafely Package Test"], path);
   await runSuccessful("git", ["config", "user.email", "package-test@changesafely.local"], path);

@@ -39,6 +39,8 @@ export function repositoryCommandEnvironment(
     npm_config_userconfig: `${isolatedHome}/.npmrc`,
     NPM_CONFIG_USERCONFIG: `${isolatedHome}/.npmrc`,
     PIP_CONFIG_FILE: `${isolatedHome}/pip.conf`,
+    PYTHONDONTWRITEBYTECODE: "1",
+    PYTHONPYCACHEPREFIX: `${isolatedHome}/python-cache`,
     PYTHONNOUSERSITE: "1",
     PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1",
   };

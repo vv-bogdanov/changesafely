@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   access,
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
@@ -109,6 +110,22 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     }
     return { repoPath, runId: planning.runId };
   };
+
+  await t.test("fixture copies exclude stale Python runtime caches", async () => {
+    const fixtureRoot = join(temporaryRoot, "cached-python-fixture");
+    await mkdir(join(fixtureRoot, "src", "__pycache__"), { recursive: true });
+    await mkdir(join(fixtureRoot, ".pytest_cache"), { recursive: true });
+    await writeFile(join(fixtureRoot, "src", "value.py"), "def value():\n    return 1\n", "utf8");
+    await writeFile(join(fixtureRoot, "src", "__pycache__", "value.pyc"), "stale", "utf8");
+    await writeFile(join(fixtureRoot, ".pytest_cache", "state"), "stale", "utf8");
+
+    const repoPath = join(temporaryRoot, "copied-python-fixture");
+    await createFixtureRepository(repoPath, fixtureRoot);
+
+    await assert.rejects(access(join(repoPath, "src", "__pycache__")), { code: "ENOENT" });
+    await assert.rejects(access(join(repoPath, ".pytest_cache")), { code: "ENOENT" });
+    await access(join(repoPath, "src", "value.py"));
+  });
 
   await t.test("plan emits clean JSON and accepts an explicit Spark model", async () => {
     const repoPath = await repository("plan-json");

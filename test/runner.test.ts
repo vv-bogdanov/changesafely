@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
@@ -90,6 +101,34 @@ test("env", () => {
   assert.equal(result.exitCode, 0);
   assert.equal(result.timedOut, false);
   assert.equal(result.sandboxed, false);
+});
+
+test("runner ignores stale Python bytecode between checks", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "changesafely-python-cache-"));
+  t.after(async () => rm(cwd, { recursive: true, force: true }));
+  const sourceRoot = join(cwd, "src");
+  const sourcePath = join(sourceRoot, "value.py");
+  await mkdir(sourceRoot);
+  await writeFile(join(sourceRoot, "__init__.py"), "", "utf8");
+  await writeFile(sourcePath, "def value():\n    return 1\n", "utf8");
+  await writeFile(
+    join(cwd, "check.py"),
+    "from src.value import value\nassert value() == 1\n",
+    "utf8",
+  );
+  execFileSync("python", ["check.py"], { cwd });
+
+  const original = await stat(sourcePath);
+  await writeFile(sourcePath, "def value():\n    return 2\n", "utf8");
+  await utimes(sourcePath, original.atime, original.mtime);
+  await writeFile(
+    join(cwd, "check.py"),
+    "from src.value import value\nassert value() == 2\n",
+    "utf8",
+  );
+
+  const result = await runCommand(["python", "check.py"], cwd);
+  assert.equal(result.exitCode, 0, result.stderr);
 });
 
 test("runner applies a named permission profile to deterministic commands", async (t) => {
