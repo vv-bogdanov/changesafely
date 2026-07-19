@@ -7,6 +7,7 @@ import {
   type RunStatus,
 } from "./artifacts.js";
 import {
+  acquireRepositoryLock,
   changedPaths,
   currentBranch,
   currentCommit,
@@ -366,6 +367,19 @@ async function persistedResult(
   return { runId, status: state.status, reportPath, branch: state.branch };
 }
 
+async function withRepositoryWriteLock<T>(
+  repoPath: string,
+  runId: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const lock = await acquireRepositoryLock(repoPath, runId);
+  try {
+    return await action();
+  } finally {
+    await lock.release();
+  }
+}
+
 export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunResult> {
   const repoPath = resolve(options.repoPath);
   const planning = await runPlanning({
@@ -384,36 +398,40 @@ export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunR
       branch: "",
     };
   }
-  return continueFromPlanning(repoPath, planning.runId, options.model);
+  return withRepositoryWriteLock(repoPath, planning.runId, () =>
+    continueFromPlanning(repoPath, planning.runId, options.model),
+  );
 }
 
 export async function resumeRun(repoPathInput: string, runId: string): Promise<FullRunResult> {
   const repoPath = resolve(repoPathInput);
-  await assertProtocolVersion();
-  const state = await validateResumeBoundary(repoPath, runId);
-  const model = state.model || undefined;
-  if (state.phase === "planning-complete" && state.status === "PLANNED") {
-    return continueFromPlanning(repoPath, runId, model);
-  }
-  if (state.phase === "harness-complete" && state.status === "RUNNING") {
-    return continueFromHarness(repoPath, runId, model);
-  }
-  if (state.phase === "verification-complete" && state.status === "RUNNING") {
-    try {
-      return await finalizeVerifiedRun(repoPath, runId);
-    } catch {
-      return persistedResult(repoPath, runId);
+  return withRepositoryWriteLock(repoPath, runId, async () => {
+    await assertProtocolVersion();
+    const state = await validateResumeBoundary(repoPath, runId);
+    const model = state.model || undefined;
+    if (state.phase === "planning-complete" && state.status === "PLANNED") {
+      return continueFromPlanning(repoPath, runId, model);
     }
-  }
-  if (state.phase === "verified" && state.status === "VERIFIED") {
-    return {
-      runId,
-      status: state.status,
-      reportPath: resolve(repoPath, ".safechange", "runs", runId, "report.md"),
-      branch: state.branch,
-    };
-  }
-  throw new Error(
-    `Run ${runId} cannot resume safely from phase ${state.phase} with status ${state.status}`,
-  );
+    if (state.phase === "harness-complete" && state.status === "RUNNING") {
+      return continueFromHarness(repoPath, runId, model);
+    }
+    if (state.phase === "verification-complete" && state.status === "RUNNING") {
+      try {
+        return await finalizeVerifiedRun(repoPath, runId);
+      } catch {
+        return persistedResult(repoPath, runId);
+      }
+    }
+    if (state.phase === "verified" && state.status === "VERIFIED") {
+      return {
+        runId,
+        status: state.status,
+        reportPath: resolve(repoPath, ".safechange", "runs", runId, "report.md"),
+        branch: state.branch,
+      };
+    }
+    throw new Error(
+      `Run ${runId} cannot resume safely from phase ${state.phase} with status ${state.status}`,
+    );
+  });
 }

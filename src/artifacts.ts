@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 
 export type RunStatus =
   | "RUNNING"
@@ -63,24 +63,45 @@ export function createRunId(): string {
   return `${time}-${randomUUID().slice(0, 8)}`;
 }
 
+export function validateRunId(runId: string): string {
+  if (runId === "." || runId === ".." || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runId)) {
+    throw new Error(`Invalid SafeChange run id: ${runId}`);
+  }
+  return runId;
+}
+
+function resolveWithin(root: string, relativePath: string): string {
+  const path = resolve(root, relativePath);
+  if (path !== root && !path.startsWith(`${root}${sep}`)) {
+    throw new Error(`Path escapes the SafeChange run directory: ${relativePath}`);
+  }
+  return path;
+}
+
+function runPath(repoPath: string, runId: string): string {
+  return resolve(repoPath, ".safechange", "runs", validateRunId(runId));
+}
+
 export function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
 export class ArtifactStore {
   readonly runPath: string;
+  public readonly runId: string;
 
   constructor(
     repoPath: string,
-    public readonly runId: string,
+    runId: string,
     private readonly baselineCommit: string,
   ) {
-    this.runPath = join(repoPath, ".safechange", "runs", runId);
+    this.runId = validateRunId(runId);
+    this.runPath = runPath(repoPath, this.runId);
   }
 
   async initialize(): Promise<void> {
-    await mkdir(join(this.runPath, "plans"), { recursive: true });
-    await mkdir(join(this.runPath, "logs"), { recursive: true });
+    await mkdir(resolveWithin(this.runPath, "plans"), { recursive: true });
+    await mkdir(resolveWithin(this.runPath, "logs"), { recursive: true });
   }
 
   async writeState(state: RunState): Promise<void> {
@@ -105,14 +126,14 @@ export class ArtifactStore {
       payload,
     };
     const content = `${JSON.stringify(envelope, null, 2)}\n`;
-    const path = join(this.runPath, relativePath);
+    const path = resolveWithin(this.runPath, relativePath);
     await mkdir(dirname(path), { recursive: true });
     await this.writeText(relativePath, content);
     return { path, hash: hashContent(content), envelope };
   }
 
   async writeText(relativePath: string, content: string): Promise<string> {
-    const path = join(this.runPath, relativePath);
+    const path = resolveWithin(this.runPath, relativePath);
     await mkdir(dirname(path), { recursive: true });
     const temporaryPath = `${path}.tmp-${randomUUID()}`;
     await writeFile(temporaryPath, content, "utf8");
@@ -127,7 +148,7 @@ export class ArtifactStore {
 
 export async function loadRunState(repoPath: string, runId: string): Promise<RunState> {
   return JSON.parse(
-    await readFile(join(repoPath, ".safechange", "runs", runId, "state.json"), "utf8"),
+    await readFile(resolveWithin(runPath(repoPath, runId), "state.json"), "utf8"),
   ) as RunState;
 }
 
@@ -137,7 +158,7 @@ export async function loadArtifact<T>(
   relativePath: string,
 ): Promise<ArtifactEnvelope<T>> {
   return JSON.parse(
-    await readFile(join(repoPath, ".safechange", "runs", runId, relativePath), "utf8"),
+    await readFile(resolveWithin(runPath(repoPath, runId), relativePath), "utf8"),
   ) as ArtifactEnvelope<T>;
 }
 
@@ -148,7 +169,7 @@ export async function loadVerifiedArtifact<T>(
   relativePath: string,
 ): Promise<ArtifactEnvelope<T>> {
   const content = await readFile(
-    join(repoPath, ".safechange", "runs", state.runId, relativePath),
+    resolveWithin(runPath(repoPath, state.runId), relativePath),
     "utf8",
   );
   const expectedHash = state.artifacts[artifactName];

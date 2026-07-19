@@ -110,7 +110,17 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   if (!contractContext?.turnId) throw new Error("Canonical C0 checkpoint is missing");
 
   const store = new ArtifactStore(repoPath, state.runId, state.baselineCommit);
-  const branch = await createSafeChangeBranch(baseline, state.runId);
+  let branch: string;
+  try {
+    branch = await createSafeChangeBranch(baseline, state.runId);
+  } catch (error) {
+    state.status = "BLOCKED";
+    state.phase = "write-preflight-blocked";
+    state.reason = error instanceof Error ? error.message : String(error);
+    state.nextAction = "Move or commit pre-existing files, then start a new SafeChange run.";
+    await store.writeState(state);
+    throw error;
+  }
   state.branch = branch;
   state.phase = "test-author";
   state.status = "RUNNING";

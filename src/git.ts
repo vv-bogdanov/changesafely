@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { access, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { access, open, readFile, stat, unlink } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -24,6 +24,10 @@ export class PreflightError extends Error {
     super(message);
     this.name = "PreflightError";
   }
+}
+
+export interface RepositoryLock {
+  release(): Promise<void>;
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -167,11 +171,99 @@ export async function assertBaselineUnchanged(
   return actual;
 }
 
+export async function untrackedPaths(repoPath: string): Promise<string[]> {
+  const output = await git(repoPath, ["ls-files", "--others", "--exclude-standard"]);
+  return output
+    .split("\n")
+    .filter((path) => path && !path.startsWith(".safechange/"))
+    .sort();
+}
+
+export async function assertNoUntrackedFiles(repoPath: string): Promise<void> {
+  const paths = await untrackedPaths(repoPath);
+  if (paths.length > 0) {
+    throw new PreflightError(
+      "UNTRACKED_FILES_PRESENT",
+      `Non-ignored untracked files must be moved or committed before a write phase: ${paths.join(", ")}`,
+    );
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+export async function acquireRepositoryLock(
+  repoPath: string,
+  runId: string,
+): Promise<RepositoryLock> {
+  const lockPath = resolve(
+    repoPath,
+    await git(repoPath, ["rev-parse", "--git-path", "safechange.lock"]),
+  );
+  const token = randomUUID();
+  const content = `${JSON.stringify({ pid: process.pid, runId, token, createdAt: new Date().toISOString() })}\n`;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx", 0o600);
+      try {
+        await handle.writeFile(content, "utf8");
+      } catch (error) {
+        await unlink(lockPath).catch(() => undefined);
+        throw error;
+      } finally {
+        await handle.close();
+      }
+      return {
+        release: async () => {
+          try {
+            const current = JSON.parse(await readFile(lockPath, "utf8")) as { token?: unknown };
+            if (current.token === token) await unlink(lockPath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+        },
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let owner: { pid?: unknown; runId?: unknown } = {};
+      try {
+        owner = JSON.parse(await readFile(lockPath, "utf8")) as typeof owner;
+      } catch {
+        const metadata = await stat(lockPath).catch(() => undefined);
+        if (metadata && Date.now() - metadata.mtimeMs < 60_000) {
+          throw new PreflightError(
+            "REPOSITORY_LOCKED",
+            "Repository has a recently created SafeChange writer lock",
+          );
+        }
+      }
+      if (typeof owner.pid === "number" && processIsAlive(owner.pid)) {
+        throw new PreflightError(
+          "REPOSITORY_LOCKED",
+          `Repository is already being written by SafeChange run ${String(owner.runId ?? "unknown")} (PID ${owner.pid})`,
+        );
+      }
+      await unlink(lockPath).catch((unlinkError: NodeJS.ErrnoException) => {
+        if (unlinkError.code !== "ENOENT") throw unlinkError;
+      });
+    }
+  }
+  throw new PreflightError("REPOSITORY_LOCKED", "Could not acquire the SafeChange repository lock");
+}
+
 export async function createSafeChangeBranch(
   baseline: BaselineSnapshot,
   runId: string,
 ): Promise<string> {
   await assertBaselineUnchanged(baseline);
+  await assertNoUntrackedFiles(baseline.repoPath);
   const branch = `safechange/${runId}`;
   await git(baseline.repoPath, ["switch", "-c", branch, baseline.commit]);
   return branch;

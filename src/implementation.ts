@@ -3,6 +3,7 @@ import { basename, resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
 import { ArtifactStore, type ContextEntry, loadArtifact, loadRunState } from "./artifacts.js";
 import {
+  assertNoUntrackedFiles,
   assertProtectedConfigurationUnchanged,
   changedPaths,
   commitPaths,
@@ -199,6 +200,7 @@ export async function runImplementationAndVerification(
   ) {
     throw new Error("Current Git branch or HEAD does not match the recorded T1 state");
   }
+  await assertNoUntrackedFiles(repoPath);
 
   const contract = (await loadArtifact<ChangeContract>(repoPath, state.runId, "contract.json"))
     .payload;
@@ -386,6 +388,8 @@ export async function runImplementationAndVerification(
       state.repairCount = 1;
       state.nextAction = "Wait for the single bounded local repair.";
       await store.writeState(state);
+
+      await assertNoUntrackedFiles(repoPath);
 
       await client.resumeThread({
         threadId: implementationFork.thread.id,
