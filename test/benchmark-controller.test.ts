@@ -57,7 +57,7 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.equal(scenarioDefinition(benchRoot, "restart-storm").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "legacy-spaghetti").version, 3);
   assert.equal(scenarioDefinition(benchRoot, "cancellation-saga").version, 2);
-  assert.equal(scenarioDefinition(benchRoot, "contract-drift").version, 3);
+  assert.equal(scenarioDefinition(benchRoot, "contract-drift").version, 4);
   assert.equal(scenarioDefinition(benchRoot, "partial-replay").version, 3);
   assert.deepEqual(
     listScenarioDefinitions(benchRoot).map(({ id }) => id),
@@ -423,7 +423,7 @@ test("benchmark CLI requires an explicit final flag and an evaluated Spark pair"
 test("benchmark CLI validates additional scenario references and unsafe-green mutants", async () => {
   const expectedMutants: Readonly<Record<string, number>> = {
     "cancellation-saga": 6,
-    "contract-drift": 6,
+    "contract-drift": 9,
     "double-charge": 7,
     "partial-replay": 6,
     "tenant-leak": 11,

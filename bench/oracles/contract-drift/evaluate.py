@@ -60,11 +60,14 @@ def old_message_compatibility():
     event = produce()
     raw = json.loads(event["raw"])
     assert raw["version"] == 1 and "discount_code" not in raw, "old producer contract changed"
-    assert consumer.decode_event(event["raw"]) == {
+    expected = {
         "id": "order-1",
         "amount_cents": "1250",
         "sequence": 1,
-    }, "old consumer result changed"
+    }
+    assert consumer.decode_event(event["raw"]) == expected, "old consumer result changed"
+    raw["legacy_metadata"] = {"source": "old-writer"}
+    assert consumer.decode_event(json.dumps(raw)) == expected, "legacy v1 metadata was rejected"
 
 
 def numeric_precision():

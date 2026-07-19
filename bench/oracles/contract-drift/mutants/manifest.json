@@ -46,6 +46,21 @@
       "id": "replay-order-regression",
       "patch": "replay-order-regression.patch",
       "expectedFailures": ["replay-ordering"]
+    },
+    {
+      "id": "strict-v1-fields",
+      "patch": "strict-v1-fields.patch",
+      "expectedFailures": ["old-message-compatibility"]
+    },
+    {
+      "id": "future-version-permissive",
+      "patch": "future-version-permissive.patch",
+      "expectedFailures": ["version-rejection"]
+    },
+    {
+      "id": "mutating-discount-input",
+      "patch": "mutating-discount-input.patch",
+      "expectedFailures": ["input-immutability"]
     }
   ]
 }

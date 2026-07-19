@@ -7,6 +7,8 @@ and replay ordering. Scenario version 2 made the public wire shape explicit afte
 smoke correctly stopped for a human decision on the previously ambiguous discount contract.
 Scenario version 3 records each mutant's complete hidden-failure contract without changing its
 behavior.
+Scenario version 4 adds legacy v1 metadata tolerance and focused mutation value for old-message
+compatibility, future-version rejection, and producer input immutability.
 
 The repository exposes two explicit, deterministic checks and two test roots through one tracked
 ChangeSafely capability contract. No network service or dependency installation is involved.

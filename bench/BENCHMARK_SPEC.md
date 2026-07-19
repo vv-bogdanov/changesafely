@@ -254,7 +254,7 @@ The frozen final-run protocol is:
 - worker execution: sequential, not concurrent.
 
 The scenario versions frozen for that protocol are Double Charge v4, Tenant Leak v4, Restart
-Storm v3, Legacy Spaghetti v3, Partial Replay v3, Cancellation Saga v2, and Contract Drift v3.
+Storm v3, Legacy Spaghetti v3, Partial Replay v3, Cancellation Saga v2, and Contract Drift v4.
 The registered manifest also captures runtime and toolchain versions, sanitized environment,
 scenario hashes, product commit, preparation evidence, sandbox profile, and exact visible-check
 argv/cwd values. Any change to a frozen input creates a new scenario version and requires new
