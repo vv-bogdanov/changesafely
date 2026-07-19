@@ -96,7 +96,12 @@ The primary MVP audience:
 - DevOps engineers who use agents to change configuration and infrastructure code;
 - owners of critical product areas: payments, authentication, permissions, data, and integrations.
 
-The CLI implementation uses **TypeScript / Node.js**. The target repository language is not a product invariant: orchestration, artifacts, Git boundaries, and verification must not interpret source syntax or depend on a particular test framework. The current validated target remains one prepared npm/TypeScript repository until additional toolchains pass end-to-end fixtures.
+The CLI implementation uses **TypeScript / Node.js**. The target repository language is not a
+product invariant: orchestration, artifacts, Git boundaries, and verification do not interpret
+source syntax or depend on a particular test framework. Deterministic end-to-end fixtures
+currently cover prepared npm JavaScript/TypeScript, Python/pytest, config-driven make,
+Node/Python polyglot, and PHP repositories using the explicit capability contract. Additional
+toolchains require their own end-to-end proof before they are claimed.
 
 ---
 
