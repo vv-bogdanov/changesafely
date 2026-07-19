@@ -1,13 +1,7 @@
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
 import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artifact-key.js";
-import {
-  ArtifactStore,
-  type ContextEntry,
-  createRunId,
-  type RunState,
-  type RunStatus,
-} from "./artifacts.js";
+import { ArtifactStore, createRunId, type RunState, type RunStatus } from "./artifacts.js";
 import { evaluatePlan, evaluatePlans, type PlanEligibility } from "./eligibility.js";
 import { assertBaselineUnchanged, inspectBaseline } from "./git.js";
 import {
@@ -20,13 +14,17 @@ import {
 } from "./prompts.js";
 import { planningReport } from "./report.js";
 import {
-  type ChangeContract,
+  completeContext,
+  parseRoleArtifact,
+  readOnlyPolicy,
+  startContext,
+} from "./role-runtime.js";
+import {
   changeContractSchema,
   type DecisionArtifact,
   type DetailedPlan,
   decisionArtifactSchema,
   detailedPlanSchema,
-  type EvidenceArtifact,
   evidenceArtifactSchema,
   validateChangeContract,
   validateDecisionArtifact,
@@ -41,8 +39,6 @@ const plannerLenses = [
   "testability-first",
   "operations-first",
 ] as const;
-
-const readOnlyPolicy = { type: "readOnly", networkAccess: false } as const;
 
 export interface PlanningOptions {
   repoPath: string;
@@ -60,32 +56,6 @@ export interface PlanningResult {
   reportPath: string;
   status: RunStatus;
   decision?: DecisionArtifact;
-}
-
-function parseStructured<T>(message: string, validate: (value: unknown) => T): T {
-  let value: unknown;
-  try {
-    value = JSON.parse(message);
-  } catch {
-    throw new Error(`Role returned invalid JSON: ${message.slice(0, 300)}`);
-  }
-  return validate(value);
-}
-
-function context(
-  role: string,
-  threadId: string,
-  parentThreadId: string | null,
-  checkpointTurnId: string | null,
-): ContextEntry {
-  return {
-    role,
-    threadId,
-    parentThreadId,
-    checkpointTurnId,
-    turnId: null,
-    status: "started",
-  };
 }
 
 export async function runPlanning(options: PlanningOptions): Promise<PlanningResult> {
@@ -144,7 +114,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       approvalPolicy: "never",
       sandbox: "read-only",
     });
-    const discoveryContext = context("discovery", discoveryThread.thread.id, null, null);
+    const discoveryContext = startContext("discovery", discoveryThread.thread.id, null, null);
     state.contexts.push(discoveryContext);
     await store.writeState(state);
     const discoveryTurn = await client.runTurn(
@@ -158,12 +128,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         outputSchema: evidenceArtifactSchema,
       },
     );
-    discoveryContext.turnId = discoveryTurn.turnId;
-    discoveryContext.status = "completed";
-    const evidence = parseStructured<EvidenceArtifact>(
-      discoveryTurn.message,
-      validateEvidenceArtifact,
-    );
+    completeContext(discoveryContext, discoveryTurn.turnId);
+    const evidence = parseRoleArtifact(discoveryTurn.message, validateEvidenceArtifact);
     const evidenceStored = await store.writeArtifact("evidence", "discovery", evidence);
     addArtifact("evidence", evidenceStored.hash);
     await store.writeState(state);
@@ -174,7 +140,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       approvalPolicy: "never",
       sandbox: "read-only",
     });
-    const contractContext = context("contract", contractThread.thread.id, null, null);
+    const contractContext = startContext("contract", contractThread.thread.id, null, null);
     state.contexts.push(contractContext);
     await store.writeState(state);
     const contractTurn = await client.runTurn(
@@ -188,12 +154,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         outputSchema: changeContractSchema,
       },
     );
-    contractContext.turnId = contractTurn.turnId;
-    contractContext.status = "completed";
-    const contractArtifact = parseStructured<ChangeContract>(
-      contractTurn.message,
-      validateChangeContract,
-    );
+    completeContext(contractContext, contractTurn.turnId);
+    const contractArtifact = parseRoleArtifact(contractTurn.message, validateChangeContract);
     const contractStored = await store.writeArtifact("contract", "contract", contractArtifact, [
       evidenceStored.hash,
     ]);
@@ -213,7 +175,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         approvalPolicy: "never",
         sandbox: "read-only",
       });
-      const plannerContext = context(
+      const plannerContext = startContext(
         `planner:${planId}`,
         fork.thread.id,
         contractThread.thread.id,
@@ -232,9 +194,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
             outputSchema: detailedPlanSchema,
           },
         );
-        plannerContext.turnId = plannerTurn.turnId;
-        plannerContext.status = "completed";
-        let plan = parseStructured<DetailedPlan>(plannerTurn.message, validateDetailedPlan);
+        completeContext(plannerContext, plannerTurn.turnId);
+        let plan = parseRoleArtifact(plannerTurn.message, validateDetailedPlan);
         if (plan.planId !== planId || plan.lens !== lens) {
           throw new Error(
             `Planner identity mismatch: expected ${planId}/${lens}, got ${plan.planId}/${plan.lens}`,
@@ -242,7 +203,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         }
         const firstGate = evaluatePlan(contractArtifact, plan);
         if (!firstGate.eligible) {
-          const correctionContext = context(
+          const correctionContext = startContext(
             `planner-correction:${planId}`,
             fork.thread.id,
             contractThread.thread.id,
@@ -260,9 +221,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
               outputSchema: detailedPlanSchema,
             },
           );
-          correctionContext.turnId = correctionTurn.turnId;
-          correctionContext.status = "completed";
-          plan = parseStructured<DetailedPlan>(correctionTurn.message, validateDetailedPlan);
+          completeContext(correctionContext, correctionTurn.turnId);
+          plan = parseRoleArtifact(correctionTurn.message, validateDetailedPlan);
           if (plan.planId !== planId || plan.lens !== lens) {
             throw new Error(
               `Corrected planner identity mismatch: expected ${planId}/${lens}, got ${plan.planId}/${plan.lens}`,
@@ -322,7 +282,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         approvalPolicy: "never",
         sandbox: "read-only",
       });
-      const judgeContext = context(
+      const judgeContext = startContext(
         "judge",
         judgeFork.thread.id,
         contractThread.thread.id,
@@ -341,11 +301,10 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
           outputSchema: decisionArtifactSchema,
         },
       );
-      judgeContext.turnId = judgeTurn.turnId;
-      judgeContext.status = "completed";
-      decision = parseStructured<DecisionArtifact>(judgeTurn.message, validateDecisionArtifact);
+      completeContext(judgeContext, judgeTurn.turnId);
+      decision = parseRoleArtifact(judgeTurn.message, validateDecisionArtifact);
       if (decision.humanDecisionRequired) {
-        const correctionContext = context(
+        const correctionContext = startContext(
           "judge-correction",
           judgeFork.thread.id,
           contractThread.thread.id,
@@ -363,12 +322,8 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
             outputSchema: decisionArtifactSchema,
           },
         );
-        correctionContext.turnId = correctionTurn.turnId;
-        correctionContext.status = "completed";
-        decision = parseStructured<DecisionArtifact>(
-          correctionTurn.message,
-          validateDecisionArtifact,
-        );
+        completeContext(correctionContext, correctionTurn.turnId);
+        decision = parseRoleArtifact(correctionTurn.message, validateDecisionArtifact);
       }
       if (!eligiblePlanIds.has(decision.winnerPlanId)) {
         throw new Error(`Judge selected ineligible or unknown plan ${decision.winnerPlanId}`);

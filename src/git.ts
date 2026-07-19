@@ -4,6 +4,7 @@ import { access, open, readFile, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { REPOSITORY_CONTROL_FILE_NAMES } from "./repository-policy.js";
+import { hashRecordsEqual } from "./verification.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -77,7 +78,7 @@ export async function assertProtectedConfigurationUnchanged(
   expected: Record<string, string>,
 ): Promise<void> {
   const actual = await inspectProtectedConfiguration(repoPath);
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+  if (!hashRecordsEqual(expected, actual)) {
     throw new PreflightError(
       "PROTECTED_CONFIGURATION_CHANGED",
       "Protected configuration metadata changed during the SafeChange run",

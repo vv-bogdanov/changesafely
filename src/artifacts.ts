@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { type ArtifactPayload, artifactDefinition } from "./artifact-catalog.js";
-import type { ArtifactKey } from "./artifact-key.js";
+import { type ArtifactKey, parsePlanArtifactKey } from "./artifact-key.js";
 import { type RunState, validateArtifactEnvelope, validateRunState } from "./schemas.js";
 
-export type { ContextEntry, RunState, RunStatus } from "./schemas.js";
+export type { RunState, RunStatus } from "./schemas.js";
 
 export interface ArtifactEnvelope<T> {
   meta: {
@@ -165,4 +165,13 @@ export async function loadVerifiedArtifact<Key extends ArtifactKey>(
     throw new Error(`Artifact input lineage mismatch: ${definition.path}`);
   }
   return { meta: envelope.meta, payload: definition.validate(envelope.payload) };
+}
+
+export async function loadSelectedPlanArtifacts(repoPath: string, state: RunState) {
+  const contract = (await loadVerifiedArtifact(repoPath, state, "contract")).payload;
+  const decision = (await loadVerifiedArtifact(repoPath, state, "decision")).payload;
+  const plan = (
+    await loadVerifiedArtifact(repoPath, state, parsePlanArtifactKey(decision.winnerPlanId))
+  ).payload;
+  return { contract, decision, plan };
 }

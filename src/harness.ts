@@ -1,13 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
-import { parsePlanArtifactKey } from "./artifact-key.js";
-import {
-  ArtifactStore,
-  type ContextEntry,
-  loadRunState,
-  loadVerifiedArtifact,
-} from "./artifacts.js";
+import { ArtifactStore, loadRunState, loadSelectedPlanArtifacts } from "./artifacts.js";
 import {
   assertProtectedConfigurationUnchanged,
   changedPaths,
@@ -19,6 +13,12 @@ import {
 } from "./git.js";
 import { testAuthorPrompt } from "./prompts.js";
 import { isTestPath, pathWithinPrefixes } from "./repository-policy.js";
+import {
+  completeContext,
+  parseRoleArtifact,
+  startContext,
+  workspaceWritePolicy,
+} from "./role-runtime.js";
 import {
   type CommandResult,
   isSafetyTestCommand,
@@ -47,16 +47,6 @@ export interface HarnessResult {
   protectedHashes: Record<string, string>;
   command: CommandResult;
   harness: HarnessArtifact;
-}
-
-function parseHarness(message: string): HarnessArtifact {
-  let value: unknown;
-  try {
-    value = JSON.parse(message);
-  } catch {
-    throw new Error(`Test Author returned invalid JSON: ${message.slice(0, 300)}`);
-  }
-  return validateHarnessArtifact(value);
 }
 
 function selectedTestPaths(plan: DetailedPlan): string[] {
@@ -93,11 +83,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     throw new Error(state.reason);
   }
 
-  const contract = (await loadVerifiedArtifact(repoPath, state, "contract")).payload;
-  const decision = (await loadVerifiedArtifact(repoPath, state, "decision")).payload;
-  const plan = (
-    await loadVerifiedArtifact(repoPath, state, parsePlanArtifactKey(decision.winnerPlanId))
-  ).payload;
+  const { contract, decision, plan } = await loadSelectedPlanArtifacts(repoPath, state);
   const allowedTestPaths = selectedTestPaths(plan);
   const contractContext = state.contexts.find((entry) => entry.role === "contract");
   if (!contractContext?.turnId) throw new Error("Canonical C0 checkpoint is missing");
@@ -132,14 +118,12 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       approvalPolicy: "never",
       sandbox: "workspace-write",
     });
-    const roleContext: ContextEntry = {
-      role: "test-author",
-      threadId: fork.thread.id,
-      parentThreadId: contractContext.threadId,
-      checkpointTurnId: contractContext.turnId,
-      turnId: null,
-      status: "started",
-    };
+    const roleContext = startContext(
+      "test-author",
+      fork.thread.id,
+      contractContext.threadId,
+      contractContext.turnId,
+    );
     state.contexts.push(roleContext);
     await store.writeState(state);
     const turn = await client.runTurn(
@@ -147,21 +131,14 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       testAuthorPrompt(contract, plan, decision, allowedTestPaths),
       {
         cwd: repoPath,
-        sandboxPolicy: {
-          type: "workspaceWrite",
-          writableRoots: [repoPath],
-          networkAccess: false,
-          excludeTmpdirEnvVar: false,
-          excludeSlashTmp: false,
-        },
+        sandboxPolicy: workspaceWritePolicy(repoPath),
         effort: roleEffort,
         ...(options.model ? { model: options.model } : {}),
         outputSchema: harnessArtifactSchema,
       },
     );
-    roleContext.turnId = turn.turnId;
-    roleContext.status = "completed";
-    const harness = parseHarness(turn.message);
+    completeContext(roleContext, turn.turnId);
+    const harness = parseRoleArtifact(turn.message, validateHarnessArtifact);
     await assertProtectedConfigurationUnchanged(
       repoPath,
       state.baselineProtectedConfiguration ?? {},

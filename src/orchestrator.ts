@@ -20,6 +20,7 @@ import { runHarness } from "./harness.js";
 import { runImplementationAndVerification } from "./implementation.js";
 import { implementationReport } from "./report.js";
 import { isApprovalSensitivePath } from "./repository-policy.js";
+import { hashRecordsEqual, verificationAccepted } from "./verification.js";
 import { runPlanning } from "./workflow.js";
 
 export interface FullRunOptions {
@@ -35,10 +36,6 @@ export interface FullRunResult {
   status: RunStatus;
   reportPath: string;
   branch: string;
-}
-
-function hashesMatch(expected: Record<string, string>, actual: Record<string, string>): boolean {
-  return Object.keys(expected).every((path) => expected[path] === actual[path]);
 }
 
 function validateLineage(state: RunState): void {
@@ -133,10 +130,7 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
   if (!state.branch || snapshot.branch !== state.branch) {
     throw new Error("Resume branch does not match persisted state");
   }
-  if (
-    JSON.stringify(snapshot.protectedConfiguration) !==
-    JSON.stringify(state.baselineProtectedConfiguration)
-  ) {
+  if (!hashRecordsEqual(state.baselineProtectedConfiguration, snapshot.protectedConfiguration)) {
     throw new Error("Protected configuration metadata changed before resume");
   }
   const expectedHead =
@@ -152,7 +146,7 @@ export async function validateResumeBoundary(repoPath: string, runId: string): P
     throw new Error("T1 artifact does not match persisted state");
   }
   const protectedActual = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
-  if (!hashesMatch(harness.protectedHashes, protectedActual)) {
+  if (!hashRecordsEqual(harness.protectedHashes, protectedActual)) {
     throw new Error("Protected T1 hashes changed before resume");
   }
   return state;
@@ -178,7 +172,7 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
     await inspectBaseline(repoPath);
     const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
     const protectedActual = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
-    if (!hashesMatch(harness.protectedHashes, protectedActual)) {
+    if (!hashRecordsEqual(harness.protectedHashes, protectedActual)) {
       throw new Error("Protected T1 hashes changed before release gate");
     }
     const baselineCommands = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
@@ -204,14 +198,9 @@ async function finalizeVerifiedRun(repoPath: string, runId: string): Promise<Ful
       throw new Error("Recorded command outcomes do not satisfy the harness and final checks");
     }
     const verification = (await loadVerifiedArtifact(repoPath, state, "verification")).payload;
-    const accepted =
-      verification.verdict === "accept" &&
-      verification.contractFulfilled &&
-      verification.invariantsPreserved &&
-      verification.scopeConformant &&
-      verification.evidenceSufficient &&
-      !verification.findings.some((finding) => finding.severity === "error");
-    if (!accepted) throw new Error("Independent Verifier did not accept the change");
+    if (!verificationAccepted(verification)) {
+      throw new Error("Independent Verifier did not accept the change");
+    }
 
     const releasePaths = await changedPaths(repoPath, state.baselineCommit);
     const forbidden = releasePaths.filter(isApprovalSensitivePath);

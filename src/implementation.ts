@@ -1,10 +1,9 @@
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
-import { parsePlanArtifactKey } from "./artifact-key.js";
 import {
   ArtifactStore,
-  type ContextEntry,
   loadRunState,
+  loadSelectedPlanArtifacts,
   loadVerifiedArtifact,
 } from "./artifacts.js";
 import {
@@ -20,22 +19,25 @@ import {
 import { implementerPrompt, repairPrompt, verifierPrompt } from "./prompts.js";
 import { implementationReport } from "./report.js";
 import { isApprovalSensitivePath, pathWithinPrefixes } from "./repository-policy.js";
+import {
+  completeContext,
+  parseRoleArtifact,
+  readOnlyPolicy,
+  startContext,
+  workspaceWritePolicy,
+} from "./role-runtime.js";
 import { type CommandResult, runCommand, toCommandEvidence } from "./runner.js";
 import {
   type DetailedPlan,
-  type HarnessArtifact,
   type ImplementationArtifact,
   implementationArtifactSchema,
+  type StoredHarnessArtifact,
   type VerificationArtifact,
   validateImplementationArtifact,
   validateVerificationArtifact,
   verificationArtifactSchema,
 } from "./schemas.js";
-
-interface StoredHarness extends HarnessArtifact {
-  protectedHashes: Record<string, string>;
-  testCommit: string;
-}
+import { hashRecordsEqual, verificationAccepted } from "./verification.js";
 
 export interface ImplementationOptions {
   repoPath: string;
@@ -54,21 +56,7 @@ export interface ImplementationResult {
   reportPath: string;
 }
 
-function parseStructured<T>(message: string, validate: (value: unknown) => T): T {
-  let value: unknown;
-  try {
-    value = JSON.parse(message);
-  } catch {
-    throw new Error(`Role returned invalid JSON: ${message.slice(0, 300)}`);
-  }
-  return validate(value);
-}
-
-function sameHashes(expected: Record<string, string>, actual: Record<string, string>): boolean {
-  return Object.keys(expected).every((path) => expected[path] === actual[path]);
-}
-
-function projectCommands(harness: StoredHarness, plan: DetailedPlan): string[][] {
+function projectCommands(harness: StoredHarnessArtifact, plan: DetailedPlan): string[][] {
   const commands = [
     harness.targetedCommand.argv,
     ...plan.verificationCommands.map(({ argv }) => argv),
@@ -80,17 +68,6 @@ function projectCommands(harness: StoredHarness, plan: DetailedPlan): string[][]
     seen.add(key);
     return true;
   });
-}
-
-function verificationAccepted(verification: VerificationArtifact): boolean {
-  return (
-    verification.verdict === "accept" &&
-    verification.contractFulfilled &&
-    verification.invariantsPreserved &&
-    verification.scopeConformant &&
-    verification.evidenceSufficient &&
-    !verification.findings.some((finding) => finding.severity === "error")
-  );
 }
 
 function repairableVerification(verification: VerificationArtifact, planPaths: string[]): boolean {
@@ -108,7 +85,7 @@ async function validateImplementationChange(input: {
   repoPath: string;
   fromCommit: string;
   artifact: ImplementationArtifact;
-  harness: StoredHarness;
+  harness: StoredHarnessArtifact;
   planPaths: string[];
   state: Awaited<ReturnType<typeof loadRunState>>;
 }): Promise<string[]> {
@@ -122,7 +99,7 @@ async function validateImplementationChange(input: {
     input.repoPath,
     Object.keys(input.harness.protectedHashes),
   );
-  if (!sameHashes(input.harness.protectedHashes, protectedAfter)) {
+  if (!hashRecordsEqual(input.harness.protectedHashes, protectedAfter)) {
     throw new Error("Implementer changed a protected T1 path");
   }
   const outsidePlan = actualPaths.filter((path) => !pathWithinPrefixes(path, input.planPaths));
@@ -145,7 +122,7 @@ async function validateImplementationChange(input: {
 
 async function runProjectCommands(
   repoPath: string,
-  harness: StoredHarness,
+  harness: StoredHarnessArtifact,
   plan: DetailedPlan,
   sandboxed: boolean,
   protectedConfiguration: Record<string, string>,
@@ -161,7 +138,7 @@ async function runProjectCommands(
     );
   }
   const protectedFinal = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
-  if (!sameHashes(harness.protectedHashes, protectedFinal)) {
+  if (!hashRecordsEqual(harness.protectedHashes, protectedFinal)) {
     throw new Error("Protected T1 paths changed during deterministic verification");
   }
   await assertProtectedConfigurationUnchanged(repoPath, protectedConfiguration);
@@ -197,18 +174,14 @@ export async function runImplementationAndVerification(
   }
   await assertNoUntrackedFiles(repoPath);
 
-  const contract = (await loadVerifiedArtifact(repoPath, state, "contract")).payload;
-  const decision = (await loadVerifiedArtifact(repoPath, state, "decision")).payload;
-  const plan = (
-    await loadVerifiedArtifact(repoPath, state, parsePlanArtifactKey(decision.winnerPlanId))
-  ).payload;
+  const { contract, decision, plan } = await loadSelectedPlanArtifacts(repoPath, state);
   const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
   const harnessCommandEvidence = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
   if (harness.testCommit !== state.testCommit) {
     throw new Error("Harness artifact does not match T1");
   }
   const protectedBefore = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
-  if (!sameHashes(harness.protectedHashes, protectedBefore)) {
+  if (!hashRecordsEqual(harness.protectedHashes, protectedBefore)) {
     throw new Error("Protected harness differs from its recorded T1 hashes");
   }
   const contractContext = state.contexts.find((entry) => entry.role === "contract");
@@ -234,14 +207,12 @@ export async function runImplementationAndVerification(
       approvalPolicy: "never",
       sandbox: "workspace-write",
     });
-    const implementerContext: ContextEntry = {
-      role: "implementer",
-      threadId: implementationFork.thread.id,
-      parentThreadId: contractContext.threadId,
-      checkpointTurnId: contractContext.turnId,
-      turnId: null,
-      status: "started",
-    };
+    const implementerContext = startContext(
+      "implementer",
+      implementationFork.thread.id,
+      contractContext.threadId,
+      contractContext.turnId,
+    );
     state.contexts.push(implementerContext);
     await store.writeState(state);
     const implementationTurn = await client.runTurn(
@@ -255,21 +226,14 @@ export async function runImplementationAndVerification(
       ),
       {
         cwd: repoPath,
-        sandboxPolicy: {
-          type: "workspaceWrite",
-          writableRoots: [repoPath],
-          networkAccess: false,
-          excludeTmpdirEnvVar: false,
-          excludeSlashTmp: false,
-        },
+        sandboxPolicy: workspaceWritePolicy(repoPath),
         effort: roleEffort,
         ...(options.model ? { model: options.model } : {}),
         outputSchema: implementationArtifactSchema,
       },
     );
-    implementerContext.turnId = implementationTurn.turnId;
-    implementerContext.status = "completed";
-    let implementation = parseStructured<ImplementationArtifact>(
+    completeContext(implementerContext, implementationTurn.turnId);
+    let implementation = parseRoleArtifact(
       implementationTurn.message,
       validateImplementationArtifact,
     );
@@ -328,14 +292,12 @@ export async function runImplementationAndVerification(
         approvalPolicy: "never",
         sandbox: "read-only",
       });
-      const verifierContext: ContextEntry = {
+      const verifierContext = startContext(
         role,
-        threadId: verifierFork.thread.id,
-        parentThreadId: contractContext.threadId,
-        checkpointTurnId: contractContext.turnId,
-        turnId: null,
-        status: "started",
-      };
+        verifierFork.thread.id,
+        contractContext.threadId,
+        contractContext.turnId,
+      );
       state.contexts.push(verifierContext);
       await store.writeState(state);
       const verifierTurn = await client.runTurn(
@@ -355,18 +317,14 @@ export async function runImplementationAndVerification(
         }),
         {
           cwd: repoPath,
-          sandboxPolicy: { type: "readOnly", networkAccess: false },
+          sandboxPolicy: readOnlyPolicy,
           effort: roleEffort,
           ...(options.model ? { model: options.model } : {}),
           outputSchema: verificationArtifactSchema,
         },
       );
-      verifierContext.turnId = verifierTurn.turnId;
-      verifierContext.status = "completed";
-      return parseStructured<VerificationArtifact>(
-        verifierTurn.message,
-        validateVerificationArtifact,
-      );
+      completeContext(verifierContext, verifierTurn.turnId);
+      return parseRoleArtifact(verifierTurn.message, validateVerificationArtifact);
     };
 
     verification = await verify("verifier");
@@ -391,14 +349,12 @@ export async function runImplementationAndVerification(
         approvalPolicy: "never",
         sandbox: "workspace-write",
       });
-      const repairContext: ContextEntry = {
-        role: "repair",
-        threadId: implementationFork.thread.id,
-        parentThreadId: contractContext.threadId,
-        checkpointTurnId: implementerContext.turnId,
-        turnId: null,
-        status: "started",
-      };
+      const repairContext = startContext(
+        "repair",
+        implementationFork.thread.id,
+        contractContext.threadId,
+        implementerContext.turnId,
+      );
       state.contexts.push(repairContext);
       await store.writeState(state);
       const repairTurn = await client.runTurn(
@@ -411,24 +367,14 @@ export async function runImplementationAndVerification(
         }),
         {
           cwd: repoPath,
-          sandboxPolicy: {
-            type: "workspaceWrite",
-            writableRoots: [repoPath],
-            networkAccess: false,
-            excludeTmpdirEnvVar: false,
-            excludeSlashTmp: false,
-          },
+          sandboxPolicy: workspaceWritePolicy(repoPath),
           effort: roleEffort,
           ...(options.model ? { model: options.model } : {}),
           outputSchema: implementationArtifactSchema,
         },
       );
-      repairContext.turnId = repairTurn.turnId;
-      repairContext.status = "completed";
-      implementation = parseStructured<ImplementationArtifact>(
-        repairTurn.message,
-        validateImplementationArtifact,
-      );
+      completeContext(repairContext, repairTurn.turnId);
+      implementation = parseRoleArtifact(repairTurn.message, validateImplementationArtifact);
       actualPaths = await validateImplementationChange({
         repoPath,
         fromCommit: implementationCommit,

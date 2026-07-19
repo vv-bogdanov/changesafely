@@ -303,23 +303,6 @@ test("refuses a planning resume when a persisted artifact hash changed", async (
   );
 });
 
-test("stops when the Implementer edits a protected T1 path", async (t) => {
-  const repoPath = await fixtureRepo(t);
-  const clientFactory = fakeAppServerFactory(repoPath, "protected-edit");
-  const planning = await runPlanning({
-    repoPath,
-    task: "Change the fixture value.",
-    plannerCount: 1,
-    clientFactory,
-  });
-  await runHarness({ repoPath, runId: planning.runId, clientFactory });
-
-  await assert.rejects(
-    runImplementationAndVerification({ repoPath, runId: planning.runId, clientFactory }),
-    /protected T1 path/,
-  );
-});
-
 test("rejects malformed role output locally", async (t) => {
   const repoPath = await fixtureRepo(t);
 
@@ -356,6 +339,12 @@ test("marks a clean but changed baseline before the first write", async (t) => {
 });
 
 for (const scenario of [
+  {
+    name: "protected harness changes",
+    mode: "protected-edit",
+    message: /protected T1 path/,
+    status: "FAILED",
+  },
   {
     name: "scope expansion",
     mode: "scope-expansion",
