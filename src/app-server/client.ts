@@ -1,5 +1,14 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
+import {
+  createJSONRPCErrorResponse,
+  JSONRPCClient,
+  JSONRPCErrorException,
+  type JSONRPCRequest,
+  type JSONRPCResponse,
+  JSONRPCServer,
+  JSONRPCServerAndClient,
+} from "json-rpc-2.0";
 import { safeEnvironment } from "../environment.js";
 import { VERSION } from "../version.js";
 import type { InitializeParams } from "./generated/types/InitializeParams.js";
@@ -22,27 +31,6 @@ interface RpcError {
   code: number;
   message: string;
   data?: unknown;
-}
-
-interface RpcResponse {
-  id: number | string;
-  result?: unknown;
-  error?: RpcError;
-}
-
-interface RpcNotification {
-  method: string;
-  params?: unknown;
-}
-
-interface RpcRequest extends RpcNotification {
-  id: number | string;
-}
-
-interface PendingRequest {
-  resolve(value: unknown): void;
-  reject(error: Error): void;
-  timer: NodeJS.Timeout;
 }
 
 interface TurnWaiter {
@@ -92,6 +80,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasOwn(value: object, key: string): boolean {
   return Object.hasOwn(value, key);
+}
+
+function withoutVersion(message: JSONRPCRequest | JSONRPCResponse): object {
+  const { jsonrpc: _, ...appServerMessage } = message;
+  return appServerMessage;
 }
 
 function isRpcId(value: unknown): value is number | string {
@@ -195,15 +188,28 @@ function validateTurnCompleted(value: unknown): TurnCompletedNotification | unde
 export class AppServerClient {
   private process: ChildProcessWithoutNullStreams | undefined;
   private lines: Interface | undefined;
-  private nextId = 1;
-  private readonly pending = new Map<number | string, PendingRequest>();
+  private readonly rpc: JSONRPCServerAndClient;
   private readonly turnWaiters = new Map<string, TurnWaiter>();
   private readonly completedTurns = new Map<string, TurnCompletedNotification>();
   private readonly agentMessages = new Map<string, string>();
   private fatalError: AppServerError | undefined;
   private abortListener: (() => void) | undefined;
 
-  constructor(private readonly options: AppServerClientOptions = {}) {}
+  constructor(private readonly options: AppServerClientOptions = {}) {
+    const server = new JSONRPCServer({
+      errorListener: (message) => this.failProtocol(message),
+    });
+    server.addMethod("item/completed", (params) =>
+      this.handleNotification("item/completed", params),
+    );
+    server.addMethod("turn/completed", (params) =>
+      this.handleNotification("turn/completed", params),
+    );
+    const client = new JSONRPCClient((message) => this.write(withoutVersion(message)));
+    this.rpc = new JSONRPCServerAndClient(server, client, {
+      errorListener: (message) => this.failProtocol(message),
+    });
+  }
 
   async start(): Promise<InitializeResponse> {
     if (this.process) {
@@ -346,31 +352,24 @@ export class AppServerClient {
     });
   }
 
-  private request<T>(method: string, params: unknown): Promise<T> {
+  private async request<T>(method: string, params: unknown): Promise<T> {
     if (this.fatalError) return Promise.reject(this.fatalError);
-    const id = this.nextId++;
-    const timeoutMs = this.options.requestTimeoutMs ?? 10_000;
-
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new AppServerError(`App Server request ${method} timed out`));
-      }, timeoutMs);
-
-      this.pending.set(id, {
-        resolve: (value) => resolve(value as T),
-        reject,
-        timer,
-      });
-
-      try {
-        this.write({ method, id, params });
-      } catch (error) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(error instanceof Error ? error : new Error(String(error)));
+    try {
+      return (await this.rpc.client
+        .timeout(this.options.requestTimeoutMs ?? 10_000, (id) =>
+          createJSONRPCErrorResponse(id, -32_000, `App Server request ${method} timed out`),
+        )
+        .request(method, params)) as T;
+    } catch (error) {
+      if (error instanceof JSONRPCErrorException) {
+        throw new AppServerError(error.message, {
+          code: error.code,
+          message: error.message,
+          ...(error.data === undefined ? {} : { data: error.data }),
+        });
       }
-    });
+      throw error;
+    }
   }
 
   private notify(method: string, params: unknown): void {
@@ -403,45 +402,30 @@ export class AppServerClient {
         this.failProtocol("Invalid request id from App Server");
         return;
       }
-      this.rejectServerRequest({ id: message.id, method: message.method, params: message.params });
-      return;
-    }
-
-    if (hasOwn(message, "id")) {
+    } else if (hasOwn(message, "id")) {
       if (!isRpcId(message.id) || (!hasOwn(message, "result") && !hasOwn(message, "error"))) {
         this.failProtocol("Invalid response from App Server");
         return;
       }
-      const response = message as unknown as RpcResponse;
-      const pending = this.pending.get(response.id);
-      if (!pending) return;
-      if (hasOwn(message, "error")) {
-        const rpcError = validateRpcError(message.error);
-        if (!rpcError) {
-          this.failProtocol("Invalid error response from App Server");
-          return;
-        }
-        clearTimeout(pending.timer);
-        this.pending.delete(response.id);
-        pending.reject(new AppServerError(rpcError.message, rpcError));
-      } else {
-        clearTimeout(pending.timer);
-        this.pending.delete(response.id);
-        pending.resolve(response.result);
+      if (hasOwn(message, "error") && !validateRpcError(message.error)) {
+        this.failProtocol("Invalid error response from App Server");
+        return;
       }
-      return;
-    }
-
-    if (typeof message.method !== "string") {
+    } else if (typeof message.method !== "string") {
       this.failProtocol("Invalid notification from App Server");
       return;
     }
-    this.handleNotification({ method: message.method, params: message.params });
+
+    void this.rpc
+      .receiveAndSend({ jsonrpc: "2.0", ...message } as JSONRPCRequest | JSONRPCResponse)
+      .catch((error) =>
+        this.failProtocol(error instanceof Error ? error.message : "Invalid JSON-RPC message"),
+      );
   }
 
-  private handleNotification(notification: RpcNotification): void {
-    if (notification.method === "item/completed") {
-      const params = validateItemCompleted(notification.params);
+  private handleNotification(method: string, value: unknown): void {
+    if (method === "item/completed") {
+      const params = validateItemCompleted(value);
       if (!params) {
         this.failProtocol("Invalid item/completed notification from App Server");
         return;
@@ -452,8 +436,8 @@ export class AppServerClient {
       return;
     }
 
-    if (notification.method !== "turn/completed") return;
-    const params = validateTurnCompleted(notification.params);
+    if (method !== "turn/completed") return;
+    const params = validateTurnCompleted(value);
     if (!params) {
       this.failProtocol("Invalid turn/completed notification from App Server");
       return;
@@ -468,20 +452,6 @@ export class AppServerClient {
         const oldest = this.completedTurns.keys().next().value;
         if (typeof oldest === "string") this.completedTurns.delete(oldest);
       }
-    }
-  }
-
-  private rejectServerRequest(request: RpcRequest): void {
-    try {
-      this.write({
-        id: request.id,
-        error: {
-          code: -32601,
-          message: `Unsupported App Server request: ${request.method}`,
-        },
-      });
-    } catch {
-      this.failProtocol("Could not reject an unsupported App Server request");
     }
   }
 
@@ -512,11 +482,7 @@ export class AppServerClient {
   }
 
   private failAll(error: Error): void {
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-    }
-    this.pending.clear();
+    this.rpc.rejectAllPendingRequests(error.message);
     for (const waiter of this.turnWaiters.values()) waiter.reject(error);
     this.turnWaiters.clear();
   }

@@ -68,3 +68,15 @@ test("fails closed on a malformed App Server notification", async () => {
     );
   });
 });
+
+test("fails closed on a malformed App Server error response", async () => {
+  await withFakeClient("malformed-error", async (client) => {
+    await assert.rejects(client.start(), /Invalid error response from App Server/);
+  });
+});
+
+test("bounds App Server requests with a concrete timeout error", async () => {
+  await withFakeClient("request-timeout", async (client) => {
+    await assert.rejects(client.start(), /App Server request initialize timed out/);
+  });
+});

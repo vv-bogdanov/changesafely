@@ -266,6 +266,12 @@ async function structuredOutput(prompt: string): Promise<unknown> {
 
 lines.on("line", async (line) => {
   const message = JSON.parse(line) as Message;
+  if (Object.hasOwn(message, "jsonrpc")) {
+    if (message.id !== undefined) {
+      send({ id: message.id, error: { code: -32600, message: "Unexpected jsonrpc field" } });
+    }
+    return;
+  }
   if (mode === "server-request" && message.id === "approval-1" && !message.method) {
     if (message.error?.code !== -32601 || !pendingCompletion) process.exitCode = 1;
     else completeTurn(pendingCompletion);
@@ -273,6 +279,11 @@ lines.on("line", async (line) => {
     return;
   }
   if (message.method === "initialize") {
+    if (mode === "request-timeout") return;
+    if (mode === "malformed-error") {
+      send({ id: message.id, error: { code: "invalid", message: 42 } });
+      return;
+    }
     send({
       id: message.id,
       result: {
