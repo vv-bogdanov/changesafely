@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { access, open, readFile, stat, unlink } from "node:fs/promises";
+import { access, open, readFile, realpath, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { SafeChangeError } from "./errors.js";
@@ -34,6 +34,10 @@ export class PreflightError extends SafeChangeError {
 
 export interface RepositoryLock {
   release(): Promise<void>;
+}
+
+export function canonicalRepositoryPath(path: string): Promise<string> {
+  return realpath(resolve(path));
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {

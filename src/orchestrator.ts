@@ -4,6 +4,7 @@ import { ArtifactStore, loadRunState, loadVerifiedArtifact, type RunState } from
 import { SafeChangeError } from "./errors.js";
 import {
   acquireRepositoryLock,
+  canonicalRepositoryPath,
   changedPaths,
   currentBranch,
   currentCommit,
@@ -115,7 +116,11 @@ function validateLineage(state: RunState): void {
   }
 }
 
-export async function validateResumeBoundary(repoPath: string, runId: string): Promise<RunState> {
+export async function validateResumeBoundary(
+  repoPathInput: string,
+  runId: string,
+): Promise<RunState> {
+  const repoPath = await canonicalRepositoryPath(repoPathInput);
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
   state.model ??= "";
@@ -333,7 +338,7 @@ async function withRepositoryWriteLock<T>(
 }
 
 export async function runFullWorkflow(options: FullRunOptions): Promise<FullRunResult> {
-  const repoPath = resolve(options.repoPath);
+  const repoPath = await canonicalRepositoryPath(resolve(options.repoPath));
   const planning = await runPlanning({
     repoPath,
     task: options.task,
@@ -363,7 +368,7 @@ export async function resumeRun(
   signal?: AbortSignal,
   onProgress?: ProgressReporter,
 ): Promise<FullRunResult> {
-  const repoPath = resolve(repoPathInput);
+  const repoPath = await canonicalRepositoryPath(resolve(repoPathInput));
   return withRepositoryWriteLock(repoPath, runId, async () => {
     const state = await validateResumeBoundary(repoPath, runId);
     const model = state.model || undefined;

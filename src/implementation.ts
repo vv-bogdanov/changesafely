@@ -13,6 +13,7 @@ import { abortReason, SafeChangeError } from "./errors.js";
 import {
   assertNoUntrackedFiles,
   assertProtectedConfigurationUnchanged,
+  canonicalRepositoryPath,
   changedPaths,
   commitPaths,
   currentBranch,
@@ -207,7 +208,7 @@ export async function runImplementationAndVerification(
   options: ImplementationOptions,
 ): Promise<ImplementationResult> {
   const startedAt = Date.now();
-  const repoPath = resolve(options.repoPath);
+  const repoPath = await canonicalRepositoryPath(resolve(options.repoPath));
   const roleEffort = options.model ? "medium" : "low";
   const state = await loadRunState(repoPath, options.runId);
   state.repairCount ??= 0;

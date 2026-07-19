@@ -4,7 +4,7 @@ import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artif
 import { ArtifactStore, artifactInputs, createRunId, type RunState } from "./artifacts.js";
 import { evaluatePlan, evaluatePlans, type PlanEligibility } from "./eligibility.js";
 import { abortReason, SafeChangeError } from "./errors.js";
-import { assertBaselineUnchanged, inspectBaseline } from "./git.js";
+import { assertBaselineUnchanged, canonicalRepositoryPath, inspectBaseline } from "./git.js";
 import { createRunOutcome, type RunOutcome } from "./outcome.js";
 import { type ProgressReporter, reportProgress } from "./progress.js";
 import {
@@ -69,7 +69,7 @@ function planningError(code: string, message: string): SafeChangeError {
 
 export async function runPlanning(options: PlanningOptions): Promise<PlanningResult> {
   const startedAt = Date.now();
-  const repoPath = resolve(options.repoPath);
+  const repoPath = await canonicalRepositoryPath(resolve(options.repoPath));
   const roleEffort = options.model ? "medium" : "low";
   const baseline = await inspectBaseline(repoPath);
   const runId = createRunId();

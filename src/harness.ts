@@ -11,6 +11,7 @@ import {
 import { abortReason, SafeChangeError } from "./errors.js";
 import {
   assertProtectedConfigurationUnchanged,
+  canonicalRepositoryPath,
   changedPaths,
   commitPaths,
   createSafeChangeBranch,
@@ -83,7 +84,7 @@ export function diffRemovesExistingLines(diff: string): boolean {
 
 export async function runHarness(options: HarnessOptions): Promise<HarnessResult> {
   const startedAt = Date.now();
-  const repoPath = resolve(options.repoPath);
+  const repoPath = await canonicalRepositoryPath(resolve(options.repoPath));
   const roleEffort = options.model ? "medium" : "low";
   const state = await loadRunState(repoPath, options.runId);
   if (state.status !== "PLANNED") {

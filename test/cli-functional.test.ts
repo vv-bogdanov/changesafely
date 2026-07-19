@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -150,6 +150,22 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
       await readFile(join(repoPath, ".safechange", "runs", runId, "report.md"), "utf8"),
       /VERIFIED/,
     );
+  });
+
+  await t.test("canonicalizes a repository path alias across phases", async () => {
+    if (process.platform === "win32") return;
+    const repoPath = await repository("canonical-repository");
+    const alias = join(temporaryRoot, "repository-alias");
+    await symlink(repoPath, alias, "dir");
+    const result = await spawnCaptured(
+      safechange,
+      ["run", "--task", "Change the fixture value.", "--plans", "1", "--repo", alias, "--json"],
+      temporaryRoot,
+      await environment(),
+    ).result;
+    assert.equal(result.exitCode, 0);
+    const state = await readState(parseOutcome(result).statePath);
+    assert.equal(state.repoPath, await realpath(repoPath));
   });
 
   await t.test("resume continues from planning and harness boundaries", async () => {

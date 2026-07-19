@@ -68,7 +68,7 @@ export async function runSuccessful(
   const result = await spawnCaptured(command, args, cwd, env).result;
   if (result.exitCode !== 0) {
     throw new Error(
-      `${command} ${args.join(" ")} failed with ${result.exitCode}: ${result.stderr || result.stdout}`,
+      `${command} ${args.join(" ")} failed with ${result.exitCode}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
     );
   }
   return result.stdout.trim();
@@ -153,7 +153,7 @@ if (args[0] === "--version") {
 }
 
 function run(command, commandArgs, options = {}) {
-  const npmCli = process.env.npm_execpath;
+  const npmCli = ${JSON.stringify(process.env.npm_execpath ?? "")};
   const useNpmCli = process.platform === "win32" && command === "npm" && npmCli;
   const child = spawn(
     useNpmCli ? process.execPath : command,

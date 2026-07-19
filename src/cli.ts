@@ -157,7 +157,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       );
     }
 
-    const repoPath = resolve(requiredString(parsed.values.repo, "--repo"));
+    const repoPath = realpathSync(resolve(requiredString(parsed.values.repo, "--repo")));
     if (command === "doctor") {
       const report = await runDoctor({ repoPath });
       process.stdout.write(
