@@ -76,6 +76,7 @@ test("comparison manifest is immutable and content-addressed", async (t) => {
   assert.equal(first.sha256, second.sha256);
   assert.equal(first.manifest.taskText, taskText);
   assert.equal(first.manifest.measurement, "development");
+  assert.equal(first.manifest.scenarioVersion, 1);
 });
 
 test("controller runs a fair fake Direct and ChangeSafely pair end to end", async (t) => {
@@ -116,6 +117,8 @@ test("controller runs a fair fake Direct and ChangeSafely pair end to end", asyn
   });
 
   assert.equal(direct.run.comparisonId, changesafely.run.comparisonId);
+  assert.equal(direct.run.scenarioVersion, 1);
+  assert.equal(changesafely.run.scenarioVersion, 1);
   assert.equal(direct.run.outcome, "unsafe_green");
   assert.equal(changesafely.run.outcome, "unsafe_green");
   assert.equal(direct.run.usage.inputTokens, 100);
@@ -147,6 +150,7 @@ async function temporaryWorkspace(t: test.TestContext, prefix: string): Promise<
 function comparisonInput(): ComparisonInput {
   return {
     scenario: "double-charge",
+    scenarioVersion: 1,
     measurement: "development",
     taskText,
     taskSha256: contentSha256(taskText),

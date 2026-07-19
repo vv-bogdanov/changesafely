@@ -35,9 +35,14 @@ This is an open pilot evaluation, not a universal industry benchmark.
 ## Execution policy
 
 - deterministic validation and replay never call a model;
-- live development comparisons use Spark;
+- fixture, reference, mutant, isolation, schema, replay, and report checks pass before
+  any model call;
+- live validation starts with one ChangeSafely Spark smoke per new toolchain, and paired
+  comparisons wait until its product path and benchmark assets are stable;
 - final measured or publishable runs require a separate explicit user command after
-  the Spark results have been evaluated;
+  the version-matched Spark results have been evaluated;
+- existing golden evidence is immutable; evidence without an explicit scenario version
+  remains readable as legacy version 1 and is never rewritten;
 - the worker receives only the selected baseline and verbatim public task, never this
   controller directory or the hidden oracle.
 

@@ -70,6 +70,7 @@ export interface BenchmarkReport {
     comparisonId: string;
     measurement: BenchmarkMeasurement;
     scenario: string;
+    scenarioVersion?: number;
     model: string;
     effort: string;
     paired: boolean;
@@ -126,6 +127,9 @@ export async function buildBenchmarkReport(resultsRoot: string): Promise<Benchma
       comparisonId,
       measurement: first.run.measurement ?? "development",
       scenario: first.run.scenario,
+      ...(first.run.scenarioVersion === undefined
+        ? {}
+        : { scenarioVersion: first.run.scenarioVersion }),
       model: first.run.model,
       effort: first.run.effort,
       paired:
@@ -206,6 +210,9 @@ function renderMarkdownReport(report: BenchmarkReport): string {
     lines.push(
       `## ${escapeMarkdown(comparison.scenario)} (${comparison.comparisonId})`,
       "",
+      ...(comparison.scenarioVersion === undefined
+        ? []
+        : [`- Scenario version: ${comparison.scenarioVersion}`]),
       `- Measurement: \`${comparison.measurement}\``,
       `- Model: \`${escapeMarkdown(comparison.model)}\``,
       `- Effort: \`${escapeMarkdown(comparison.effort)}\``,

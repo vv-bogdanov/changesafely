@@ -126,7 +126,13 @@ export async function main(argv: string[]): Promise<number> {
         throw new Error("--timeout must be an integer from 1 to 3600 seconds");
       }
       const resultsRoot = resolve(parsed.values.results ?? join(benchRoot, "results"));
-      if (finalMeasurement) await requireEvaluatedSparkPair(resultsRoot, scenario);
+      if (finalMeasurement) {
+        await requireEvaluatedSparkPair(
+          resultsRoot,
+          scenario,
+          scenarioDefinition(benchRoot, scenario).version,
+        );
+      }
       const evidence = await runBenchmarkAttempt({
         projectRoot,
         benchRoot,
@@ -144,6 +150,7 @@ export async function main(argv: string[]): Promise<number> {
           {
             runId: evidence.run.runId,
             comparisonId: evidence.run.comparisonId,
+            scenarioVersion: evidence.run.scenarioVersion,
             mode: evidence.run.mode,
             measurement: evidence.run.measurement ?? "development",
             outcome: evidence.run.outcome,
@@ -212,13 +219,18 @@ function required(value: string | undefined, option: string): string {
   return result;
 }
 
-async function requireEvaluatedSparkPair(resultsRoot: string, scenario: string): Promise<void> {
+async function requireEvaluatedSparkPair(
+  resultsRoot: string,
+  scenario: string,
+  scenarioVersion: number,
+): Promise<void> {
   try {
     const report = await buildBenchmarkReport(resultsRoot);
     if (
       report.comparisons.some(
         (comparison) =>
           comparison.scenario === scenario &&
+          (comparison.scenarioVersion ?? 1) === scenarioVersion &&
           comparison.model === SPARK_MODEL &&
           comparison.measurement === "development" &&
           comparison.paired,
@@ -230,7 +242,7 @@ async function requireEvaluatedSparkPair(resultsRoot: string, scenario: string):
     // Report loading is fail-closed below so the user gets one stable gate message.
   }
   throw new Error(
-    `--final requires an evaluated paired ${SPARK_MODEL} comparison for scenario ${scenario}`,
+    `--final requires an evaluated paired ${SPARK_MODEL} comparison for scenario ${scenario} v${scenarioVersion}`,
   );
 }
 

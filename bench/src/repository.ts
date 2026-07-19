@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile);
 
 export interface ScenarioDefinition {
   id: string;
+  version: number;
   root: string;
   baseline: string;
   task: string;
@@ -25,13 +26,30 @@ export interface AttemptSnapshot {
   changedFiles: string[];
 }
 
-export function scenarioDefinition(benchRoot: string, scenario: string): ScenarioDefinition {
-  if (!["double-charge", "restart-storm", "tenant-leak"].includes(scenario)) {
+const scenarioVersions: Readonly<Record<string, number>> = {
+  "double-charge": 1,
+  "restart-storm": 1,
+  "tenant-leak": 1,
+};
+
+export function scenarioDefinition(
+  benchRoot: string,
+  scenario: string,
+  expectedVersion?: number,
+): ScenarioDefinition {
+  const version = scenarioVersions[scenario];
+  if (!version) {
     throw new Error(`Unknown benchmark scenario: ${scenario}`);
+  }
+  if (expectedVersion !== undefined && expectedVersion !== version) {
+    throw new Error(
+      `Benchmark scenario ${scenario} v${expectedVersion} is unavailable; current assets are v${version}`,
+    );
   }
   const root = resolve(benchRoot, "scenarios", scenario);
   return {
     id: scenario,
+    version,
     root,
     baseline: join(root, "baseline"),
     task: join(root, "task.txt"),

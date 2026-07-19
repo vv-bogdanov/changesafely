@@ -29,6 +29,7 @@ export interface RunDocument {
   comparisonId: string;
   comparisonSha256: string;
   scenario: string;
+  scenarioVersion?: number;
   mode: BenchmarkMode;
   measurement?: BenchmarkMeasurement;
   taskText: string;
@@ -70,6 +71,7 @@ export interface ComparisonManifest {
   createdAt: string;
   measurement?: BenchmarkMeasurement;
   scenario: string;
+  scenarioVersion?: number;
   taskText: string;
   taskSha256: string;
   baselineCommit: string;
@@ -206,6 +208,7 @@ const runDocumentSchema = Type.Object(
     comparisonId: Type.String({ pattern: "^comparison-[a-f0-9]{16}$" }),
     comparisonSha256: sha256,
     scenario: Type.String({ minLength: 1, maxLength: 100 }),
+    scenarioVersion: Type.Optional(Type.Integer({ minimum: 1 })),
     mode: Type.Union([Type.Literal("changesafely"), Type.Literal("direct")]),
     measurement: Type.Optional(Type.Union([Type.Literal("development"), Type.Literal("final")])),
     taskText: Type.String({ minLength: 1, maxLength: 20_000 }),
@@ -255,6 +258,7 @@ const comparisonManifestSchema = Type.Object(
     createdAt: timestamp,
     measurement: Type.Optional(Type.Union([Type.Literal("development"), Type.Literal("final")])),
     scenario: Type.String({ minLength: 1, maxLength: 100 }),
+    scenarioVersion: Type.Optional(Type.Integer({ minimum: 1 })),
     taskText: Type.String({ minLength: 1, maxLength: 20_000 }),
     taskSha256: sha256,
     baselineCommit: commit,

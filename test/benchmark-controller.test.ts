@@ -49,6 +49,10 @@ test("materializes an isolated Git baseline and snapshots only source evidence",
   assert.deepEqual(snapshot.changedFiles, ["src/candidate.ts"]);
   assert.match(snapshot.diff, /candidate = true/u);
   assert.doesNotMatch(snapshot.diff, /ignored\.js/u);
+  assert.throws(
+    () => scenarioDefinition(benchRoot, "double-charge", 2),
+    /scenario double-charge v2 is unavailable/u,
+  );
 });
 
 test("scope evaluation sees forbidden files after the controller snapshot commit", async (t) => {
@@ -120,6 +124,22 @@ test("creates immutable hash-verified evidence and fails closed on corruption", 
 
   await writeFile(join(created.path, "diff.patch"), "tampered\n");
   await assert.rejects(loadEvidencePackage(resultsRoot, run.runId), /hash mismatch/u);
+});
+
+test("reads legacy v1 evidence without an explicit scenario version", async (t) => {
+  const resultsRoot = await mkdtemp(join(tmpdir(), "changesafely-benchmark-legacy-version-"));
+  t.after(async () => rm(resultsRoot, { recursive: true, force: true }));
+  const run = benchmarkRunDocument("legacy-version-run");
+  delete run.scenarioVersion;
+  run.comparisonSha256 = contentSha256(benchmarkComparisonContent(run));
+  await createEvidencePackage(resultsRoot, run, {
+    "comparison.json": benchmarkComparisonContent(run),
+    "diff.patch": "",
+    "events.jsonl": '{"type":"synthetic"}\n',
+  });
+
+  const verified = await loadEvidencePackage(resultsRoot, run.runId);
+  assert.equal(verified.run.scenarioVersion, undefined);
 });
 
 test("rejects extra evidence and path traversal", async (t) => {

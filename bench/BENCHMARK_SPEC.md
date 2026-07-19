@@ -228,9 +228,11 @@ may be requested because an outcome is disappointing.
 ### 8.4 Registered pilot protocol
 
 Before a paired run, create an immutable comparison manifest containing the exact task,
-baseline, Codex executable version, ChangeSafely version, model, reasoning effort, runtime
-limit, sandbox, network policy, visible checks, environment, and execution order. Reject the
-pair if either mode differs.
+scenario version, baseline, Codex executable version, ChangeSafely version, model, reasoning
+effort, runtime limit, sandbox, network policy, visible checks, environment, and execution
+order. Reject the pair if either mode differs. Evidence created before explicit scenario
+versioning is read as legacy version 1; it is never rewritten or evaluated against newer
+scenario assets.
 
 The pilot defaults are:
 
@@ -243,11 +245,16 @@ The pilot defaults are:
 - Sentry and remote ChangeSafely telemetry: disabled;
 - worker execution: sequential, not concurrent.
 
-Development runs use Spark. Final measured or publishable runs are forbidden until the Spark
-comparisons have completed and been evaluated, and then require a separate explicit user
-command with both `--final` and an explicit `--model`. The controller rejects `--final` until a
-paired evaluated Spark comparison exists for the same scenario. Final runs are never started by
-CI, a default script, or completion of an implementation phase.
+Every scenario change first passes model-free fixture, reference, mutant, isolation, schema,
+replay, and report checks. Live validation then starts with one ChangeSafely Spark smoke per new
+toolchain. Complete paired Direct versus ChangeSafely development comparisons run only after the
+relevant product path and benchmark portfolio are stable.
+
+Final measured or publishable runs are forbidden until the version-matched Spark comparisons
+have completed and been evaluated, and then require a separate explicit user command with both
+`--final` and an explicit `--model`. The controller rejects `--final` until a paired evaluated
+Spark comparison exists for the same scenario version. Final runs are never started by CI, a
+default script, or completion of an implementation phase.
 
 ### 8.5 Isolation threat model
 

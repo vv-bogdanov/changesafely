@@ -32,7 +32,11 @@ export async function evaluateMutationEvidence(
   benchRoot: string,
   evidence: VerifiedEvidence,
 ): Promise<AnalysisDocument> {
-  const scenario = scenarioDefinition(benchRoot, evidence.run.scenario);
+  const scenario = scenarioDefinition(
+    benchRoot,
+    evidence.run.scenario,
+    evidence.run.scenarioVersion ?? 1,
+  );
   const oracleRoot = resolve(benchRoot, "oracles", scenario.id);
   const mutants = await loadMutants(join(oracleRoot, "mutants", "manifest.json"));
   const temporaryRoot = await mkdtemp(join(tmpdir(), "changesafely-mutation-"));

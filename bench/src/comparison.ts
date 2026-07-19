@@ -16,8 +16,8 @@ const execFileAsync = promisify(execFile);
 
 export type ComparisonInput = Omit<
   ComparisonManifest,
-  "comparisonId" | "comparisonVersion" | "createdAt"
->;
+  "comparisonId" | "comparisonVersion" | "createdAt" | "scenarioVersion"
+> & { scenarioVersion: number };
 
 export interface StoredComparison {
   path: string;
@@ -100,7 +100,10 @@ function comparisonContract(manifest: ComparisonManifest): ComparisonInput {
     createdAt: _createdAt,
     ...input
   } = manifest;
-  return input;
+  if (input.scenarioVersion === undefined) {
+    throw new Error("New comparison manifests require an explicit scenario version");
+  }
+  return input as ComparisonInput;
 }
 
 async function commandVersion(command: string): Promise<string> {

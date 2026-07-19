@@ -77,6 +77,7 @@ export async function runBenchmarkAttempt(
     const comparison = await ensureComparisonManifest(options.resultsRoot, {
       measurement,
       scenario: scenario.id,
+      scenarioVersion: scenario.version,
       taskText,
       taskSha256: contentSha256(taskText),
       baselineCommit: attempt.baselineCommit,
@@ -159,6 +160,7 @@ export async function runBenchmarkAttempt(
       comparisonId: comparison.manifest.comparisonId,
       comparisonSha256: comparison.sha256,
       scenario: scenario.id,
+      scenarioVersion: scenario.version,
       mode: options.mode,
       measurement,
       taskText,
