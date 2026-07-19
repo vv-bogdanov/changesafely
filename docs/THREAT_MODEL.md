@@ -5,9 +5,10 @@
 ChangeSafely is a local developer tool whose workflow is independent of target source
 syntax. It compares plans, creates a protected safety harness, implements one selected
 plan, and verifies the resulting Git branch. The current security-qualified target is
-prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, and Node/Python
-polyglot repositories; other toolchains are not claimed until their command policy and
-end-to-end fixture pass. ChangeSafely is not a deployment or rollback system.
+prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, Node/Python
+polyglot, and config-driven PHP repositories; other toolchains are not claimed until
+their command policy and end-to-end fixture pass. ChangeSafely is not a deployment or
+rollback system.
 
 ## Assets
 

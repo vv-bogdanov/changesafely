@@ -176,5 +176,6 @@ contract preserves the workflow's strength, supports multiple toolchains in one
 repository, and keeps runtime/process safety centralized.
 
 **Rollout:** prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, and
-Node/Python polyglot repositories have end-to-end fixtures. Practical support for
-additional toolchains is claimed only after the corresponding fixture passes.
+Node/Python polyglot repositories, plus PHP through explicit config, have end-to-end
+fixtures. PHP did not justify a Composer detector. Practical support for additional
+toolchains is claimed only after the corresponding fixture passes.

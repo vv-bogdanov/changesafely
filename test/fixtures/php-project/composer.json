@@ -1,0 +1,8 @@
+{
+  "name": "changesafely/php-functional-fixture",
+  "description": "Offline functional fixture for the ChangeSafely CLI",
+  "type": "project",
+  "require": {
+    "php": ">=8.5"
+  }
+}

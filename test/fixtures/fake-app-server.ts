@@ -81,6 +81,34 @@ function functionalTarget(value: string): FunctionalTarget | undefined {
       ],
     };
   }
+  if (value === "php") {
+    return {
+      summary: "Small PHP repository authorized by an explicit offline check.",
+      allowedPathPrefixes: ["src", "tests"],
+      sources: [
+        {
+          path: "src/value.php",
+          implementation:
+            "<?php\n\ndeclare(strict_types=1);\n\nfunction value(): int\n{\n    return 2;\n}\n",
+        },
+      ],
+      tests: [
+        {
+          path: "tests/value_test.php",
+          content:
+            "<?php\n\ndeclare(strict_types=1);\n\ncheck(value() === 2, 'value must return the requested result');\n",
+        },
+      ],
+      checks: [
+        {
+          name: "PHP tests",
+          argv: ["php", "tests/run.php"],
+          cwd: ".",
+          purpose: "Run the explicitly configured offline PHP checks",
+        },
+      ],
+    };
+  }
   if (value === "polyglot") {
     return {
       summary: "Polyglot fixture with independent JavaScript and Python checks.",

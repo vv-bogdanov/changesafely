@@ -11,9 +11,9 @@ plan, and verifies the resulting Git branch from a clean Codex context.
 
 The workflow is target-language independent by design. Current model-free end-to-end
 proofs cover prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, and
-a Node/Python polyglot repository. Each uses one branch, one plan, real command exits,
-inspectable artifacts, and explicit safe stops. Additional toolchains are listed only
-after a fixture passes.
+a Node/Python polyglot repository, plus PHP through the same explicit config. Each uses
+one branch, one plan, real command exits, inspectable artifacts, and explicit safe
+stops. Additional toolchains are listed only after a fixture passes.
 
 ## Why ChangeSafely
 
@@ -55,7 +55,7 @@ model for every role and defaults to `gpt-5.6-sol`.
 | Codex CLI | Standard authenticated executable on `PATH`; generated baseline currently `0.144.6` |
 | Git | Named branch, valid HEAD, clean tracked and staged state |
 | Target architecture | Source-language independent; repository-owned deterministic checks |
-| Validated target | Prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, and Node/Python polyglot repositories |
+| Validated target | Prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, Node/Python polyglot, and config-driven PHP repositories |
 | Host | Ubuntu, macOS, and Windows package/process smoke on Node.js 24 |
 
 The App Server protocol is generated reproducibly from the pinned development

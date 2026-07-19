@@ -262,6 +262,50 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     );
   });
 
+  await t.test("packed CLI completes PHP through explicit config", async () => {
+    const repoPath = join(temporaryRoot, "php-workflow");
+    await createFixtureRepository(repoPath, join(root, "test", "fixtures", "php-project"));
+    const result = await spawnCaptured(
+      changesafely,
+      [
+        "run",
+        "--task",
+        "Return the requested value.",
+        "--plans",
+        "1",
+        "--repo",
+        repoPath,
+        "--json",
+      ],
+      temporaryRoot,
+      await environment("php"),
+    ).result;
+    assert.equal(result.exitCode, 0, `${result.stderr}\n${result.stdout}`);
+    const outcome = parseOutcome(result);
+    assert.equal(outcome.status, "VERIFIED");
+    const state = await readState(outcome.statePath);
+    assert.deepEqual(state.repositoryCapabilities?.checks, [
+      { id: "php:test", kind: "test", argv: ["php", "tests/run.php"], cwd: "." },
+    ]);
+    assert.deepEqual(state.repositoryCapabilities?.controlFiles, [
+      "changesafely.config.json",
+      "composer.json",
+    ]);
+    assert.equal(
+      await runSuccessful(
+        "git",
+        ["diff", "--name-only", state.baselineCommit, state.testCommit],
+        repoPath,
+      ),
+      "tests/value_test.php",
+    );
+    const commands = await loadVerifiedArtifact(repoPath, state, "verificationCommands");
+    assert.deepEqual(
+      commands.payload.map((command) => [command.argv, command.cwd, command.exitCode]),
+      [[["php", "tests/run.php"], ".", 0]],
+    );
+  });
+
   await t.test("packed CLI keeps polyglot checks and test roots distinct", async () => {
     const repoPath = join(temporaryRoot, "polyglot-workflow");
     await createFixtureRepository(repoPath, join(root, "test", "fixtures", "polyglot-project"));

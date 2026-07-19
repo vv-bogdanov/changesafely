@@ -75,6 +75,8 @@ async function inspectProtectedConfiguration(repoPath: string): Promise<Record<s
     ".env.local",
     ".npmrc",
     ".pypirc",
+    "auth.json",
+    ".composer/auth.json",
     "pip.conf",
     ".config/pip/pip.conf",
     ".venv/pyvenv.cfg",
