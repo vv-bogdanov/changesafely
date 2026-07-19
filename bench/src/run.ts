@@ -118,7 +118,7 @@ export async function runBenchmarkAttempt(
         options.projectRoot,
         scenario,
       ));
-    const env = workerEnvironment(codexHome, options.codexCommand);
+    const env = benchmarkWorkerEnvironment(codexHome, options.codexCommand, options.projectRoot);
     const invocation =
       options.mode === "direct"
         ? directInvocation({
@@ -405,10 +405,20 @@ async function walk(root: string, prefix: string, files: Record<string, Buffer>)
   }
 }
 
-function workerEnvironment(codexHome: string, codexCommand: string): NodeJS.ProcessEnv {
+export function benchmarkWorkerEnvironment(
+  codexHome: string,
+  codexCommand: string,
+  projectRoot: string,
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const localBin = resolve(projectRoot, "node_modules", ".bin");
+  const path = [dirname(codexCommand), ...(source.PATH ?? "").split(delimiter)].filter(
+    (directory, index, values) =>
+      directory && resolve(directory) !== localBin && values.indexOf(directory) === index,
+  );
   return {
-    ...process.env,
-    PATH: `${dirname(codexCommand)}${delimiter}${process.env.PATH ?? ""}`,
+    ...source,
+    PATH: path.join(delimiter),
     CODEX_HOME: codexHome,
     CHANGESAFELY_TELEMETRY: "0",
     CHANGESAFELY_SENTRY_DSN: "",

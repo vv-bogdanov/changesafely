@@ -16,7 +16,7 @@ import {
 } from "../bench/src/comparison.js";
 import { contentSha256 } from "../bench/src/evidence.js";
 import { runProcess } from "../bench/src/process.js";
-import { runBenchmarkAttempt } from "../bench/src/run.js";
+import { benchmarkWorkerEnvironment, runBenchmarkAttempt } from "../bench/src/run.js";
 
 const taskText = "Make payment retries idempotent.\nKeep the public API unchanged.\n";
 const fixture = join(process.cwd(), "dist", "test", "fixtures", "fake-benchmark-worker.js");
@@ -119,6 +119,23 @@ test("benchmark environment normalizes multiline toolchain versions", async () =
     process.cwd(),
   );
   assert.equal(environment.toolchains[0]?.version, "runtime 1 build 2");
+});
+
+test("benchmark workers cannot resolve Codex from the controller checkout", () => {
+  const localBin = join(process.cwd(), "node_modules", ".bin");
+  const externalBin = join(tmpdir(), "external-codex-bin");
+  const environment = benchmarkWorkerEnvironment(
+    "/tmp/benchmark-codex-home",
+    join(externalBin, "codex"),
+    process.cwd(),
+    { PATH: [localBin, externalBin, "/usr/bin"].join(process.platform === "win32" ? ";" : ":") },
+  );
+
+  assert.equal(
+    environment.PATH,
+    [externalBin, "/usr/bin"].join(process.platform === "win32" ? ";" : ":"),
+  );
+  assert.equal(environment.CODEX_HOME, "/tmp/benchmark-codex-home");
 });
 
 test("controller runs a fair fake Direct and ChangeSafely pair end to end", async (t) => {
