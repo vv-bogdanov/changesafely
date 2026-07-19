@@ -19,6 +19,14 @@ publishing the first public prerelease.
   runs do not qualify after runtime or workflow code changes.
 - [ ] Run `npm run ci` and `npm run security:signatures` from a clean clone with
   Node.js 22 and 24.
+- [ ] Run `npm run benchmark:ci` from a clean clone. It must validate every scenario,
+  reference, mutant, evaluator, scope rule, evidence hash, replay, and report without
+  a model call.
+- [ ] Only after a separate explicit authorization, run fresh final Direct and
+  ChangeSafely comparisons from preregistered manifests. Do not reuse the Spark
+  development pilot as final evidence.
+- [ ] Verify every selected benchmark evidence and analysis manifest, scan the exact
+  export for secrets, and regenerate the report before adding golden evidence to Git.
 - [ ] Confirm `npm pack --dry-run` contains no test fixtures, local artifacts,
   credentials, `.idea`, source maps outside the declared package surface, or
   generated protocol files unused at runtime.
@@ -57,7 +65,8 @@ Create a `main` ruleset only at the prerelease boundary:
 
 - [ ] Require pull requests for `main` and require conversation resolution.
 - [ ] Require the `Node 22`, `Node 24`, `Supply chain`, `Package smoke (macOS)`,
-  `Package smoke (Windows)`, `JavaScript and TypeScript`, and `Dependency review`
+  `Package smoke (Windows)`, `Risk Suite (model-free)`, `JavaScript and TypeScript`,
+  and `Dependency review`
   checks without allowing skipped required checks.
 - [ ] Require branches to be current before merge, linear history, and block force
   pushes and branch deletion.

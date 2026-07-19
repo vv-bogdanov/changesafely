@@ -8,6 +8,8 @@ Specification and task cards for the ChangeSafely pilot benchmark.
    registered methodology, isolation contract, scenarios, and completion criteria.
 2. [`BENCHMARK_TASKS.md`](BENCHMARK_TASKS.md) - public task text and controller-only
    scenario notes for the three benchmark tasks.
+3. [`RESULTS.md`](RESULTS.md) - retained Spark development-pilot results and their
+   limitations. These are not final measurements.
 
 ## Core idea
 
@@ -42,19 +44,24 @@ This is an open pilot evaluation, not a universal industry benchmark.
 Validate the fixture and prove the Linux permission boundary without a model call:
 
 ```sh
-npm run benchmark -- validate --scenario double-charge
-npm run benchmark -- validate --scenario tenant-leak
-npm run benchmark -- validate --scenario restart-storm
+npm run benchmark:validate
 npm run benchmark -- canary --scenario double-charge
 ```
+
+`npm run benchmark:ci` also exercises evidence hashing, corruption rejection,
+candidate-test mutation analysis, replay, and report generation with no model call.
 
 Run the opt-in Spark comparison sequentially. The controller rejects ChangeSafely
 until the matching Direct attempt exists, and refuses a second attempt in either mode:
 
 ```sh
-npm run benchmark -- run --scenario double-charge --mode direct --model gpt-5.3-codex-spark
-npm run benchmark -- run --scenario double-charge --mode changesafely --model gpt-5.3-codex-spark
+npm run benchmark:smoke -- --scenario double-charge --mode direct
+npm run benchmark:smoke -- --scenario double-charge --mode changesafely
 ```
+
+The smoke command defaults to `gpt-5.3-codex-spark`. `--model` remains available for
+an explicit override, but the controller rejects non-Spark runs until a separate user
+command authorizes final measurements.
 
 Tenant Leak uses the same commands with `--scenario tenant-leak` after its deterministic
 validator passes. Restart Storm uses `--scenario restart-storm` under the same gate.

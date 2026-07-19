@@ -177,6 +177,10 @@ Sanitized live rehearsal evidence is kept in
 [`docs/RELEASE_REHEARSAL.md`](docs/RELEASE_REHEARSAL.md); an example result is in
 [`docs/sample-report.md`](docs/sample-report.md).
 
+The model-free [Risk Suite](bench/README.md) validates three high-blast-radius change
+scenarios. Its current [Spark development pilot](bench/RESULTS.md) is diagnostic
+evidence, not a final or statistically significant benchmark.
+
 Live performance tests can opt into Spark without changing the product default:
 
 ```sh

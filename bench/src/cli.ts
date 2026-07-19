@@ -22,7 +22,7 @@ const SPARK_MODEL = "gpt-5.3-codex-spark";
 const help = `ChangeSafely Risk Suite
 
 Usage:
-  npm run benchmark -- run --scenario <id> --mode direct|changesafely --model ${SPARK_MODEL}
+  npm run benchmark:smoke -- --scenario <id> --mode direct|changesafely [--model ${SPARK_MODEL}]
   npm run benchmark -- validate --scenario double-charge|tenant-leak|restart-storm
   npm run benchmark -- canary --scenario <id>
   npm run benchmark -- evaluate --run <run-id> [--results <path>]
@@ -104,7 +104,7 @@ export async function main(argv: string[]): Promise<number> {
     if (command === "run") {
       const scenario = required(parsed.values.scenario, "--scenario");
       const mode = benchmarkMode(required(parsed.values.mode, "--mode"));
-      const model = required(parsed.values.model, "--model");
+      const model = parsed.values.model?.trim() || SPARK_MODEL;
       if (model !== SPARK_MODEL) {
         throw new Error(
           `Development runs are locked to ${SPARK_MODEL}. Final measurements require a separate explicit user command after Spark evaluation.`,

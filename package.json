@@ -41,6 +41,9 @@
   "scripts": {
     "build": "node scripts/clean.mjs && tsc -p tsconfig.json",
     "benchmark": "npm run build --silent && node dist/bench/src/cli.js",
+    "benchmark:smoke": "npm run benchmark -- run",
+    "benchmark:validate": "npm run build --silent && node dist/bench/src/cli.js validate --scenario double-charge && node dist/bench/src/cli.js validate --scenario tenant-leak && node dist/bench/src/cli.js validate --scenario restart-storm",
+    "benchmark:ci": "npm run benchmark:validate && node --test dist/test/benchmark-controller.test.js dist/test/benchmark-analysis.test.js",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "deadcode:check": "knip",
@@ -60,7 +63,7 @@
     "security:audit": "npm audit --audit-level=moderate && npm run security:audit:demo",
     "security:audit:demo": "npm audit --prefix demo/payment-retry-template --audit-level=moderate",
     "security:signatures": "npm audit signatures",
-    "ci": "npm run check && npm run typecheck && npm run deadcode:check && npm run test:coverage && npm run protocol:check && npm run security:audit && npm run package:lint && npm run package:smoke",
+    "ci": "npm run check && npm run typecheck && npm run deadcode:check && npm run test:coverage && npm run benchmark:validate && npm run protocol:check && npm run security:audit && npm run package:lint && npm run package:smoke",
     "prepublishOnly": "npm run ci && npm run security:signatures",
     "prepack": "npm run build"
   },
