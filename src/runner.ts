@@ -1,8 +1,9 @@
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { access, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { delimiter, dirname, join, relative, sep } from "node:path";
 import spawn from "cross-spawn";
 import { repositoryCommandEnvironment } from "./environment.js";
 import { errorReasonCode } from "./errors.js";
@@ -45,6 +46,34 @@ export interface RunCommandOptions {
 }
 
 const forbiddenTokens = new Set(["|", "||", "&&", ";", ">", ">>", "<"]);
+const CAPTURE_SCRIPT = `const { closeSync, fstatSync, openSync, writeFileSync, writeSync } = require("node:fs");
+const { spawn } = require("node:child_process");
+const [capturePath, maxText, program, ...args] = process.argv.slice(1);
+const maxBytes = Number(maxText);
+const hardLimit = Math.max(maxBytes * 4, 1024 * 1024);
+const stdoutPath = capturePath + ".stdout";
+const stderrPath = capturePath + ".stderr";
+const stdoutFd = openSync(stdoutPath, "wx", 0o600);
+const stderrFd = openSync(stderrPath, "wx", 0o600);
+const child = spawn(program, args, {
+  detached: process.platform !== "win32",
+  env: process.env,
+  stdio: ["ignore", stdoutFd, stderrFd],
+});
+let overflow = false;
+const limitTimer = setInterval(() => {
+  if (fstatSync(stdoutFd).size <= hardLimit && fstatSync(stderrFd).size <= hardLimit) return;
+  overflow = true;
+  try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+}, 25);
+child.on("error", (error) => writeSync(stderrFd, Buffer.from(error.message)));
+child.on("close", (exitCode, signal) => {
+  clearInterval(limitTimer);
+  closeSync(stdoutFd); closeSync(stderrFd);
+  const result = overflow ? { exitCode: 1, signal: null } : { exitCode, signal };
+  writeFileSync(capturePath, JSON.stringify(result), { flag: "wx", mode: 0o600 });
+  if (result.signal) process.kill(process.pid, result.signal); else process.exit(result.exitCode ?? 1);
+});`;
 
 function acceptsForwardedArgs(args: string[], commandLength: number): boolean {
   return (
@@ -161,6 +190,30 @@ export async function runCommand(
   const sandboxed = options.sandboxed ?? false;
   const program = sandboxed ? "codex" : directProgram;
   const permissionProfile = options.permissionProfile ?? ":workspace";
+  const sourceEnvironment = options.env ?? process.env;
+  const commandId = randomUUID();
+  const capturePath =
+    sandboxed && options.permissionProfile
+      ? join(
+          options.trace?.runPath ?? join(cwd, ".changesafely"),
+          "command-results",
+          `${commandId}.json`,
+        )
+      : undefined;
+  if (capturePath) await mkdir(dirname(capturePath), { recursive: true, mode: 0o700 });
+  const capturedCommand = capturePath
+    ? await resolveCapturedCommand(argv, sourceEnvironment)
+    : argv;
+  const sandboxCommand = capturePath
+    ? [
+        process.execPath,
+        "-e",
+        CAPTURE_SCRIPT,
+        capturePath,
+        String(maxOutputBytes),
+        ...capturedCommand,
+      ]
+    : argv;
   const args = sandboxed
     ? [
         "sandbox",
@@ -170,15 +223,13 @@ export async function runCommand(
         "-C",
         cwd,
         "--",
-        ...argv,
+        ...sandboxCommand,
       ]
     : argv.slice(1);
-  const sourceEnvironment = options.env ?? process.env;
   const namedCodexHome = options.permissionProfile
     ? (sourceEnvironment.CODEX_HOME ?? join(sourceEnvironment.HOME ?? homedir(), ".codex"))
     : undefined;
 
-  const commandId = randomUUID();
   const commandHome = await mkdtemp(join(homedir(), ".changesafely-command-"));
   const commandEnvironment = repositoryCommandEnvironment(commandHome, options.env);
   if (namedCodexHome && options.permissionProfile) commandEnvironment.CODEX_HOME = namedCodexHome;
@@ -251,8 +302,12 @@ export async function runCommand(
       throw error;
     }
     const completedAt = new Date();
-    const stdoutSnapshot = stdout.snapshot();
-    const stderrSnapshot = stderr.snapshot();
+    const captured =
+      capturePath && !timedOut && childResult.exitCode !== null
+        ? await loadCapturedOutput(capturePath, childResult, maxOutputBytes)
+        : undefined;
+    const stdoutSnapshot = captured?.stdout ?? stdout.snapshot();
+    const stderrSnapshot = captured?.stderr ?? stderr.snapshot();
     const diagnosticsPaths = (
       await Promise.all([
         options.trace?.writeDiagnostic(`${commandId}.stdout.log`, stdoutSnapshot.tail),
@@ -324,6 +379,110 @@ export async function runCommand(
     });
     throw error;
   } finally {
+    if (capturePath) {
+      await Promise.all([
+        rm(capturePath, { force: true }),
+        rm(`${capturePath}.stdout`, { force: true }),
+        rm(`${capturePath}.stderr`, { force: true }),
+      ]);
+    }
     await rm(commandHome, { recursive: true, force: true });
   }
+}
+
+async function resolveCapturedCommand(
+  argv: string[],
+  environment: NodeJS.ProcessEnv,
+): Promise<string[]> {
+  if (argv[0] === "node") return [process.execPath, ...argv.slice(1)];
+  const runtimeNpm = join(
+    dirname(process.execPath),
+    process.platform === "win32" ? "npm.cmd" : "npm",
+  );
+  const npmPath = (await accessible(runtimeNpm))
+    ? runtimeNpm
+    : (environment.npm_execpath ?? (await resolveExecutable("npm", environment.PATH)));
+  const executable = await realpath(npmPath);
+  return executable.endsWith(".js")
+    ? [process.execPath, executable, ...argv.slice(1)]
+    : [executable, ...argv.slice(1)];
+}
+
+async function accessible(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveExecutable(name: string, pathValue = ""): Promise<string> {
+  for (const directory of pathValue.split(delimiter)) {
+    if (!directory) continue;
+    const candidate = join(directory, process.platform === "win32" ? `${name}.cmd` : name);
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Continue to the next PATH entry.
+    }
+  }
+  throw new Error(`Cannot resolve approved executable: ${name}`);
+}
+
+interface CapturedMetadata {
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+interface CapturedOutput extends CapturedMetadata {
+  stdout: ReturnType<OutputCapture["snapshot"]>;
+  stderr: ReturnType<OutputCapture["snapshot"]>;
+}
+
+async function loadCapturedOutput(
+  capturePath: string,
+  processResult: CapturedMetadata,
+  maxOutputBytes: number,
+): Promise<CapturedOutput> {
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(capturePath, "utf8"));
+  } catch {
+    throw new Error("Sandbox output capture is not valid JSON");
+  }
+  if (!isCapturedMetadata(value)) {
+    throw new Error("Sandbox output capture is invalid");
+  }
+  if (value.exitCode !== processResult.exitCode || value.signal !== processResult.signal) {
+    throw new Error("Sandbox output capture process result mismatch");
+  }
+  const [stdout, stderr] = await Promise.all([
+    captureFile(`${capturePath}.stdout`, maxOutputBytes),
+    captureFile(`${capturePath}.stderr`, maxOutputBytes),
+  ]);
+  return { ...value, stdout, stderr };
+}
+
+function isCapturedMetadata(value: unknown): value is CapturedMetadata {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    Object.keys(record).length === 2 &&
+    (record.exitCode === null || Number.isInteger(record.exitCode)) &&
+    (record.signal === null ||
+      (typeof record.signal === "string" && /^SIG[A-Z0-9]+$/u.test(record.signal)))
+  );
+}
+
+async function captureFile(path: string, maxOutputBytes: number) {
+  const output = new OutputCapture(maxOutputBytes);
+  await new Promise<void>((resolveCapture, reject) => {
+    const stream = createReadStream(path);
+    stream.on("data", (chunk: Buffer) => output.append(chunk));
+    stream.once("error", reject);
+    stream.once("end", resolveCapture);
+  });
+  return output.snapshot();
 }

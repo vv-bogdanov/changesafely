@@ -128,6 +128,23 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   });
   assert.equal(result.exitCode, 0, result.stderr);
   assert.equal(result.sandboxed, true);
+  assert.match(result.stdout, /pass 1/u);
+
+  await writeFile(
+    testFile,
+    'import assert from "node:assert/strict"; import test from "node:test"; test("env", () => assert.fail("named-profile-output"));\n',
+  );
+  const failed = await runCommand(["node", "--test", testFile], cwd, {
+    sandboxed: true,
+    permissionProfile: "changesafely-test",
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}`,
+    },
+  });
+  assert.equal(failed.exitCode, 1);
+  assert.match(failed.stdout, /named-profile-output/u);
 });
 
 test("runner keeps only a bounded output tail and emits private evidence", async (t) => {
