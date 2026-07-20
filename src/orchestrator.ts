@@ -382,7 +382,6 @@ async function finalizeVerifiedRun(
       );
     }
 
-    const decision = (await loadVerifiedArtifact(repoPath, state, "decision")).payload;
     state.status = "VERIFIED";
     state.phase = "verified";
     state.reason = verification.reason;
@@ -399,7 +398,7 @@ async function finalizeVerifiedRun(
     reportProgress(onProgress, runId, state.phase, "Final release gate passed", startedAt);
     const reportPath = await store.writeText(
       "report.md",
-      implementationReport(state, decision, verificationCommands, finalCoverage, verification),
+      await implementationReport(repoPath, state),
     );
     return createRunOutcome(repoPath, state, reportPath);
   } catch (error) {

@@ -407,10 +407,17 @@ test("packed CLI preserves its functional workflow contracts", { timeout: 180_00
     assert.ok(harness.payload.protectedHashes["test/value.test.ts"]);
     assert.ok(harness.payload.protectedHashes["test/value.characterization.test.ts"]);
     assert.equal(verification.payload.verdict, "accept");
-    assert.match(
-      await readFile(join(repoPath, ".changesafely", "runs", runId, "report.md"), "utf8"),
-      /VERIFIED/,
+    const report = await readFile(
+      join(repoPath, ".changesafely", "runs", runId, "report.md"),
+      "utf8",
     );
+    assert.match(report, /Status: `VERIFIED` \/ `verified`/u);
+    assert.match(
+      report,
+      /Assurance decision: accepted after the final deterministic release gate/u,
+    );
+    assert.match(report, /VERIFIED.*declared, evidence-linked assurance case/su);
+    assert.match(report, /## Evidence index/u);
     const runPath = join(repoPath, ".changesafely", "runs", runId);
     const tracePath = join(runPath, "trace.jsonl");
     const traceContent = await readFile(tracePath, "utf8");

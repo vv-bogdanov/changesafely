@@ -770,13 +770,7 @@ export async function runImplementationAndVerification(
     );
     const reportPath = await store.writeText(
       "report.md",
-      implementationReport(
-        state,
-        decision,
-        toCommandEvidence(commandResults, repoPath),
-        finalCoverage,
-        verification,
-      ),
+      await implementationReport(repoPath, state),
     );
     return { implementationCommit, commands: commandResults, verification, accepted, reportPath };
   } catch (error) {

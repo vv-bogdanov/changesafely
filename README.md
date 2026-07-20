@@ -259,7 +259,9 @@ Runs are stored under `.changesafely/runs/<run-id>/`:
   coverage matrix, known gaps, and exact coverage command evidence.
 - `implementation.json`, optional `repair.json`, command evidence, and
   `verification.json`: the actual change and independent verdict.
-- `report.md`: concise outcome, residual risks, and next action.
+- `report.md`: offline-replayable assurance profile with Git boundaries, contract/check/risk
+  traceability, H1, protected hashes, command and coverage evidence links, final findings, and
+  per-role time/token/tool metrics. `VERIFIED` is explicitly scoped to this recorded case.
 - `trace.jsonl`: a versioned append-only timeline for phases, roles, RPC methods,
   fork lineage, privacy-safe tool metadata, token usage, artifacts, deterministic
   commands, failures, and Git boundaries. `changesafely trace --json` derives exact

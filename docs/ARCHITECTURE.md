@@ -94,6 +94,11 @@ without changing Git or artifacts. Expected operational failures use bounded
 blocked workflow results. Outcomes include direct paths to state, report, trace,
 manifest, and schema-validated artifacts.
 
+`report.ts` reconstructs the assurance profile from hash-verified artifacts and the privacy-safe
+trace. The same pure renderer is used before and after the release gate, so the Markdown report can
+be reproduced offline without a model or repository command execution. Every section identifies
+its artifact or trace source; no captured command output is copied into the report.
+
 ## Runtime boundary
 
 `AppServerClient` is a thin JSONL client, not an SDK. It implements initialization,

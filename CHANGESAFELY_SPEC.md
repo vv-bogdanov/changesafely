@@ -763,17 +763,23 @@ The catalog is fixed and hashed before the first write. Plans may select only ca
 
 ### Report Generator
 
-Creates a concise human-readable report:
+Reconstructs a concise human-readable assurance report from hash-verified artifacts and the
+privacy-safe trace without calling a model or rerunning repository commands:
 
 - original task;
-- plans considered;
-- selection and reasons;
-- checks created;
-- actual changes;
-- command results;
-- residual risks;
+- B0/C1/T1/I1 and optional R1 boundaries;
+- selected plan and contract, invariant, and critical-risk traceability;
+- characterization, change, non-interference, and failure-boundary checks;
+- H1 review and protected path hashes;
+- baseline and final command and coverage evidence links;
+- findings and unresolved non-critical risks;
+- per-role and aggregate time, token, cache, command, tool, correction, and artifact metrics;
 - rollback boundary;
 - final status.
+
+The report states that `VERIFIED` applies only to the declared assurance case; it is not an absolute
+safety claim. It references evidence by relative path and SHA-256 and never embeds captured command
+output or local diagnostics.
 
 ### 9.2. Codex App Server
 

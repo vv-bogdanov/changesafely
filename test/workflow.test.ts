@@ -6,6 +6,11 @@ import { PreflightError } from "../src/git.js";
 import { runHarness } from "../src/harness.js";
 import { runImplementationAndVerification } from "../src/implementation.js";
 import { validateResumeBoundary } from "../src/orchestrator.js";
+import {
+  implementationReport,
+  loadAssuranceProfile,
+  renderAssuranceReport,
+} from "../src/report.js";
 import { REPOSITORY_CONFIG_PATH } from "../src/repository-capabilities.js";
 import { loadTrace } from "../src/trace.js";
 import { runPlanning } from "../src/workflow.js";
@@ -555,6 +560,25 @@ test("creates I1, preserves T1, runs commands, and verifies from a fresh C0 fork
   const state = await readRunState(planning.runPath);
   assert.equal(state.implementationCommit, implementation.implementationCommit);
   assert.equal(state.phase, "verification-complete");
+  const profile = await loadAssuranceProfile(repoPath, state);
+  const report = await readFile(join(planning.runPath, "report.md"), "utf8");
+  assert.equal(report, await implementationReport(repoPath, state));
+  assert.equal(report, renderAssuranceReport(profile));
+  assert.equal(profile.commits.b0, state.baselineCommit);
+  assert.equal(profile.commits.c1, state.characterizationCommit);
+  assert.equal(profile.commits.t1, state.testCommit);
+  assert.equal(profile.commits.i1, state.implementationCommit);
+  assert.equal(profile.commits.r1, null);
+  assert.ok(profile.traceability.every((claim) => claim.checkIds.length > 0));
+  assert.ok(profile.commandGroups.flatMap((group) => group.commands).length >= 3);
+  assert.ok(profile.analytics.roleTurns.length > 0);
+  assert.match(report, /## Traceability/u);
+  assert.match(report, /## Harness review H1/u);
+  assert.match(report, /## Protected harness integrity/u);
+  assert.match(report, /## Run analytics/u);
+  assert.match(report, /not a claim of absolute safety/u);
+  assert.match(report, /\[verification\.json\]\(verification\.json\)/u);
+  assert.doesNotMatch(report, /"stdout"|"stderr"/u);
   const harnessArtifact = JSON.parse(
     await readFile(join(planning.runPath, "harness.json"), "utf8"),
   ) as { payload: { protectedHashes: Record<string, string> } };
@@ -758,6 +782,11 @@ test("rejects an accept verdict that retains findings or residual risks", async 
     assert.equal(result.accepted, false, mode);
     assert.equal(state.status, "FAILED", mode);
     assert.equal(state.repairCount, 0, mode);
+    assert.match(
+      await readFile(join(planning.runPath, "report.md"), "utf8"),
+      /Assurance decision: rejected because the accept verdict retained/u,
+      mode,
+    );
   }
 });
 
