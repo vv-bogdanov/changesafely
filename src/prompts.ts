@@ -65,6 +65,36 @@ Validated evidence:
 ${data(evidence)}`;
 }
 
+export function contractCorrectionPrompt(
+  task: string,
+  evidence: EvidenceArtifact,
+  rejectedArtifact: unknown,
+  feedback: PlanEligibility["failures"],
+): string {
+  return `${roleHeader("contract")}
+[CHANGESAFELY_CORRECTION]
+
+Objective: correct the same Change Contract artifact once after deterministic structural feedback.
+
+Directions: address only schema shape, duplicate ids, invalid references, self references, or missing resolution evidence. Preserve all genuine requirements, risks, unknowns, criticality, and evidence relationships. A genuinely unresolved critical unknown must remain explicit and unresolved.
+
+Boundary: work read-only and network-off. Do not broaden scope, invent semantics, delete a critical unknown, downgrade criticality, or convert a safety failure into a non-goal.
+
+Output: return only the complete corrected Change Contract.
+
+Gate feedback:
+${data(feedback)}
+
+User task:
+${task}
+
+Validated evidence:
+${data(evidence)}
+
+Rejected artifact:
+${data(rejectedArtifact)}`;
+}
+
 export function plannerPrompt(
   planId: string,
   lens: string,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   changeHarnessPrompt,
+  contractCorrectionPrompt,
   contractPrompt,
   discoveryPrompt,
   HIGH_ASSURANCE_DOCTRINE,
@@ -49,6 +50,12 @@ function prompts(): Record<string, string> {
   return {
     discovery: discoveryPrompt("Change behavior safely.", capabilities),
     contract: contractPrompt("Change behavior safely.", validEvidence()),
+    "contract-correction": contractCorrectionPrompt(
+      "Change behavior safely.",
+      validEvidence(),
+      { risks: [{ id: "R1", relatedIds: ["missing"] }] },
+      [{ code: "UNKNOWN_CONTRACT_REFERENCE", message: "R1->missing" }],
+    ),
     planner: plannerPrompt("plan-1", "risk-first", contract, capabilities),
     "planner-correction": plannerCorrectionPrompt(
       "plan-1",
@@ -143,6 +150,7 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   );
   assert.match(values.contract ?? "", /genuinely decision-blocking critical uncertainty/u);
   assert.match(values.contract ?? "", /evidenceBasis/u);
+  assert.match(values["contract-correction"] ?? "", /delete a critical unknown/u);
   assert.match(values.planner ?? "", /smallest sufficient production delta/u);
   assert.match(values.planner ?? "", /critical risk in riskMitigation/u);
   assert.match(values.judge ?? "", /strongest executable evidence/u);

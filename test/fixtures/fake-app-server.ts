@@ -376,6 +376,63 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     });
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:contract]")) {
+    const isCorrection = prompt.includes("[CHANGESAFELY_CORRECTION]");
+    const sourcePath = target?.sources[0]?.path ?? "src/value.ts";
+    const testableRisk = (relatedIds: string[]) => ({
+      id: "R1",
+      statement: "The requested behavior can regress unless the harness bounds it.",
+      critical: true,
+      resolutionStatus: "unresolved" as const,
+      resolution: "",
+      relatedIds,
+      evidenceBasis: [
+        {
+          source: "repository" as const,
+          detail: "The local fixture exposes the behavior boundary for executable tests.",
+          references: [{ path: sourcePath, detail: "Local behavior boundary." }],
+        },
+      ],
+    });
+    const criticalUnknown = {
+      id: "U1",
+      statement: "The required failure behavior cannot be determined.",
+      critical: true,
+      resolutionStatus: "unresolved" as const,
+      resolution: "",
+      relatedIds: ["R1"],
+      evidenceBasis: [
+        {
+          source: "repository" as const,
+          detail: "The repository exposes conflicting behavior.",
+          references: [{ path: sourcePath, detail: "The unresolved behavior boundary." }],
+        },
+      ],
+    };
+    if (mode === "contract-schema-correction" && !isCorrection) {
+      return { goal: "missing required contract fields" };
+    }
+    if (mode === "contract-correction" && !isCorrection) {
+      return validContract({ risks: [testableRisk(["AC1", "MISSING"])] });
+    }
+    if (
+      (mode === "contract-correction-critical-retained" ||
+        mode === "contract-correction-critical-downgrade") &&
+      !isCorrection
+    ) {
+      return validContract({
+        risks: [testableRisk(["AC1", "U1", "MISSING"])],
+        unknowns: [criticalUnknown],
+      });
+    }
+    if (mode === "contract-correction-critical-retained" && isCorrection) {
+      return validContract({
+        risks: [testableRisk(["AC1", "U1"])],
+        unknowns: [criticalUnknown],
+      });
+    }
+    if (mode === "contract-correction-critical-downgrade" && isCorrection) {
+      return validContract({ risks: [testableRisk(["AC1"])] });
+    }
     return validContract({
       ...(mode === "refactor" ? { changeKind: "refactor" as const } : {}),
       goal: "Add the requested behavior with a minimal verified change.",

@@ -3,6 +3,7 @@ import { AppServerClient } from "./app-server/client.js";
 import { type ArtifactKey, type PlanArtifactKey, planArtifactKey } from "./artifact-key.js";
 import { ArtifactStore, artifactInputs, createRunId, type RunState } from "./artifacts.js";
 import {
+  type EligibilityFailure,
   evaluateContract,
   evaluatePlan,
   evaluatePlans,
@@ -13,6 +14,7 @@ import { assertBaselineUnchanged, canonicalRepositoryPath, inspectBaseline } fro
 import { createRunOutcome, type RunOutcome } from "./outcome.js";
 import { type ProgressReporter, reportProgress } from "./progress.js";
 import {
+  contractCorrectionPrompt,
   contractPrompt,
   discoveryPrompt,
   judgeCorrectionPrompt,
@@ -33,6 +35,8 @@ import {
   startContext,
 } from "./role-runtime.js";
 import {
+  ArtifactValidationError,
+  type ChangeContract,
   changeContractSchema,
   type DecisionArtifact,
   type DetailedPlan,
@@ -56,6 +60,14 @@ const plannerLenses = [
   "operations-first",
 ] as const;
 
+const correctableContractFailureCodes = new Set([
+  "DUPLICATE_CONTRACT_ID",
+  "UNKNOWN_CONTRACT_REFERENCE",
+  "SELF_CONTRACT_REFERENCE",
+  "INVALID_RISK_RESOLUTION",
+  "INVALID_UNKNOWN_RESOLUTION",
+]);
+
 export interface PlanningOptions {
   repoPath: string;
   task: string;
@@ -77,6 +89,50 @@ function planningError(code: string, message: string): ChangeSafelyError {
   return new ChangeSafelyError(code, message, {
     nextAction: "Inspect planning artifacts and start a new run after fixing the cause.",
   });
+}
+
+function parseRejectedArtifact(message: string): unknown {
+  try {
+    return JSON.parse(message) as unknown;
+  } catch {
+    return message;
+  }
+}
+
+function isContractSchemaFailure(error: unknown): error is ArtifactValidationError {
+  return error instanceof ArtifactValidationError && error.artifactName === "change contract";
+}
+
+function hasCorrectableContractFailure(failures: EligibilityFailure[]): boolean {
+  return failures.some((failure) => correctableContractFailureCodes.has(failure.code));
+}
+
+function unresolvedCriticalUnknownIds(contract: ChangeContract): Set<string> {
+  return new Set(
+    contract.unknowns
+      .filter((unknown) => unknown.critical && unknown.resolutionStatus === "unresolved")
+      .map((unknown) => unknown.id),
+  );
+}
+
+function criticalUnknownRetentionFailures(
+  before: Set<string>,
+  after: ChangeContract,
+): EligibilityFailure[] {
+  if (before.size === 0) return [];
+  const afterById = new Map(after.unknowns.map((unknown) => [unknown.id, unknown]));
+  const changed = [...before].filter((id) => {
+    const unknown = afterById.get(id);
+    return unknown === undefined || !unknown.critical || unknown.resolutionStatus !== "unresolved";
+  });
+  return changed.length === 0
+    ? []
+    : [
+        {
+          code: "CONTRACT_CORRECTION_CHANGED_CRITICAL_UNKNOWN",
+          message: `Contract correction removed or downgraded critical unknowns: ${changed.join(", ")}`,
+        },
+      ];
 }
 
 export async function runPlanning(options: PlanningOptions): Promise<PlanningResult> {
@@ -221,20 +277,87 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       },
     );
     completeContext(contractContext, contractTurn.turnId);
-    const contractArtifact = await parseRoleArtifact(contractTurn.message, validateChangeContract, {
-      role: "contract",
-      trace: store.trace,
-    });
+    let contractArtifact: ChangeContract;
+    let contractCheckpointTurnId = contractTurn.turnId;
+    let contractCorrectionUsed = false;
+    const correctContractOnce = async (
+      rejectedArtifact: unknown,
+      feedback: EligibilityFailure[],
+      checkpointTurnId: string,
+    ): Promise<ChangeContract> => {
+      contractCorrectionUsed = true;
+      const correctionContext = startContext(
+        "contract-correction",
+        contractThread.thread.id,
+        null,
+        checkpointTurnId,
+      );
+      state.contexts.push(correctionContext);
+      await store.writeState(state);
+      const correctionTurn = await client.runTurn(
+        contractThread.thread.id,
+        contractCorrectionPrompt(options.task, evidence, rejectedArtifact, feedback),
+        {
+          cwd: baseline.repoPath,
+          sandboxPolicy: readOnlyPolicy,
+          effort: roleEffort,
+          ...(options.model ? { model: options.model } : {}),
+          outputSchema: changeContractSchema,
+          role: "contract-correction",
+          phase: "contract",
+        },
+      );
+      completeContext(correctionContext, correctionTurn.turnId);
+      contractCheckpointTurnId = correctionTurn.turnId;
+      contractContext.turnId = correctionTurn.turnId;
+      await store.writeState(state);
+      return await parseRoleArtifact(correctionTurn.message, validateChangeContract, {
+        role: "contract-correction",
+        trace: store.trace,
+      });
+    };
+    try {
+      contractArtifact = await parseRoleArtifact(contractTurn.message, validateChangeContract, {
+        role: "contract",
+        trace: store.trace,
+      });
+    } catch (error) {
+      if (!isContractSchemaFailure(error)) throw error;
+      contractArtifact = await correctContractOnce(
+        parseRejectedArtifact(contractTurn.message),
+        [{ code: "CONTRACT_SCHEMA_INVALID", message: error.message }],
+        contractTurn.turnId,
+      );
+    }
+
+    let contractFailures = evaluateContract(contractArtifact);
+    if (!contractCorrectionUsed && hasCorrectableContractFailure(contractFailures)) {
+      const initialCriticalUnknownIds = unresolvedCriticalUnknownIds(contractArtifact);
+      const correctedContract = await correctContractOnce(
+        contractArtifact,
+        contractFailures,
+        contractCheckpointTurnId,
+      );
+      const retentionFailures = criticalUnknownRetentionFailures(
+        initialCriticalUnknownIds,
+        correctedContract,
+      );
+      if (retentionFailures.length > 0) {
+        contractFailures = [...retentionFailures, ...contractFailures];
+      } else {
+        contractArtifact = correctedContract;
+        contractFailures = evaluateContract(contractArtifact);
+      }
+    }
     const contractStored = await store.writeArtifact(
       "contract",
-      "contract",
+      contractCorrectionUsed ? "contract-correction" : "contract",
       contractArtifact,
       artifactInputs(state, "evidence"),
     );
     addArtifact("contract", contractStored.hash);
     await store.writeState(state);
 
-    const contractFailures = evaluateContract(contractArtifact);
     if (contractFailures.length > 0) {
       state.status = "BLOCKED";
       state.reason = contractFailures
@@ -273,7 +396,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       if (!lens) throw planningError("PLANNER_LENS_MISSING", `No planner lens for index ${index}`);
       const fork = await client.forkThread({
         threadId: contractThread.thread.id,
-        lastTurnId: contractTurn.turnId,
+        lastTurnId: contractCheckpointTurnId,
         cwd: baseline.repoPath,
         approvalPolicy: "never",
         sandbox: "read-only",
@@ -282,7 +405,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         `planner:${planId}`,
         fork.thread.id,
         contractThread.thread.id,
-        contractTurn.turnId,
+        contractCheckpointTurnId,
       );
       state.contexts.push(plannerContext);
       plannerRuns.push(async () => {
@@ -402,7 +525,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
       await persist("judge");
       const judgeFork = await client.forkThread({
         threadId: contractThread.thread.id,
-        lastTurnId: contractTurn.turnId,
+        lastTurnId: contractCheckpointTurnId,
         cwd: baseline.repoPath,
         approvalPolicy: "never",
         sandbox: "read-only",
@@ -411,7 +534,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
         "judge",
         judgeFork.thread.id,
         contractThread.thread.id,
-        contractTurn.turnId,
+        contractCheckpointTurnId,
       );
       state.contexts.push(judgeContext);
       await store.writeState(state);

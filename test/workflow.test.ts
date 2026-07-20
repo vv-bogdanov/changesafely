@@ -142,6 +142,84 @@ test("plans when contract models testable uncertainty as a critical risk", async
   assert.equal(state.branch, "");
 });
 
+test("corrects one malformed contract schema in the same root before planners", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const result = await runPlanning({
+    repoPath,
+    task: "Change the fixture value after correcting the contract artifact.",
+    plannerCount: 1,
+    clientFactory: fakeAppServerFactory(repoPath, "contract-schema-correction"),
+  });
+
+  assert.equal(result.status, "PLANNED");
+  const state = await readRunState(result.runPath);
+  const contract = state.contexts.find((entry) => entry.role === "contract");
+  const correction = state.contexts.find((entry) => entry.role === "contract-correction");
+  const planner = state.contexts.find((entry) => entry.role === "planner:plan-1");
+  assert.ok(contract);
+  assert.equal(correction?.threadId, contract.threadId);
+  assert.equal(contract.turnId, correction?.turnId);
+  assert.notEqual(correction?.checkpointTurnId, correction?.turnId);
+  assert.equal(planner?.checkpointTurnId, correction?.turnId);
+});
+
+test("corrects one contract relationship artifact before planners", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const result = await runPlanning({
+    repoPath,
+    task: "Change the fixture value after fixing contract relationships.",
+    plannerCount: 1,
+    clientFactory: fakeAppServerFactory(repoPath, "contract-correction"),
+  });
+
+  assert.equal(result.status, "PLANNED");
+  const state = await readRunState(result.runPath);
+  const correction = state.contexts.find((entry) => entry.role === "contract-correction");
+  const planner = state.contexts.find((entry) => entry.role === "planner:plan-1");
+  assert.ok(correction);
+  assert.equal(planner?.checkpointTurnId, correction.turnId);
+});
+
+test("blocks when corrected contract retains an unresolved critical unknown", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const result = await runPlanning({
+    repoPath,
+    task: "Change the fixture value only if failure behavior is known.",
+    plannerCount: 1,
+    clientFactory: fakeAppServerFactory(repoPath, "contract-correction-critical-retained"),
+  });
+
+  assert.equal(result.status, "BLOCKED");
+  assert.match(result.reason, /UNRESOLVED_CRITICAL_CONTRACT_UNKNOWN/u);
+  const state = await readRunState(result.runPath);
+  assert.ok(state.contexts.some((entry) => entry.role === "contract-correction"));
+  assert.equal(
+    state.contexts.some((entry) => entry.role.startsWith("planner:")),
+    false,
+  );
+  assert.equal(state.branch, "");
+});
+
+test("blocks when contract correction removes a critical unknown", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const result = await runPlanning({
+    repoPath,
+    task: "Change the fixture value only if failure behavior is known.",
+    plannerCount: 1,
+    clientFactory: fakeAppServerFactory(repoPath, "contract-correction-critical-downgrade"),
+  });
+
+  assert.equal(result.status, "BLOCKED");
+  assert.match(result.reason, /CONTRACT_CORRECTION_CHANGED_CRITICAL_UNKNOWN/u);
+  const state = await readRunState(result.runPath);
+  assert.ok(state.contexts.some((entry) => entry.role === "contract-correction"));
+  assert.equal(
+    state.contexts.some((entry) => entry.role.startsWith("planner:")),
+    false,
+  );
+  assert.equal(state.branch, "");
+});
+
 test("corrects one planner artifact in the same fork before Judge", async (t) => {
   const repoPath = await fixtureRepo(t);
   const result = await runPlanning({
