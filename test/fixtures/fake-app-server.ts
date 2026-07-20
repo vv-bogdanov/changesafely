@@ -419,6 +419,55 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       approvalRequiredChanges: ["New production dependencies"],
       evidenceGaps: ["Acceptance test is missing."],
       allowedPathPrefixes: target?.allowedPathPrefixes ?? ["src", "test"],
+      ...(mode === "testable-contract-risk"
+        ? {
+            risks: [
+              {
+                id: "R1",
+                statement:
+                  "The requested behavior can regress failure handling unless the harness bounds it.",
+                critical: true,
+                resolutionStatus: "unresolved" as const,
+                resolution: "",
+                relatedIds: ["AC1", "INV1", "U1"],
+                evidenceBasis: [
+                  {
+                    source: "repository" as const,
+                    detail: "The local fixture exposes the behavior boundary for executable tests.",
+                    references: [
+                      {
+                        path: target?.sources[0]?.path ?? "src/value.ts",
+                        detail: "Local behavior boundary.",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+            unknowns: [
+              {
+                id: "U1",
+                statement: "The broader runtime policy is not needed for the local proof.",
+                critical: false,
+                resolutionStatus: "resolved" as const,
+                resolution: "The selected plan can bound this through local executable evidence.",
+                relatedIds: ["R1"],
+                evidenceBasis: [
+                  {
+                    source: "repository" as const,
+                    detail: "The repository exposes a deterministic local test boundary.",
+                    references: [
+                      {
+                        path: target?.sources[0]?.path ?? "src/value.ts",
+                        detail: "Deterministic local boundary.",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }
+        : {}),
       ...(mode === "critical-contract-unknown"
         ? {
             unknowns: [

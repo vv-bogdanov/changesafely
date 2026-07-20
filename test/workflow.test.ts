@@ -127,6 +127,21 @@ test("blocks an unresolved critical contract before planners or a write branch",
   assert.equal(await git(repoPath, ["branch", "--show-current"]), baselineBranch);
 });
 
+test("plans when contract models testable uncertainty as a critical risk", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const result = await runPlanning({
+    repoPath,
+    task: "Change the fixture value and prove the local failure boundary.",
+    plannerCount: 1,
+    clientFactory: fakeAppServerFactory(repoPath, "testable-contract-risk"),
+  });
+
+  assert.equal(result.status, "PLANNED");
+  const state = await readRunState(result.runPath);
+  assert.ok(state.contexts.some((entry) => entry.role === "planner:plan-1"));
+  assert.equal(state.branch, "");
+});
+
 test("corrects one planner artifact in the same fork before Judge", async (t) => {
   const repoPath = await fixtureRepo(t);
   const result = await runPlanning({

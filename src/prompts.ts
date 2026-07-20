@@ -17,6 +17,8 @@ Do not infer success from model confidence or a green suite alone.`;
 
 const RISK_DIRECTIONS =
   "Consider applicable behavior, state, effects, failures, time, and boundary risks; justify concrete non-applicability instead of generating boilerplate.";
+const CONTRACT_CALIBRATION =
+  "Classify uncertainty as resolved by task/repository evidence, bounded by a conservative executable policy and therefore a critical risk, or genuinely unresolved and therefore a blocking unknown. Low confidence or speculative external detail alone is not a critical unknown when local tests can express the safe boundary.";
 
 function data(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -50,9 +52,9 @@ export function contractPrompt(task: string, evidence: EvidenceArtifact): string
 
 Objective: define the observable safe change and the behavior that must remain intact from a clean C0 root.
 
-Directions: use only the user task and validated evidence. Classify changeKind. Give criteria, invariants, non-goals, risks, and unknowns stable unique ids; connect risks and unknowns through relatedIds. Give every assertion a concise task, repository, or preservation evidenceBasis with repository references where required. Record criticality and resolution status without treating an unresolved risk as resolved. allowedPathPrefixes constrain later writes, never read-only inspection.
+Directions: use only the user task and validated evidence. Classify changeKind. Give criteria, invariants, non-goals, risks, and unknowns stable unique ids; connect them through existing ids in relatedIds. Give every assertion a concise task, repository, or preservation evidenceBasis with repository references where required. ${CONTRACT_CALIBRATION} Record criticality and resolution status without treating an unresolved risk as resolved. allowedPathPrefixes constrain later writes, never read-only inspection.
 
-Boundary: work read-only and network-off. Do not convert a plausible safety failure into a non-goal, invent semantics, or omit material evidence to fit a schema bound. Surface the resulting critical uncertainty explicitly.
+Boundary: work read-only and network-off. Do not convert a plausible safety failure into a non-goal, invent semantics, or omit material evidence to fit a schema bound. Surface only genuinely decision-blocking critical uncertainty as unresolved.
 
 Output: return only the schema-constrained Change Contract.
 
