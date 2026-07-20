@@ -43,6 +43,26 @@ testable high-risk policy questions as unresolved critical unknowns. The next sm
 iteration should tighten Contract calibration again: require Contract to explain why no conservative
 local harness can express the safe boundary before marking a critical unknown as unresolved.
 
+## Phase 5 calibration follow-ups
+
+Additional development diagnostics ran on 2026-07-20 UTC. They used the same Spark development
+measurement policy: `gpt-5.3-codex-spark`, medium effort, Direct before ChangeSafely, ignored raw
+evidence under `bench/results/`, and no final or publishable measurement.
+
+| Evidence root | Product commit | ChangeSafely result | Interpretation | Follow-up |
+| --- | --- | --- | --- | --- |
+| `phase5-safe-policy-calibration` | `81fcd85` | 3/3 `technical_failure` in the controller | ChangeSafely likely produced product outcomes, but the benchmark adapter discarded nonzero outcomes when the trace tree was unavailable. | Fixed by `1645252`, which preserves `changesafely/outcome.json` and emits a `trace.unavailable` event. |
+| `phase5-observable-safe-policy` | `1645252` | 3/3 product `FAILED`; all reached Discovery, Contract, Planner, and eligibility | The workflow no longer stopped at Contract, but eligibility artifact validation failed because deterministic diagnostic messages exceeded the 400-character schema limit. | Fixed by `0a09cc9`, which bounds eligibility messages before artifact write. |
+| `phase5-eligibility-unblocked` | `0a09cc9` | 2/3 `HUMAN_DECISION_REQUIRED`, 1/3 `BLOCKED`; all reached eligibility | Contract and Planner utility improved, but Planner put no-op guardrails into `approvalRequiredChanges`, used absolute in-repo paths, and often invented coverage ids instead of exact contract ids. No run reached Test Author. | Fixed by `4d1f19c`, which filters no-op approval guardrails, normalizes in-repo absolute plan paths, and tightens Planner/Planner-correction instructions. |
+| `phase5-planner-gate-relaxed` | `4d1f19c` | 3/3 product `FAILED` before first turn | Not a workflow-quality signal: each ChangeSafely attempt failed on `App Server request thread/start timed out`, with zero turns, tokens, tools, or artifacts. | Treat as transient technical evidence. Do not compare product utility from this set. |
+
+Current assessment: the model-free gates are green after each product change, and the calibration
+work removed several false-positive workflow stops. The Spark diagnostics still have not produced a
+valid B0/C1/T1/I1 ChangeSafely path after the Contract calibration work. The next useful development
+step is either a fresh Spark diagnostic after the App Server timeout clears, or a fake App Server
+regression that forces realistic Planner mistakes around coverage ids, relative paths, and no-op
+approval fields before spending more model tokens.
+
 ## Phase 10 frozen high-assurance set
 
 The Phase 10 development set froze product commit
