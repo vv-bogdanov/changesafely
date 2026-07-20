@@ -141,6 +141,26 @@ if (mode === "direct") {
       nextAction: "Inspect evidence.",
     })}\n`,
   );
+} else if (mode === "changesafely-no-trace") {
+  const task = option("--task");
+  requireValue(task === expectedTask, "ChangeSafely task bytes differ");
+  requireValue(option("--plans") === "3", "ChangeSafely plan count differs");
+  requireValue(
+    option("--permission-profile") === "changesafely-benchmark",
+    "ChangeSafely permission profile differs",
+  );
+  requireValue(args.includes("--diagnostics"), "ChangeSafely diagnostics flag is missing");
+  await writeCandidate("changesafely");
+  process.stdout.write(
+    `${JSON.stringify({
+      outcomeVersion: 2,
+      runId: "missing-trace-run",
+      status: "FAILED",
+      reason: "Fake ChangeSafely failed after producing a product outcome.",
+      nextAction: "Inspect persisted evidence.",
+    })}\n`,
+  );
+  process.exitCode = 1;
 } else {
   throw new Error(`unknown fake benchmark mode: ${mode}`);
 }

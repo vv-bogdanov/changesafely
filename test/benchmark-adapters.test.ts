@@ -14,7 +14,7 @@ import {
   collectEnvironmentVersions,
   ensureComparisonManifest,
 } from "../bench/src/comparison.js";
-import { contentSha256 } from "../bench/src/evidence.js";
+import { contentSha256, readVerifiedEvidenceFile } from "../bench/src/evidence.js";
 import { runProcess } from "../bench/src/process.js";
 import { scenarioDefinition } from "../bench/src/repository.js";
 import { benchmarkWorkerEnvironment, runBenchmarkAttempt } from "../bench/src/run.js";
@@ -236,6 +236,63 @@ test("controller runs a fair fake Direct and ChangeSafely pair end to end", asyn
       directCommand: { program: process.execPath, prefixArgs: [fixture, "direct"] },
     }),
     /already has an attempt/u,
+  );
+});
+
+test("controller preserves nonzero ChangeSafely outcomes when trace is unavailable", async (t) => {
+  const resultsRoot = await temporaryWorkspace(t, "changesafely-error-outcome-");
+  const common = {
+    projectRoot: process.cwd(),
+    benchRoot: join(process.cwd(), "bench"),
+    resultsRoot,
+    scenario: "double-charge",
+    measurement: "development" as const,
+    model: "gpt-5.3-codex-spark",
+    effort: "medium",
+    timeoutMs: 10_000,
+    codexCommand: process.execPath,
+    isolationProof: {
+      provider: "codex-permission-profile" as const,
+      providerVersion: "test",
+      permissionProfile: "changesafely-benchmark",
+      canarySha256: "c".repeat(64),
+      controllerPathHidden: true,
+      authUnreadable: true,
+      canaryPathHidden: true,
+      agentToolNetworkDisabled: true,
+    },
+  };
+  await runBenchmarkAttempt({
+    ...common,
+    mode: "direct",
+    directCommand: { program: process.execPath, prefixArgs: [fixture, "direct"] },
+  });
+
+  const changesafely = await runBenchmarkAttempt({
+    ...common,
+    mode: "changesafely",
+    changeSafelyCommand: {
+      program: process.execPath,
+      prefixArgs: [fixture, "changesafely-no-trace"],
+    },
+  });
+
+  assert.equal(changesafely.run.worker.exitCode, 1);
+  assert.notEqual(changesafely.run.outcome, "technical_failure");
+  assert.equal(changesafely.run.usage.totalTokens, null);
+  const outcome = JSON.parse(
+    await readFile(join(changesafely.path, "changesafely", "outcome.json"), "utf8"),
+  ) as { status: string; runId: string };
+  assert.equal(outcome.runId, "missing-trace-run");
+  assert.equal(outcome.status, "FAILED");
+  assert.match(
+    await readFile(join(changesafely.path, "events.jsonl"), "utf8"),
+    /trace\.unavailable/u,
+  );
+  await assert.rejects(readFile(join(changesafely.path, "changesafely", "run", "trace.jsonl")));
+  assert.match(
+    (await readVerifiedEvidenceFile(changesafely, "changesafely/outcome.json")).toString("utf8"),
+    /Fake ChangeSafely failed/u,
   );
 });
 

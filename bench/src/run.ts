@@ -288,16 +288,33 @@ async function parseAdapterEvidence(
     }
 
     const outcome = parseChangeSafelyOutcome(worker.stdout);
-    const trace = await loadTrace(workspace, outcome.runId);
     const runRoot = join(workspace, ".changesafely", "runs", outcome.runId);
+    const traceResult = await loadTrace(workspace, outcome.runId)
+      .then((trace) => ({ trace }))
+      .catch((error: unknown) => ({ error }));
+    const trace = "trace" in traceResult ? traceResult.trace : undefined;
+    const traceError = "error" in traceResult ? traceResult.error : undefined;
+    const events =
+      trace === undefined
+        ? `${JSON.stringify({
+            type: "changesafely.trace.unavailable",
+            runId: outcome.runId,
+            reason:
+              traceError instanceof Error
+                ? traceError.message.slice(0, 2_000)
+                : String(traceError).slice(0, 2_000),
+          })}\n`
+        : `${trace.events.map((event) => JSON.stringify(event)).join("\n")}\n`;
     return {
       valid: true,
       acceptsNonzeroExit: true,
-      events: `${trace.events.map((event) => JSON.stringify(event)).join("\n")}\n`,
-      usage: usageDocument(changeSafelyUsage(trace.events)),
+      events,
+      usage: trace === undefined ? emptyUsage : usageDocument(changeSafelyUsage(trace.events)),
       files: {
-        "changesafely/outcome.json": `${JSON.stringify(outcome, null, 2)}\n`,
-        ...(await collectTree(runRoot, "changesafely/run")),
+        "changesafely/outcome.json": worker.stdout.endsWith("\n")
+          ? worker.stdout
+          : `${worker.stdout}\n`,
+        ...((await pathExists(runRoot)) ? await collectTree(runRoot, "changesafely/run") : {}),
       },
     };
   } catch {
@@ -312,6 +329,15 @@ async function parseAdapterEvidence(
       usage: emptyUsage,
       files: {},
     };
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 
