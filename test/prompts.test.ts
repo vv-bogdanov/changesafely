@@ -181,10 +181,16 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   assert.match(values["test-author:characterization"] ?? "", /non-interference/u);
   assert.match(values["test-author:characterization"] ?? "", /coveredCriteriaIds only/u);
   assert.match(values["test-author:characterization"] ?? "", /non-goals are explanatory/u);
+  assert.match(
+    values["test-author:characterization"] ?? "",
+    /Coverage scope is production behavior/u,
+  );
+  assert.match(values["test-author:characterization"] ?? "", /test files only in testPaths/u);
   assert.match(values["test-author:change"] ?? "", /same Test Author from accepted C1/u);
   assert.match(values["test-author:change"] ?? "", /coveredInvariantIds only/u);
   assert.match(values["test-author:change"] ?? "", /coveredRiskIds only/u);
   assert.match(values["test-author:change"] ?? "", /partial failure/u);
+  assert.match(values["test-author:change"] ?? "", /coverage\.gaps\[\]\.path/u);
   assert.match(
     values["test-author:change"] ?? "",
     /stop rather than invent an unsupported oracle/iu,
@@ -194,6 +200,7 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   assert.match(values["test-author:correction"] ?? "", /Append new test evidence only/u);
   assert.match(values["test-author:evidence-correction"] ?? "", /correct the same/u);
   assert.match(values["test-author:evidence-correction"] ?? "", /coveredCriteriaIds only/u);
+  assert.match(values["test-author:evidence-correction"] ?? "", /remove it from gaps/u);
   assert.match(values["test-author:evidence-correction"] ?? "", /Gate feedback/u);
   assert.match(values["test-author:evidence-correction"] ?? "", /Immutable paths/u);
   assert.match(values.verifier ?? "", /try to falsify/u);
