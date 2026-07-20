@@ -246,6 +246,8 @@ const tracedToolItemTypes = new Set([
   "imageGeneration",
 ]);
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+
 function toolItemTrace(
   item: unknown,
 ): Pick<TraceEventInput, "itemType" | "toolFailed" | "durationMs"> | undefined {
@@ -585,7 +587,7 @@ export class AppServerClient {
     });
     try {
       const value = (await this.rpc.client
-        .timeout(this.options.requestTimeoutMs ?? 10_000, (id) =>
+        .timeout(this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, (id) =>
           createJSONRPCErrorResponse(id, -32_000, `App Server request ${method} timed out`),
         )
         .request(method, params)) as T;
