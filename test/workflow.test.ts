@@ -229,6 +229,28 @@ test("commits separate baseline-green C1 and baseline-red T1 harnesses", async (
   assert.equal(c1Commands.payload[0]?.exitCode, 0);
 });
 
+test("blocks a missing critical risk mapping before Implementer", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "missing-risk-mapping");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value only with executable evidence for every critical risk.",
+    plannerCount: 1,
+    clientFactory,
+  });
+
+  await assert.rejects(
+    runHarness({ repoPath, runId: planning.runId, clientFactory }),
+    /MISSING_HARNESS_CRITICAL_RISK/u,
+  );
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.phase, "test-author-failed");
+  assert.equal(
+    state.contexts.some((context) => context.role === "implementer"),
+    false,
+  );
+});
+
 test("lets the same Test Author append one bounded correction before review acceptance", async (t) => {
   const repoPath = await fixtureRepo(t);
   const clientFactory = fakeAppServerFactory(repoPath, "harness-correction");
@@ -790,8 +812,14 @@ test("rejects an accept verdict that retains findings or residual risks", async 
   }
 });
 
-test("routes harness and contract defects away from Implementer repair", async (t) => {
-  for (const mode of ["harness-defect-verifier", "contract-defect-verifier"]) {
+test("routes every upstream defect away from Implementer repair", async (t) => {
+  const scenarios = [
+    ["harness-defect-verifier", /Test Author/u],
+    ["contract-defect-verifier", /contract or selected scope/u],
+    ["scope-defect-verifier", /contract or selected scope/u],
+    ["evidence-defect-verifier", /verification environment/u],
+  ] as const;
+  for (const [mode, nextAction] of scenarios) {
     const repoPath = await fixtureRepo(t);
     const clientFactory = fakeAppServerFactory(repoPath, mode);
     const planning = await runPlanning({
@@ -810,17 +838,35 @@ test("routes harness and contract defects away from Implementer repair", async (
     const state = await readRunState(planning.runPath);
     assert.equal(result.accepted, false, mode);
     assert.equal(state.repairCount, 0, mode);
-    assert.match(
-      state.nextAction,
-      mode === "harness-defect-verifier" ? /Test Author/u : /contract or selected scope/u,
-      mode,
-    );
+    assert.match(state.nextAction, nextAction, mode);
     assert.equal(
       state.contexts.some((context) => context.role === "repair"),
       false,
       mode,
     );
   }
+});
+
+test("rejects a Repair change to the protected C1/T1 harness", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "repair-protected-edit");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value without weakening evidence during repair.",
+    plannerCount: 1,
+    clientFactory,
+  });
+  await runHarness({ repoPath, runId: planning.runId, clientFactory });
+
+  await assert.rejects(
+    runImplementationAndVerification({ repoPath, runId: planning.runId, clientFactory }),
+    /protected T1 path/u,
+  );
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.phase, "implementation-failed");
+  assert.equal(state.repairCount, 1);
+  assert.ok(state.contexts.some((context) => context.role === "repair"));
+  assert.equal(state.artifacts.repair, undefined);
 });
 
 test("resumes the same Implementer once for a local repair and forks a fresh Verifier", async (t) => {

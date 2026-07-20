@@ -50,7 +50,7 @@ function harnessChecks(
     testPath,
     coveredCriteriaIds: kind === "change" || mode === "refactor" ? ["AC1"] : [],
     coveredInvariantIds: kind === "characterization" ? ["INV1"] : [],
-    coveredRiskIds: kind === "characterization" ? ["R1"] : [],
+    coveredRiskIds: kind === "characterization" && mode !== "missing-risk-mapping" ? ["R1"] : [],
     observable:
       kind === "characterization"
         ? "The existing public boundary remains available."
@@ -785,7 +785,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         ? "export const value = 1; // refactored without behavior change\n"
         : mode === "failed-command"
           ? "export const value = 3;\n"
-          : mode === "repair"
+          : mode === "repair" || mode === "repair-protected-edit"
             ? "export const value = 2; // verifier repair target\n"
             : "export const value = 2;\n";
     await writeFile("src/value.ts", source, "utf8");
@@ -808,6 +808,9 @@ async function structuredOutput(prompt: string): Promise<unknown> {
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:repair]")) {
     await writeFile("src/value.ts", "export const value = 2;\n", "utf8");
+    if (mode === "repair-protected-edit") {
+      await writeFile("test/value.test.ts", "// weakened during repair\n", "utf8");
+    }
     return {
       summary: "Removed the concrete local defect reported by the Verifier.",
       changedPaths: ["src/value.ts"],
@@ -875,7 +878,31 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         residualRisks: [],
       };
     }
-    if (mode === "repair" && verifierNumber === 1) {
+    if (mode === "scope-defect-verifier" || mode === "evidence-defect-verifier") {
+      const scopeDefect = mode === "scope-defect-verifier";
+      return {
+        verdict: "reject",
+        contractFulfilled: false,
+        invariantsPreserved: true,
+        scopeConformant: !scopeDefect,
+        evidenceSufficient: scopeDefect,
+        reason: scopeDefect
+          ? "The selected production scope cannot contain the required change."
+          : "The deterministic evidence cannot establish the required behavior.",
+        findings: [
+          {
+            code: scopeDefect ? "SCOPE_DEFECT" : "EVIDENCE_DEFECT",
+            severity: "error",
+            message: scopeDefect
+              ? "Route the incomplete scope back to planning."
+              : "Route the incomplete evidence back to the verification environment.",
+            path: scopeDefect ? "src/value.ts" : "",
+          },
+        ],
+        residualRisks: [],
+      };
+    }
+    if ((mode === "repair" || mode === "repair-protected-edit") && verifierNumber === 1) {
       return {
         verdict: "reject",
         contractFulfilled: false,
