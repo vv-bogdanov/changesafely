@@ -56,12 +56,29 @@ evidence under `bench/results/`, and no final or publishable measurement.
 | `phase5-eligibility-unblocked` | `0a09cc9` | 2/3 `HUMAN_DECISION_REQUIRED`, 1/3 `BLOCKED`; all reached eligibility | Contract and Planner utility improved, but Planner put no-op guardrails into `approvalRequiredChanges`, used absolute in-repo paths, and often invented coverage ids instead of exact contract ids. No run reached Test Author. | Fixed by `4d1f19c`, which filters no-op approval guardrails, normalizes in-repo absolute plan paths, and tightens Planner/Planner-correction instructions. |
 | `phase5-planner-gate-relaxed` | `4d1f19c` | 3/3 product `FAILED` before first turn | Not a workflow-quality signal: each ChangeSafely attempt failed on `App Server request thread/start timed out`, with zero turns, tokens, tools, or artifacts. | Treat as transient technical evidence. Do not compare product utility from this set. |
 
-Current assessment: the model-free gates are green after each product change, and the calibration
-work removed several false-positive workflow stops. The Spark diagnostics still have not produced a
-valid B0/C1/T1/I1 ChangeSafely path after the Contract calibration work. The next useful development
-step is either a fresh Spark diagnostic after the App Server timeout clears, or a fake App Server
-regression that forces realistic Planner mistakes around coverage ids, relative paths, and no-op
-approval fields before spending more model tokens.
+## Phase 5 vertical-slice follow-ups
+
+Additional Double Charge v4 diagnostics continued on 2026-07-20 UTC after each model-free green
+product change. These were still Spark development runs only; no final or publishable run was
+started.
+
+| Evidence root | Product commit | Direct result | ChangeSafely product result | Interpretation | Follow-up |
+| --- | --- | --- | --- | --- | --- |
+| `phase5-contract-scope-normalized` | `1089a4d` | `safe_success` | `FAILED` at Test Author: wrong coverage id buckets | Planning reached H1 after write-scope normalization, but Test Author put invariant/non-goal ids in `coveredCriteriaIds`. | Fixed by `6aa6a4f`: prompt clarification plus strict bucket tests. |
+| `phase5-harness-id-buckets` | `6aa6a4f` | `visible_failure` | `FAILED` at Test Author: missing invariant `PI-003` | Bucket errors disappeared, but one deterministic evidence gap still stopped C1. | Fixed by `012358c`: one bounded pre-commit harness evidence correction. |
+| `phase5-harness-evidence-correction` | `012358c` | `visible_failure` | `BLOCKED` at Contract: `U-001`, `U-003` | Spark variably marked local conservative policies as critical unresolved unknowns, so H1 correction was not exercised. | Fixed by `82fe350`: Contract prompt now says a stated local policy must not remain critical unresolved. |
+| `phase5-contract-boundary-policy` | `82fe350` | `safe_success` | `FAILED` at Test Author: `coverage.gaps[].path` used `test/payment-service.test.ts` | Contract, Planner, Judge, and H1 correction ran; the next strict gate caught test-path gaps in a production-slice field. | Fixed by `902c3d2`: Harness prompts distinguish test paths from production coverage scope. |
+| `phase5-coverage-scope-policy` | `902c3d2` | `safe_success` | `FAILED` at Test Author: App Server `thread not found` | ChangeSafely reached C1 and wrote characterization, baseline command, and baseline coverage artifacts. T1 then exposed a real lifecycle bug: the new App Server process was asked to continue the Test Author thread without `thread/resume`. | Fixed by `3da9f96`: explicit T1 thread resume plus a fake App Server regression. |
+| `phase5-test-author-resume` | `3da9f96` | `visible_failure` | `FAILED` at Test Author: Spark model capacity | This did not test the resume fix because Spark capacity stopped the characterization turn before C1. | Do not switch models for this MVP diagnostic; retry later when Spark capacity clears. |
+| `phase5-test-author-resume-retry` | `3da9f96` | `technical_failure` | `FAILED` at Discovery: Spark model capacity | Both modes hit external capacity/technical failure. | Stop the capacity loop; rely on model-free regression until the next explicit Spark diagnostic window. |
+
+Current assessment: model-free gates are green after each product change, and the Spark diagnostics
+show real utility progress from D0/C0-only stops to a run that reached C1 and deterministic baseline
+coverage before exposing a lifecycle bug. A full B0/C1/T1/I1 Spark path is still not confirmed:
+the latest code has a regression test for the C1->T1 App Server resume issue, but Spark confirmation
+is blocked by model capacity. The next useful development step is a fresh Spark diagnostic after
+capacity clears, followed by work on harness breadth/compactness only if the run reaches T1 and
+Verifier.
 
 ## Phase 10 frozen high-assurance set
 
