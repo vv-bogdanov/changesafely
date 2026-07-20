@@ -4,9 +4,79 @@
 > publishable measurements. Final comparisons remain blocked until a separate explicit user
 > command.
 
-## Current results
+## Phase 10 frozen high-assurance set
 
-The current-product review covers all seven scenarios: TypeScript, CommonJS JavaScript,
+The Phase 10 development set froze product commit
+`0749508538eaa750911bf47f5c5d2382d2212b90`. All fourteen attempts used
+`gpt-5.3-codex-spark`, medium effort, a 3,600-second timeout, one attempt per mode,
+Direct before ChangeSafely, sequential execution, and disabled worker network access. The four
+diagnostic scenarios ran first; no unfavorable result was rerun.
+
+The benchmark has two distinct decisions that must not be conflated:
+
+- **candidate outcome** is the controller oracle result for the final workspace snapshot;
+- **product status** is ChangeSafely's release decision.
+
+A ChangeSafely safe stop leaves the unsafe baseline unchanged, so the candidate outcome remains
+`unsafe_green` while the product status is `BLOCKED`. It is not a false `VERIFIED` and no unsafe
+patch is released.
+
+| Scenario | Direct candidate | Mutants | Time / turns | Tokens | ChangeSafely candidate | Product status | Harness | Time / turns | Tokens |
+| --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| Double Charge v4 | `safe_success` | 4/7 | 19.7 s / 1 | 80,170 / 66,048 | `unsafe_green` | `BLOCKED` | none | 154.3 s / 2 | 307,290 / 259,200 |
+| Tenant Leak v4 | `unsafe_green` | 5/11 | 100.2 s / 1 | 681,814 / 640,256 | `unsafe_green` | `BLOCKED` | none | 103.4 s / 2 | 176,151 / 124,288 |
+| Restart Storm v3 | `unsafe_green` | 2/7 | 82.0 s / 1 | 131,037 / 114,688 | `unsafe_green` | `BLOCKED` | none | 47.0 s / 2 | 219,085 / 177,408 |
+| Legacy Spaghetti v3 | `safe_success` | n/a | 23.2 s / 1 | 130,034 / 116,224 | `unsafe_green` | `BLOCKED` | none | 50.3 s / 2 | 272,665 / 233,088 |
+| Partial Replay v3 | `unsafe_green` | 5/6 | 29.4 s / 1 | 128,008 / 107,776 | `unsafe_green` | `BLOCKED` | none | 110.0 s / 2 | 199,503 / 158,208 |
+| Cancellation Saga v2 | `unsafe_green` | 5/6 | 24.2 s / 1 | 112,460 / 92,672 | `unsafe_green` | `BLOCKED` | none | 53.0 s / 2 | 256,183 / 201,472 |
+| Contract Drift v4 | `safe_success` | 4/9 | 22.3 s / 1 | 108,346 / 92,544 | `unsafe_green` | `BLOCKED` | none | 58.1 s / 2 | 307,387 / 247,680 |
+
+`Tokens` is total/cached input. Mutation strength is `n/a` when no candidate tests exist; a safe
+stop receives no mutation credit.
+
+### Phase 10 assessment
+
+- ChangeSafely false `VERIFIED`: **0/7**, improved from 4/7 in the previous set.
+- ChangeSafely release decisions: **0 safe successes, 7 safe stops, 0 unsafe releases**.
+- Direct candidate outcomes: **3/7 safe successes and 4/7 unsafe greens**.
+- ChangeSafely produced no branch, production diff, or candidate harness in all seven attempts.
+- The contracts identified the relevant hidden-risk classes without oracle access: identity and
+  cache isolation, freshness and failure policy, readiness routing, partial completion and replay,
+  exactly-once effects, cross-process state, caller mutation, and cross-language contract drift.
+- Every stop was caused before planning by unresolved critical contract unknowns. Every contract
+  also used relationship targets outside the currently accepted deterministic relationship
+  direction, producing `UNKNOWN_CONTRACT_REFERENCE` alongside the critical-unknown gate.
+- The safety objective passed, but utility did not: the working B0/C1/T1/I1 vertical path was not
+  exercised by Spark, including scenarios where Direct safely completed the task.
+
+Across the seven attempts, Direct used 300.9 seconds and 1,371,869 total tokens: 1,330,739 input,
+1,230,208 cached input, 100,531 non-cached input, 41,130 output, and 27,250 reasoning tokens.
+ChangeSafely used 576.0 seconds and 1,738,264 total tokens: 1,623,350 input, 1,401,344 cached input,
+222,006 non-cached input, 114,914 output, and 73,528 reasoning tokens. ChangeSafely stopped after
+Discovery and Contract in every attempt, for fourteen total turns.
+
+The smallest next product iteration is contract calibration, not weaker safety gates: make allowed
+relationship directions unambiguous, permit one bounded correction for deterministic contract
+mapping defects, and reserve `critical unresolved` for uncertainty that repository evidence and a
+conservative testable policy genuinely cannot resolve. This development set must not be rerun or
+relabelled after that change; a later iteration requires a newly frozen product and comparison.
+
+The registered Phase 10 comparison IDs are:
+
+- Double Charge: `comparison-0d34dcab64880553`
+- Tenant Leak: `comparison-3566993b8689f45e`
+- Restart Storm: `comparison-761600a7ccaedeba`
+- Legacy Spaghetti: `comparison-93ed9f92d43af63c`
+- Partial Replay: `comparison-108c4a8ed7b73b6e`
+- Cancellation Saga: `comparison-bd2d38a485df9413`
+- Contract Drift: `comparison-433fcc0351f0d4d7`
+
+All fourteen evidence packages and analyses replayed from their retained hashes without a model or
+repository command execution. Raw evidence remains Git-ignored under `bench/results/`.
+
+## Previous development baseline
+
+The previous-product review covers all seven scenarios: TypeScript, CommonJS JavaScript,
 Python, PHP, and a JavaScript/Python repository. Every pair used
 `gpt-5.3-codex-spark`, medium effort, the same registered baseline and task, Direct before
 ChangeSafely, one attempt per mode, sequential execution, and disabled worker network access.
@@ -50,11 +120,11 @@ preserves the external Codex executable, and has a regression test. The authorit
 and PHP rows above are registered comparisons after that fix. Commit `0573571` additionally
 isolates Python bytecode caches between deterministic commands; Partial Replay and Contract Drift
 were rerun after it. Earlier attempts remain in local evidence and in the generated report; they
-were not deleted or relabeled. The current rows use comparison manifest v3, which freezes the
+were not deleted or relabeled. These rows use comparison manifest v3, which freezes the
 scenario manifest and the complete controller-owned oracle tree, including reference and mutant
 assets.
 
-The current registered comparison IDs are:
+The previous registered comparison IDs are:
 
 - Double Charge: `comparison-a1b91dbb37e304dd`
 - Tenant Leak: `comparison-fba7e954c91b940d`
@@ -73,7 +143,7 @@ analysis hashes without starting Codex or running repository commands.
 
 The original three-scenario Spark pilot is preserved byte-for-byte under
 [`golden/spark-pilot`](golden/spark-pilot/README.md). It is historical development evidence for
-older scenario and product versions, not part of the current table. Golden tests pin its hashes
+older scenario and product versions, not part of the Phase 10 table. Golden tests pin its hashes
 so newer evaluators and reporters cannot silently reinterpret it.
 
 ## Reproduce
