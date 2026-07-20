@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { AppServerClient } from "./app-server/client.js";
 import { parsePlanArtifactKey } from "./artifact-key.js";
 import {
@@ -27,7 +27,12 @@ import {
 } from "./git.js";
 import { evaluateHarnessEvidence } from "./harness-evidence.js";
 import { type ProgressReporter, reportProgress } from "./progress.js";
-import { changeHarnessPrompt, testAuthorPrompt } from "./prompts.js";
+import {
+  changeHarnessPrompt,
+  harnessCorrectionPrompt,
+  harnessVerifierPrompt,
+  testAuthorPrompt,
+} from "./prompts.js";
 import {
   authorizeRepositoryCheck,
   capabilitiesSha256,
@@ -38,6 +43,7 @@ import { pathWithinPrefixes } from "./repository-policy.js";
 import {
   completeContext,
   parseRoleArtifact,
+  readOnlyPolicy,
   startContext,
   workspaceWritePolicy,
 } from "./role-runtime.js";
@@ -47,11 +53,15 @@ import {
   type DecisionArtifact,
   type DetailedPlan,
   type HarnessArtifact,
+  type HarnessReviewArtifact,
   harnessArtifactSchema,
   type StoredCharacterizationArtifact,
+  type VerificationArtifact,
   validateHarnessArtifact,
+  validateVerificationArtifact,
+  verificationArtifactSchema,
 } from "./schemas.js";
-import { hashRecordsEqual } from "./verification.js";
+import { harnessReviewAccepted, hashRecordsEqual, verificationAccepted } from "./verification.js";
 
 export interface HarnessOptions {
   repoPath: string;
@@ -94,6 +104,11 @@ interface HarnessContext {
 interface ValidatedStage {
   changedPaths: string[];
   protectedPaths: string[];
+}
+
+interface HarnessCorrection {
+  commit: string;
+  changedPaths: string[];
 }
 
 function harnessError(code: string, message: string, exitCode: 1 | 2 = 1): ChangeSafelyError {
@@ -227,6 +242,7 @@ async function loadHarnessContext(
   const repoPath = await canonicalRepositoryPath(resolve(options.repoPath));
   const state = await loadRunState(repoPath, options.runId);
   state.characterizationCommit ??= "";
+  state.harnessCorrectionCount ??= 0;
   const capabilities = state.repositoryCapabilities as RepositoryCapabilities | undefined;
   if (
     !capabilities ||
@@ -311,8 +327,9 @@ async function validateStageChanges(
   context: HarnessContext,
   harness: HarnessArtifact,
   immutablePaths: string[] = [],
+  allowedTestPaths = context.allowedTestPaths,
 ): Promise<ValidatedStage> {
-  const { repoPath, state, capabilities, allowedTestPaths } = context;
+  const { repoPath, state, capabilities } = context;
   await assertProtectedConfigurationUnchanged(repoPath, state.baselineProtectedConfiguration ?? {});
   const paths = await changedPaths(repoPath, "HEAD");
   if (paths.length === 0) {
@@ -458,14 +475,33 @@ async function persistBaselineCoverage(
   state.artifacts.coverageBaseline = stored.hash;
 }
 
-async function persistFinalHarness(
+async function persistAcceptedHarness(
   context: HarnessContext,
   harness: HarnessArtifact,
   testCommit: string,
-  command: CommandResult,
+  commandResults: CommandResult[],
+  attempts: VerificationArtifact[],
+  corrections: HarnessCorrection[],
 ): Promise<HarnessResult> {
   const { state, store, repoPath, selectedPlanKey, options, startedAt } = context;
   const protectedHashes = await hashFiles(repoPath, harness.protectedPaths);
+  const review: HarnessReviewArtifact = {
+    accepted: true,
+    finalHarnessCommit: testCommit,
+    attempts,
+    corrections,
+  };
+  if (
+    !harnessReviewAccepted(review, {
+      checks: harness.checks,
+      protectedPaths: harness.protectedPaths,
+    })
+  ) {
+    throw harnessError(
+      "HARNESS_REVIEW_INVALID",
+      "Harness review evidence is internally inconsistent",
+    );
+  }
   const harnessStored = await store.writeArtifact(
     "harness",
     "test-author",
@@ -483,17 +519,35 @@ async function persistFinalHarness(
   const commandStored = await store.writeArtifact(
     "commands",
     "deterministic-runner",
-    toCommandEvidence([command], repoPath),
+    toCommandEvidence(commandResults, repoPath),
     artifactInputs(state, "harness"),
   );
   state.artifacts.commands = commandStored.hash;
+  const reviewStored = await store.writeArtifact(
+    "harnessReview",
+    "verifier:harness",
+    review,
+    artifactInputs(
+      state,
+      "characterization",
+      "characterizationCommands",
+      "commands",
+      "contract",
+      "coverageBaseline",
+      "decision",
+      "harness",
+      selectedPlanKey,
+    ),
+  );
+  state.artifacts.harnessReview = reviewStored.hash;
   state.testCommit = testCommit;
+  state.harnessCorrectionCount = corrections.length;
   state.phase = "harness-complete";
   state.status = "RUNNING";
   state.reason =
     state.characterizationCommit === testCommit
-      ? "Protected C1 refactor harness committed before implementation."
-      : "Protected C1 and T1 harnesses committed before implementation.";
+      ? "Independent review accepted the protected C1 refactor harness."
+      : `Independent review accepted the protected C1/T1 harness after ${corrections.length} correction(s).`;
   state.nextAction = "Run the Implementer from C0 using the selected plan and protected harness.";
   await store.writeState(state);
   if ((await currentCommit(repoPath)) !== testCommit) {
@@ -516,9 +570,236 @@ async function persistFinalHarness(
     characterizationCommit: state.characterizationCommit ?? "",
     testCommit,
     protectedHashes,
-    command,
+    command: commandResults.at(-1) as CommandResult,
     harness,
   };
+}
+
+function correctionTestScopes(context: HarnessContext): string[] {
+  const configured = context.capabilities.testPathPrefixes.filter((path) =>
+    pathWithinPrefixes(path, context.contract.allowedPathPrefixes),
+  );
+  return unique(
+    configured.length > 0
+      ? configured
+      : context.allowedTestPaths.map((path) => posix.dirname(path)),
+  );
+}
+
+function mergeHarness(current: HarnessArtifact, correction: HarnessArtifact): HarnessArtifact {
+  return {
+    ...correction,
+    summary: `${current.summary} ${correction.summary}`,
+    testPaths: unique([...current.testPaths, ...correction.testPaths]),
+    fixturePaths: unique([...current.fixturePaths, ...correction.fixturePaths]),
+    checks: [...current.checks, ...correction.checks],
+    nonInterference: mergeNonInterference(current, correction),
+    coverage: mergeCoverage(current, correction),
+    protectedPaths: unique([...current.protectedPaths, ...correction.protectedPaths]),
+  };
+}
+
+async function reviewHarness(
+  context: HarnessContext,
+  client: AppServerClient,
+  testAuthorThreadId: string,
+  testAuthorTurnId: string,
+  initialHarness: HarnessArtifact,
+  initialCommit: string,
+  initialCommand: CommandResult,
+): Promise<HarnessResult> {
+  const { state, store, repoPath, options, startedAt } = context;
+  const coverage = (await loadVerifiedArtifact(repoPath, state, "coverageBaseline")).payload;
+  const characterizationCommands = (
+    await loadVerifiedArtifact(repoPath, state, "characterizationCommands")
+  ).payload;
+  const characterizationCommit = state.characterizationCommit;
+  if (!characterizationCommit) {
+    throw harnessError("CHARACTERIZATION_COMMIT_MISSING", "C1 commit is missing before review", 2);
+  }
+  const attempts: VerificationArtifact[] = [];
+  const corrections: HarnessCorrection[] = [];
+  const commandResults = [initialCommand];
+  const allowedTestScopes = correctionTestScopes(context);
+  let harness = initialHarness;
+  let testCommit = initialCommit;
+  let lastTestAuthorTurnId = testAuthorTurnId;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    state.phase = "harness-review";
+    state.status = "RUNNING";
+    state.nextAction = `Wait for independent harness review attempt ${attempt}.`;
+    await store.writeState(state);
+    reportProgress(
+      options.onProgress,
+      state.runId,
+      state.phase,
+      `Reviewing the protected harness (${attempt}/3)`,
+      startedAt,
+    );
+    const fork = await client.forkThread({
+      threadId: context.contractThreadId,
+      lastTurnId: context.contractTurnId,
+      cwd: repoPath,
+      approvalPolicy: "never",
+      sandbox: "read-only",
+    });
+    const role = `verifier:harness:${attempt}`;
+    const verifierContext = startContext(
+      role,
+      fork.thread.id,
+      context.contractThreadId,
+      context.contractTurnId,
+    );
+    state.contexts.push(verifierContext);
+    await store.writeState(state);
+    const turn = await client.runTurn(
+      fork.thread.id,
+      harnessVerifierPrompt({
+        contract: context.contract,
+        plan: context.plan,
+        decision: context.decision,
+        baselineCommit: state.baselineCommit,
+        characterizationCommit,
+        testCommit,
+        characterizationDiff: await diffFrom(
+          repoPath,
+          state.baselineCommit,
+          characterizationCommit,
+        ),
+        changeDiff:
+          characterizationCommit === testCommit
+            ? ""
+            : await diffFrom(repoPath, characterizationCommit, testCommit),
+        harness,
+        protectedPaths: harness.protectedPaths,
+        coverage,
+        commandResults: {
+          characterization: characterizationCommands,
+          final: toCommandEvidence(commandResults, repoPath),
+        },
+      }),
+      {
+        cwd: repoPath,
+        sandboxPolicy: readOnlyPolicy,
+        effort: context.roleEffort,
+        ...(options.model ? { model: options.model } : {}),
+        outputSchema: verificationArtifactSchema,
+        role,
+        phase: "harness-review",
+      },
+    );
+    completeContext(verifierContext, turn.turnId);
+    const review = await parseRoleArtifact(turn.message, validateVerificationArtifact, {
+      role,
+      trace: store.trace,
+    });
+    attempts.push(review);
+    if (verificationAccepted(review)) {
+      return persistAcceptedHarness(
+        context,
+        harness,
+        testCommit,
+        commandResults,
+        attempts,
+        corrections,
+      );
+    }
+    if (attempt === 3) {
+      throw harnessError(
+        "INSUFFICIENT_VERIFICATION_ENVIRONMENT",
+        `Independent harness review remained insufficient after ${corrections.length} correction(s): ${review.reason}`,
+        2,
+      );
+    }
+
+    state.phase = "harness-correction";
+    state.nextAction = `Wait for bounded Test Author correction ${attempt}.`;
+    await store.writeState(state);
+    await client.resumeThread({
+      threadId: testAuthorThreadId,
+      cwd: repoPath,
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+    });
+    const correctionRole = `test-author:correction:${attempt}`;
+    const correctionContext = startContext(
+      correctionRole,
+      testAuthorThreadId,
+      context.contractThreadId,
+      lastTestAuthorTurnId,
+    );
+    state.contexts.push(correctionContext);
+    await store.writeState(state);
+    const correctionTurn = await client.runTurn(
+      testAuthorThreadId,
+      harnessCorrectionPrompt({
+        contract: context.contract,
+        plan: context.plan,
+        review,
+        harness,
+        immutablePaths: harness.protectedPaths,
+        allowedTestScopes,
+      }),
+      {
+        cwd: repoPath,
+        sandboxPolicy: workspaceWritePolicy(repoPath),
+        effort: context.roleEffort,
+        ...(options.model ? { model: options.model } : {}),
+        outputSchema: harnessArtifactSchema,
+        role: correctionRole,
+        phase: "harness-correction",
+      },
+    );
+    completeContext(correctionContext, correctionTurn.turnId);
+    lastTestAuthorTurnId = correctionTurn.turnId;
+    const correction = await parseRoleArtifact(correctionTurn.message, validateHarnessArtifact, {
+      role: correctionRole,
+      trace: store.trace,
+    });
+    if (correction.expectedBaselineOutcome !== harness.expectedBaselineOutcome) {
+      throw harnessError(
+        "HARNESS_CORRECTION_OUTCOME_CHANGED",
+        "Harness correction changed the established baseline outcome",
+      );
+    }
+    const stage = await validateStageChanges(
+      context,
+      correction,
+      harness.protectedPaths,
+      allowedTestScopes,
+    );
+    const normalized = { ...correction, protectedPaths: stage.protectedPaths };
+    assertHarnessEvidence(context, normalized, {
+      stage: normalized.expectedBaselineOutcome === "pass" ? "characterization" : "change",
+    });
+    assertCoveragePlan(context, normalized);
+    const merged = mergeHarness(harness, normalized);
+    assertHarnessEvidence(context, merged, { final: true });
+    assertCoveragePlan(context, merged);
+    const command = await runStageCommand(context, normalized, harness.expectedBaselineOutcome);
+    const commit = await commitPaths(
+      repoPath,
+      stage.changedPaths,
+      `test: strengthen ChangeSafely harness (${attempt})`,
+    );
+    await store.trace.append({
+      component: "git",
+      event: "commit.created",
+      status: "completed",
+      phase: "harness-correction",
+      role: correctionRole,
+      commit,
+    });
+    corrections.push({ commit, changedPaths: stage.changedPaths });
+    commandResults.push(command);
+    harness = merged;
+    testCommit = commit;
+    state.testCommit = commit;
+    state.harnessCorrectionCount = corrections.length;
+    await store.writeState(state);
+  }
+  throw harnessError("HARNESS_REVIEW_INVALID", "Harness review loop ended unexpectedly");
 }
 
 async function createCharacterization(context: HarnessContext): Promise<HarnessResult | undefined> {
@@ -645,7 +926,15 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
     state.characterizationCommit = characterizationCommit;
     await persistBaselineCoverage(context, normalized, characterizationCommit);
     if (context.contract.changeKind === "refactor") {
-      return await persistFinalHarness(context, normalized, characterizationCommit, command);
+      return await reviewHarness(
+        context,
+        client,
+        fork.thread.id,
+        turn.turnId,
+        normalized,
+        characterizationCommit,
+        command,
+      );
     }
     state.phase = "characterization-complete";
     state.status = "RUNNING";
@@ -662,7 +951,11 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
     return undefined;
   } catch (error) {
     const failure = abortReason(options.signal, error);
-    state.status = "FAILED";
+    state.status =
+      failure instanceof ChangeSafelyError &&
+      failure.code === "INSUFFICIENT_VERIFICATION_ENVIRONMENT"
+        ? "BLOCKED"
+        : "FAILED";
     state.phase = "test-author-failed";
     state.reason = failure instanceof Error ? failure.message : String(failure);
     state.nextAction =
@@ -810,11 +1103,19 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
       component: "git",
       event: "commit.created",
       status: "completed",
-      phase: "harness-complete",
+      phase: "harness-review",
       role: "test-author:change",
       commit: testCommit,
     });
-    return await persistFinalHarness(context, finalHarness, testCommit, command);
+    return await reviewHarness(
+      context,
+      client,
+      characterizationContext.threadId,
+      turn.turnId,
+      finalHarness,
+      testCommit,
+      command,
+    );
   } catch (error) {
     const failure = abortReason(options.signal, error);
     if (options.signal?.aborted && (await canRestoreCharacterizationBoundary(context))) {
@@ -823,7 +1124,11 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
       state.reason = "C1 is intact after an interrupted change-harness attempt.";
       state.nextAction = "Resume from C1 to create the red change harness.";
     } else {
-      state.status = "FAILED";
+      state.status =
+        failure instanceof ChangeSafelyError &&
+        failure.code === "INSUFFICIENT_VERIFICATION_ENVIRONMENT"
+          ? "BLOCKED"
+          : "FAILED";
       state.phase = "test-author-failed";
       state.reason = failure instanceof Error ? failure.message : String(failure);
       state.nextAction =

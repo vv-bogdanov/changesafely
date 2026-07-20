@@ -58,7 +58,7 @@ import {
   verificationArtifactSchema,
 } from "./schemas.js";
 import type { TraceWriter } from "./trace.js";
-import { hashRecordsEqual, verificationAccepted } from "./verification.js";
+import { harnessReviewAccepted, hashRecordsEqual, verificationAccepted } from "./verification.js";
 
 export interface ImplementationOptions {
   repoPath: string;
@@ -238,6 +238,7 @@ export async function runImplementationAndVerification(
   const roleEffort = options.model ? "medium" : "low";
   const state = await loadRunState(repoPath, options.runId);
   state.repairCount ??= 0;
+  state.harnessCorrectionCount ??= 0;
   const capabilities = state.repositoryCapabilities as RepositoryCapabilities | undefined;
   if (
     !capabilities ||
@@ -283,7 +284,19 @@ export async function runImplementationAndVerification(
   }
   const selectedPlanKey = parsePlanArtifactKey(decision.winnerPlanId);
   const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
+  const harnessReview = (await loadVerifiedArtifact(repoPath, state, "harnessReview")).payload;
   const harnessCommandEvidence = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
+  if (
+    !harnessReviewAccepted(harnessReview, harness) ||
+    harnessReview.finalHarnessCommit !== state.testCommit ||
+    harnessReview.corrections.length !== state.harnessCorrectionCount
+  ) {
+    throw implementationError(
+      "HARNESS_REVIEW_NOT_ACCEPTED",
+      "Independent pre-implementation harness review is missing or inconsistent",
+      2,
+    );
+  }
   const harnessGate = evaluateHarnessEvidence(contract, plan, harness, { final: true });
   if (harnessGate.length > 0) {
     throw implementationError(
@@ -420,7 +433,7 @@ export async function runImplementationAndVerification(
       "implementation",
       "implementer",
       { ...implementation, implementationCommit, actualPaths },
-      artifactInputs(state, "decision", "harness", selectedPlanKey),
+      artifactInputs(state, "decision", "harness", "harnessReview", selectedPlanKey),
     );
     state.artifacts.implementation = implementationStored.hash;
     state.phase = "deterministic-verification";

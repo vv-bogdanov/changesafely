@@ -15,6 +15,7 @@ flowchart TD
   P3[Planner risk-first]
   J[Judge]
   T[Test Author]
+  H[Harness Verifier]
   I[Implementer]
   V[Verifier]
 
@@ -24,14 +25,16 @@ flowchart TD
   C0 --> P3
   C0 --> J
   C0 --> T
+  C0 --> H
   C0 --> I
   C0 --> V
 ```
 
 D0 and C0 are separate `thread/start` roots. Every decision or write role is a
 `thread/fork` from the immutable completed C0 turn. The Implementer receives the
-selected plan as data and cannot inherit Planner discussion. The Verifier receives
-the actual diff and deterministic results and cannot inherit Implementer history.
+selected plan as data and cannot inherit Planner discussion. Harness and final Verifiers use fresh
+read-only C0 forks. The final Verifier receives the actual diff and deterministic results and cannot
+inherit Implementer history. A bounded harness correction resumes only the original Test Author.
 
 ## Data flow
 
@@ -42,7 +45,10 @@ the actual diff and deterministic results and cannot inherit Implementer history
    changes. It protects the union of both stages. `harness-evidence.ts` rejects incomplete or
    invalid check relationships before either a harness commit or the Implementer fork.
    `coverage.ts` records the C1 impacted-slice baseline using only authorized repository commands
-   and otherwise retains the explicit executable coverage matrix.
+   and otherwise retains the explicit executable coverage matrix. A fresh C0 Verifier then reviews
+   the complete protected harness. The same Test Author may append at most two corrections, each
+   followed by deterministic gates and a separate commit. Only an accepted aggregate
+   `harness-review.json` opens the Implementer boundary.
 3. `implementation.ts` forks Implementer, validates actual paths, commits I1, runs
    deterministic checks, compares final scoped coverage with C1, and forks an independent
    Verifier. One local repair may resume the same Implementer before a fresh Verifier fork and
@@ -53,7 +59,8 @@ the actual diff and deterministic results and cannot inherit Implementer history
 ```text
 task -> evidence -> contract -> plans -> eligibility -> decision
      -> characterization/C1 -> optional change harness/T1
-     -> coverage baseline -> implementation/I1 -> commands + final coverage -> verification -> report
+     -> coverage baseline -> harness review/H1 -> implementation/I1
+     -> commands + final coverage -> verification -> report
 ```
 
 ## Sources of truth

@@ -14,6 +14,8 @@ interface Message {
 let threadNumber = 0;
 let turnNumber = 0;
 let verifierNumber = 0;
+let harnessVerifierNumber = 0;
+let harnessCorrectionNumber = 0;
 const mode = process.argv[2] ?? "default";
 if (mode === "stderr") process.stderr.write("private-app-server-stderr-marker\n");
 const lines = createInterface({ input: process.stdin });
@@ -637,7 +639,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     await mkdir("test", { recursive: true });
     await writeFile(
       "test/value.test.ts",
-      `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { value } from "../src/value.ts";\n\ntest("requested value", () => {\n  assert.equal(value, 2);\n});\n`,
+      `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { value } from "../src/value.ts";\n\ntest("requested value", () => {\n  assert.equal(value, ${mode === "overconstrained-harness" ? 3 : 2});\n});\n`,
       "utf8",
     );
     if (mode === "rewrite-characterization") {
@@ -659,6 +661,97 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       coverage: harnessCoverage(["src/value.ts"], ["CHK-T1"]),
       protectedPaths: ["test/value.test.ts"],
     });
+  }
+  if (prompt.includes("[CHANGESAFELY_ROLE:verifier:harness]")) {
+    harnessVerifierNumber += 1;
+    const reject =
+      mode === "overconstrained-harness" ||
+      mode === "harness-insufficient" ||
+      (mode === "harness-correction" && harnessVerifierNumber === 1);
+    if (reject) {
+      return {
+        verdict: "reject",
+        contractFulfilled: false,
+        invariantsPreserved: true,
+        scopeConformant: true,
+        evidenceSufficient: false,
+        reason:
+          mode === "overconstrained-harness"
+            ? "The acceptance oracle asserts an unsupported value."
+            : "A plausible green-but-wrong implementation is not rejected yet.",
+        findings: [
+          {
+            code: mode === "overconstrained-harness" ? "UNSUPPORTED_ORACLE" : "MISSING_EDGE_CHECK",
+            severity: "error",
+            message:
+              mode === "overconstrained-harness"
+                ? "The asserted value is not grounded in the task or repository evidence."
+                : "Add a separate executable edge check without changing protected evidence.",
+            path: "test/value.test.ts",
+          },
+        ],
+        residualRisks: [],
+      };
+    }
+    const reviewedCheckId =
+      mode === "harness-invalid-accept"
+        ? "CHK-UNKNOWN"
+        : target
+          ? "CHK-T1"
+          : mode === "refactor"
+            ? "CHK-C1"
+            : "CHK-T1";
+    const reviewedPath =
+      mode === "harness-invalid-accept"
+        ? "test/unprotected.test.ts"
+        : (target?.tests[0]?.path ??
+          (mode === "refactor" ? "test/value.characterization.test.ts" : "test/value.test.ts"));
+    return {
+      verdict: "accept",
+      contractFulfilled: true,
+      invariantsPreserved: true,
+      scopeConformant: true,
+      evidenceSufficient: true,
+      reason: "The grounded protected harness rejects the plausible unsafe implementation.",
+      findings: [
+        {
+          code: "GREEN_WRONG_CAUGHT",
+          severity: "warning",
+          message: `${reviewedCheckId} rejects an implementation that preserves only the old value.`,
+          path: reviewedPath,
+        },
+      ],
+      residualRisks: [],
+    };
+  }
+  if (prompt.includes("[CHANGESAFELY_ROLE:test-author:correction]")) {
+    harnessCorrectionNumber += 1;
+    const path = `test/value.harness-${harnessCorrectionNumber}.test.ts`;
+    await writeFile(
+      path,
+      `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { value } from "../src/value.ts";\n\ntest("reviewed edge ${harnessCorrectionNumber}", () => {\n  assert.equal(value, 2);\n});\n`,
+      "utf8",
+    );
+    const id = `CHK-X${harnessCorrectionNumber}`;
+    const correction = validHarness({
+      summary: "Added the bounded evidence requested by harness review.",
+      testPaths: [path],
+      targetedCommand: {
+        name: "targeted harness correction",
+        argv: ["npm", "test"],
+        cwd: ".",
+        purpose: "Prove the missing behavior remains absent on baseline",
+      },
+      expectedBaselineOutcome: "fail",
+      expectedFailure: "Expected values to be strictly equal",
+      checks: harnessChecks([path], "change", "src/value.ts").map((check) => ({
+        ...check,
+        id,
+      })),
+      coverage: harnessCoverage(["src/value.ts"], [id]),
+      protectedPaths: [path],
+    });
+    return correction;
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:implementer]")) {
     if (target) {
@@ -812,7 +905,8 @@ lines.on("line", async (line) => {
       return;
     }
     threadNumber += 1;
-    send({ id: message.id, result: { thread: { id: `thread-${threadNumber}` } } });
+    const prefix = message.method === "thread/start" ? "thread" : `fork-${process.pid}`;
+    send({ id: message.id, result: { thread: { id: `${prefix}-${threadNumber}` } } });
     return;
   }
 

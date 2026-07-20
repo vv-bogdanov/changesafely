@@ -5,6 +5,8 @@ import {
   contractPrompt,
   discoveryPrompt,
   HIGH_ASSURANCE_DOCTRINE,
+  harnessCorrectionPrompt,
+  harnessVerifierPrompt,
   implementerPrompt,
   judgeCorrectionPrompt,
   judgePrompt,
@@ -75,6 +77,28 @@ function prompts(): Record<string, string> {
       capabilities,
     ),
     implementer: implementerPrompt(contract, plan, decision, "t1", ["test/value.test.ts"]),
+    "verifier:harness": harnessVerifierPrompt({
+      contract,
+      plan,
+      decision,
+      baselineCommit: "b0",
+      characterizationCommit: "c1",
+      testCommit: "t1",
+      characterizationDiff: "CHARACTERIZATION",
+      changeDiff: "CHANGE",
+      harness: validHarness(),
+      protectedPaths: ["test/value.test.ts"],
+      coverage: { mode: "matrix" },
+      commandResults: [],
+    }),
+    "test-author:correction": harnessCorrectionPrompt({
+      contract,
+      plan,
+      review: { verdict: "reject" },
+      harness: validHarness(),
+      immutablePaths: ["test/value.test.ts"],
+      allowedTestScopes: ["test"],
+    }),
     verifier: verifierPrompt({
       contract,
       plan,
@@ -123,6 +147,8 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
     /stop rather than invent an unsupported oracle/iu,
   );
   assert.match(values.implementer ?? "", /smallest sufficient production delta/u);
+  assert.match(values["verifier:harness"] ?? "", /plausible green-but-wrong/u);
+  assert.match(values["test-author:correction"] ?? "", /Append new test evidence only/u);
   assert.match(values.verifier ?? "", /try to falsify/u);
   assert.match(values.verifier ?? "", /plausible green-but-wrong/u);
   assert.match(values.verifier ?? "", /numeric coverage only as supporting evidence/u);

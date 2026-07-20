@@ -21,8 +21,8 @@ stops. Additional toolchains are listed only after a fixture passes.
 - **Alternatives before edits.** Independent planners fork from one canonical
   contract; deterministic eligibility gates run before the Judge.
 - **Tests before production code.** Test Author commits baseline-green C1 and, when behavior
-  changes, baseline-red T1 before the Implementer can change production paths. Their union remains
-  protected.
+  changes, baseline-red T1. Their union remains protected and must pass an independent H1 review
+  before the Implementer can change production paths.
 - **Independent verification.** Verifier forks from C0 rather than inheriting the
   Implementer transcript and receives the actual diff and command evidence.
 - **Broad evidence, narrow change.** Discovery and verification inspect the complete
@@ -121,17 +121,20 @@ flowchart LR
   C0 --> T[Test Author]
   J --> T
   T --> T1[T1 safety commit]
+  C0 --> H[Harness Verifier H1]
+  T1 --> H
   C0 --> I[Implementer]
-  T1 --> I
+  H --> I
   I --> I1[I1 implementation commit]
   C0 --> V[Verifier]
   I1 --> V
   V --> R[Report and runnable branch]
 ```
 
-D0 and C0 are separate root threads. Planners, Judge, Test Author,
-Implementer, and Verifier fork from the completed C0 checkpoint and exchange
-schema-validated artifacts rather than hidden role transcripts. See
+D0 and C0 are separate root threads. Planners, Judge, Test Author, Implementer, and each Verifier
+fork from the completed C0 checkpoint and exchange schema-validated artifacts rather than hidden
+role transcripts. A rejected H1 review may resume the same Test Author for at most two append-only
+correction commits; existing protected evidence cannot be rewritten. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## CLI
@@ -248,6 +251,8 @@ Runs are stored under `.changesafely/runs/<run-id>/`:
 - `harness.json` and `commands.json`: the final protected C1/T1 union and its expected baseline
   outcome. Every declared observation is bound to a protected test path, grounded assertion basis,
   contract IDs, and applicable failure or non-interference boundary.
+- `harness-review.json`: one to three independent H1 verdicts and up to two bounded Test Author
+  correction commits. An accepted final verdict is a required input to implementation.
 - `coverage-baseline.json`, `coverage-final.json`, and optional `coverage-final-repair.json`: the
   impacted production slice, line/branch measurements when explicitly supplied, the executable
   coverage matrix, known gaps, and exact coverage command evidence.

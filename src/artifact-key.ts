@@ -8,6 +8,7 @@ const STATIC_ARTIFACT_PATHS = {
   coverageBaseline: "coverage-baseline.json",
   harness: "harness.json",
   commands: "commands.json",
+  harnessReview: "harness-review.json",
   implementation: "implementation.json",
   coverageFinal: "coverage-final.json",
   verificationCommands: "verification-commands.json",
@@ -23,7 +24,7 @@ export type PlanArtifactKey = `plan-${1 | 2 | 3 | 4 | 5}`;
 export type ArtifactKey = StaticArtifactKey | PlanArtifactKey;
 
 export const ARTIFACT_KEY_PATTERN =
-  "^(?:evidence|contract|eligibility|decision|characterization|characterizationCommands|coverageBaseline|harness|commands|implementation|coverageFinal|verificationCommands|verificationAttempt1|repair|coverageFinalRepair|verificationCommandsRepair|verification|plan-[1-5])$";
+  "^(?:evidence|contract|eligibility|decision|characterization|characterizationCommands|coverageBaseline|harness|commands|harnessReview|implementation|coverageFinal|verificationCommands|verificationAttempt1|repair|coverageFinalRepair|verificationCommandsRepair|verification|plan-[1-5])$";
 
 export function isPlanArtifactKey(key: string): key is PlanArtifactKey {
   return /^plan-[1-5]$/.test(key);

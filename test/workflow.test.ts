@@ -204,13 +204,165 @@ test("commits separate baseline-green C1 and baseline-red T1 harnesses", async (
     (entry) => entry.role === "test-author:characterization",
   );
   const change = state.contexts.find((entry) => entry.role === "test-author:change");
+  const reviewContext = state.contexts.find((entry) => entry.role === "verifier:harness:1");
   assert.equal(characterization?.parentThreadId, contract?.threadId);
   assert.equal(change?.threadId, characterization?.threadId);
   assert.equal(change?.checkpointTurnId, characterization?.turnId);
+  assert.equal(reviewContext?.parentThreadId, contract?.threadId);
+  assert.equal(reviewContext?.checkpointTurnId, contract?.turnId);
+  assert.notEqual(reviewContext?.threadId, change?.threadId);
+  assert.equal(state.harnessCorrectionCount, 0);
+  const review = JSON.parse(
+    await readFile(join(planning.runPath, "harness-review.json"), "utf8"),
+  ) as { payload: { accepted: boolean; attempts: unknown[]; corrections: unknown[] } };
+  assert.equal(review.payload.accepted, true);
+  assert.equal(review.payload.attempts.length, 1);
+  assert.equal(review.payload.corrections.length, 0);
   const c1Commands = JSON.parse(
     await readFile(join(planning.runPath, "characterization-commands.json"), "utf8"),
   ) as { payload: Array<{ exitCode: number }> };
   assert.equal(c1Commands.payload[0]?.exitCode, 0);
+});
+
+test("lets the same Test Author append one bounded correction before review acceptance", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "harness-correction");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value with independently reviewed edge evidence.",
+    plannerCount: 1,
+    clientFactory,
+  });
+
+  const harness = await runHarness({ repoPath, runId: planning.runId, clientFactory });
+  const state = await readRunState(planning.runPath);
+  const review = JSON.parse(
+    await readFile(join(planning.runPath, "harness-review.json"), "utf8"),
+  ) as {
+    payload: {
+      accepted: boolean;
+      attempts: Array<{ verdict: string }>;
+      corrections: Array<{ commit: string; changedPaths: string[] }>;
+    };
+  };
+
+  assert.equal(state.harnessCorrectionCount, 1);
+  assert.equal(review.payload.accepted, true);
+  assert.deepEqual(
+    review.payload.attempts.map((attempt) => attempt.verdict),
+    ["reject", "accept"],
+  );
+  assert.deepEqual(review.payload.corrections[0]?.changedPaths, ["test/value.harness-1.test.ts"]);
+  assert.ok(harness.protectedHashes["test/value.test.ts"]);
+  assert.ok(harness.protectedHashes["test/value.harness-1.test.ts"]);
+  const changeAuthor = state.contexts.find((entry) => entry.role === "test-author:change");
+  const correction = state.contexts.find((entry) => entry.role === "test-author:correction:1");
+  const reviews = state.contexts.filter((entry) => entry.role.startsWith("verifier:harness:"));
+  assert.equal(correction?.threadId, changeAuthor?.threadId);
+  assert.equal(correction?.checkpointTurnId, changeAuthor?.turnId);
+  assert.equal(reviews.length, 2);
+  assert.notEqual(reviews[0]?.threadId, reviews[1]?.threadId);
+  assert.deepEqual((await git(repoPath, ["log", "--format=%s", "--reverse"])).split("\n"), [
+    "fixture baseline",
+    "test: add ChangeSafely characterization harness",
+    "test: add ChangeSafely change harness",
+    "test: strengthen ChangeSafely harness (1)",
+  ]);
+});
+
+test("blocks an over-constrained harness after two corrections without starting Implementer", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "overconstrained-harness");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value using only grounded semantics.",
+    plannerCount: 1,
+    clientFactory,
+  });
+
+  await assert.rejects(
+    runHarness({ repoPath, runId: planning.runId, clientFactory }),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "INSUFFICIENT_VERIFICATION_ENVIRONMENT" &&
+      /unsupported value/iu.test(error.message),
+  );
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.status, "BLOCKED");
+  assert.equal(state.phase, "test-author-failed");
+  assert.equal(state.harnessCorrectionCount, 2);
+  assert.equal(state.artifacts.harnessReview, undefined);
+  assert.equal(
+    state.contexts.some((entry) => entry.role === "implementer"),
+    false,
+  );
+  assert.equal(
+    state.contexts.filter((entry) => entry.role.startsWith("verifier:harness:")).length,
+    3,
+  );
+  assert.match(await readFile(join(repoPath, "test", "value.test.ts"), "utf8"), /value, 3/u);
+  assert.deepEqual((await git(repoPath, ["log", "--format=%s", "--reverse"])).split("\n"), [
+    "fixture baseline",
+    "test: add ChangeSafely characterization harness",
+    "test: add ChangeSafely change harness",
+    "test: strengthen ChangeSafely harness (1)",
+    "test: strengthen ChangeSafely harness (2)",
+  ]);
+});
+
+test("does not persist accepted harness artifacts for an inconsistent H1 result", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "harness-invalid-accept");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value only after a traceable harness review.",
+    plannerCount: 1,
+    clientFactory,
+  });
+
+  await assert.rejects(
+    runHarness({ repoPath, runId: planning.runId, clientFactory }),
+    (error: unknown) =>
+      error instanceof Error && "code" in error && error.code === "HARNESS_REVIEW_INVALID",
+  );
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.artifacts.harness, undefined);
+  assert.equal(state.artifacts.commands, undefined);
+  assert.equal(state.artifacts.harnessReview, undefined);
+  await assert.rejects(access(join(planning.runPath, "harness.json")));
+  await assert.rejects(access(join(planning.runPath, "commands.json")));
+  await assert.rejects(access(join(planning.runPath, "harness-review.json")));
+});
+
+test("refuses to start Implementer without the accepted harness review artifact", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath);
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value after independent harness review.",
+    plannerCount: 1,
+    clientFactory,
+  });
+  await runHarness({ repoPath, runId: planning.runId, clientFactory });
+  const state = await readRunState(planning.runPath);
+  delete state.artifacts.harnessReview;
+  await writeFile(
+    join(planning.runPath, "state.json"),
+    `${JSON.stringify(state, null, 2)}\n`,
+    "utf8",
+  );
+
+  await assert.rejects(
+    runImplementationAndVerification({
+      repoPath,
+      runId: planning.runId,
+      clientFactory: () => {
+        throw new Error("Implementer App Server must not start");
+      },
+    }),
+    /Artifact hash mismatch: harness-review\.json/u,
+  );
 });
 
 test("uses C1 as the final protected harness for a pure refactor", async (t) => {
@@ -584,7 +736,9 @@ test("resumes the same Implementer once for a local repair and forks a fresh Ver
   assert.equal(state.repairCount, 1);
   const implementer = state.contexts.find((entry) => entry.role === "implementer");
   const repair = state.contexts.find((entry) => entry.role === "repair");
-  const verifiers = state.contexts.filter((entry) => entry.role.startsWith("verifier"));
+  const verifiers = state.contexts.filter(
+    (entry) => entry.role === "verifier" || entry.role === "verifier:repair",
+  );
   assert.equal(repair?.threadId, implementer?.threadId);
   assert.equal(verifiers.length, 2);
   assert.notEqual(verifiers[0]?.threadId, verifiers[1]?.threadId);

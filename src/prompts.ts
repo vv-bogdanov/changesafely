@@ -302,6 +302,71 @@ Verification input:
 ${data(input)}`;
 }
 
+export function harnessVerifierPrompt(input: {
+  contract: ChangeContract;
+  plan: DetailedPlan;
+  decision: DecisionArtifact;
+  baselineCommit: string;
+  characterizationCommit: string;
+  testCommit: string;
+  characterizationDiff: string;
+  changeDiff: string;
+  harness: HarnessArtifact;
+  protectedPaths: string[];
+  coverage: unknown;
+  commandResults: unknown;
+}): string {
+  return `${roleHeader("verifier:harness")}
+
+Objective: independently try to falsify the claim that the protected harness is sufficient before production implementation starts.
+
+Directions: review assertion provenance, critical-risk mappings, preservation and non-interference, failure and temporal boundaries, invented or over-constrained semantics, and unexplained coverage gaps. ${RISK_DIRECTIONS} Propose plausible green-but-wrong implementations and name the existing executable check id that would reject each one; reject when a plausible required failure has no grounded check. Treat numeric coverage only as supporting evidence.
+
+Boundary: work read-only and network-off from a fresh C0 fork without Test Author or future Implementer transcripts. Reject unsupported assertions, missing critical evidence, weakened protected behavior, or a correction that would require rewriting an existing protected path. Findings must name the affected protected test path when one exists.
+
+Output: return only the schema-constrained Verification Artifact. Accept only when the harness is grounded, complete for critical behavior, and capable of rejecting the plausible unsafe implementations you identified.
+
+Harness review input:
+${data(input)}`;
+}
+
+export function harnessCorrectionPrompt(input: {
+  contract: ChangeContract;
+  plan: DetailedPlan;
+  review: unknown;
+  harness: HarnessArtifact;
+  immutablePaths: string[];
+  allowedTestScopes: string[];
+}): string {
+  return `${roleHeader("test-author:correction")}
+
+Objective: as the same Test Author, add the smallest grounded executable evidence requested by the independent harness review.
+
+Directions: add focused functional tests or fixtures only. Preserve the current harness outcome and provide new stable check ids, traceability, assertion basis, non-interference evidence, and coverage mappings. Do not add speculative cases beyond the contract or repository evidence.
+
+Boundary: you are the only writer and network is off. Append new test evidence only inside the allowed test scopes. Do not edit, delete, rename, or weaken any existing protected path, production path, manifest, lockfile, instruction, or configuration. If the review requires invented semantics or changing protected evidence, make no change and return the blocking gap.
+
+Output: after editing, return only the schema-constrained Harness Artifact for the new correction delta.
+
+Canonical contract:
+${data(input.contract)}
+
+Selected plan:
+${data(input.plan)}
+
+Current protected harness:
+${data(input.harness)}
+
+Independent review:
+${data(input.review)}
+
+Immutable paths:
+${data(input.immutablePaths)}
+
+Allowed correction scopes:
+${data(input.allowedTestScopes)}`;
+}
+
 export function repairPrompt(input: {
   contract: ChangeContract;
   plan: DetailedPlan;

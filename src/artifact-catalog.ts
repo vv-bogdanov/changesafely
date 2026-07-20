@@ -17,6 +17,7 @@ const validators = {
   coverageBaseline: Schema.validateCoverageEvidence,
   harness: Schema.validateStoredHarnessArtifact,
   commands: Schema.validateCommandEvidenceList,
+  harnessReview: Schema.validateHarnessReviewArtifact,
   implementation: Schema.validateStoredImplementationArtifact,
   coverageFinal: Schema.validateCoverageEvidence,
   verificationCommands: Schema.validateCommandEvidenceList,
@@ -96,8 +97,21 @@ export function validateArtifactInputKeys(key: ArtifactKey, inputs: ArtifactKey[
       case "commands":
         valid = sameKeys(inputs, ["harness"]);
         break;
+      case "harnessReview":
+        valid = hasOnePlan(inputs, [
+          "characterization",
+          "characterizationCommands",
+          "commands",
+          "contract",
+          "coverageBaseline",
+          "decision",
+          "harness",
+        ]);
+        break;
       case "implementation":
-        valid = hasOnePlan(inputs, ["decision", "harness"]);
+        valid =
+          hasOnePlan(inputs, ["decision", "harness"]) ||
+          hasOnePlan(inputs, ["decision", "harness", "harnessReview"]);
         break;
       case "coverageFinal":
         valid = sameKeys(inputs, ["coverageBaseline", "implementation"]);

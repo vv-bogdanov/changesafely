@@ -327,6 +327,18 @@ export const verificationArtifactSchema = strictObject({
   residualRisks: stringArraySchema,
 });
 
+const harnessCorrectionSchema = strictObject({
+  commit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+  changedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT }),
+});
+
+const harnessReviewArtifactSchema = strictObject({
+  accepted: Type.Boolean(),
+  finalHarnessCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+  attempts: Type.Array(verificationArtifactSchema, { minItems: 1, maxItems: 3 }),
+  corrections: Type.Array(harnessCorrectionSchema, { maxItems: 2 }),
+});
+
 const sha256Schema = Type.String({ pattern: "^[a-f0-9]{64}$" });
 const runIdSchema = Type.String({
   pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
@@ -380,6 +392,8 @@ const runPhaseSchema = stringEnum(
   "write-preflight-blocked",
   "test-author",
   "characterization-complete",
+  "harness-review",
+  "harness-correction",
   "harness-complete",
   "test-author-failed",
   "implementer",
@@ -426,6 +440,7 @@ const runStateSchema = strictObject({
   testCommit: Type.String({ pattern: "^(?:[a-f0-9]{40,64})?$" }),
   implementationCommit: Type.String({ pattern: "^(?:[a-f0-9]{40,64})?$" }),
   repairCount: Type.Integer({ minimum: 0, maximum: 1 }),
+  harnessCorrectionCount: Type.Optional(Type.Integer({ minimum: 0, maximum: 2 })),
   model: Type.String({ maxLength: 255 }),
   permissionProfile: Type.Optional(Type.String({ maxLength: 100 })),
 });
@@ -576,6 +591,7 @@ export type DetailedPlan = Mutable<Type.Static<typeof detailedPlanSchema>>;
 export type DecisionArtifact = Mutable<Type.Static<typeof decisionArtifactSchema>>;
 export type HarnessArtifact = Mutable<Type.Static<typeof harnessArtifactSchema>>;
 export type VerificationArtifact = Mutable<Type.Static<typeof verificationArtifactSchema>>;
+export type HarnessReviewArtifact = Mutable<Type.Static<typeof harnessReviewArtifactSchema>>;
 export type ContextEntry = Mutable<Type.Static<typeof contextEntrySchema>>;
 export type RunState = Mutable<Type.Static<typeof runStateSchema>>;
 export type RunPhase = RunState["phase"];
@@ -637,6 +653,8 @@ const RUN_STATE_STATUSES_BY_PHASE = {
   "write-preflight-blocked": ["BLOCKED"],
   "test-author": ["RUNNING"],
   "characterization-complete": ["RUNNING"],
+  "harness-review": ["RUNNING"],
+  "harness-correction": ["RUNNING"],
   "harness-complete": ["RUNNING"],
   "test-author-failed": ["FAILED", "BLOCKED"],
   implementer: ["RUNNING"],
@@ -807,6 +825,10 @@ export const validateImplementationArtifact = compileArtifactValidator(
 export const validateVerificationArtifact = compileArtifactValidator(
   "verification artifact",
   verificationArtifactSchema,
+);
+export const validateHarnessReviewArtifact = compileArtifactValidator(
+  "harness review artifact",
+  harnessReviewArtifactSchema,
 );
 const validateRunStateSchema = compileArtifactValidator("ChangeSafely run state", runStateSchema);
 export function validateRunState(value: unknown): RunState {

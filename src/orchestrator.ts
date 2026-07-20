@@ -25,7 +25,7 @@ import {
 } from "./repository-capabilities.js";
 import { isApprovalSensitivePath } from "./repository-policy.js";
 import { resumablePhase } from "./schemas.js";
-import { hashRecordsEqual, verificationAccepted } from "./verification.js";
+import { harnessReviewAccepted, hashRecordsEqual, verificationAccepted } from "./verification.js";
 import { runPlanning } from "./workflow.js";
 
 export interface FullRunOptions {
@@ -77,6 +77,7 @@ function validateLineage(state: RunState): void {
   for (const entry of state.contexts) {
     if (
       entry.role.startsWith("planner:") ||
+      entry.role.startsWith("verifier:harness:") ||
       [
         "judge",
         "test-author",
@@ -108,6 +109,31 @@ function validateLineage(state: RunState): void {
     ) {
       throw lineageError("Change-harness Test Author did not continue from C1");
     }
+  }
+  const testAuthor =
+    state.contexts.find((entry) => entry.role === "test-author:change") ?? characterizationAuthor;
+  const harnessReviews = state.contexts.filter((entry) =>
+    entry.role.startsWith("verifier:harness:"),
+  );
+  if (
+    new Set(harnessReviews.map((entry) => entry.threadId)).size !== harnessReviews.length ||
+    harnessReviews.some((entry) => entry.threadId === testAuthor?.threadId)
+  ) {
+    throw lineageError("Harness Verifier did not use independent fresh C0 forks");
+  }
+  let previousTestAuthor = testAuthor;
+  for (const correction of state.contexts
+    .filter((entry) => entry.role.startsWith("test-author:correction:"))
+    .sort((left, right) => left.role.localeCompare(right.role))) {
+    if (
+      !previousTestAuthor?.turnId ||
+      correction.threadId !== previousTestAuthor.threadId ||
+      correction.parentThreadId !== contract.threadId ||
+      correction.checkpointTurnId !== previousTestAuthor.turnId
+    ) {
+      throw lineageError("Harness correction did not continue the original Test Author thread");
+    }
+    previousTestAuthor = correction;
   }
   const repair = state.contexts.find((entry) => entry.role === "repair");
   const implementer = state.contexts.find((entry) => entry.role === "implementer");
@@ -153,6 +179,7 @@ export async function validateResumeBoundary(
   const repoPath = await canonicalRepositoryPath(repoPathInput);
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
+  state.harnessCorrectionCount ??= 0;
   state.characterizationCommit ??= "";
   state.model ??= "";
   state.permissionProfile ??= "";
@@ -229,6 +256,14 @@ export async function validateResumeBoundary(
     return state;
   }
   const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
+  const harnessReview = (await loadVerifiedArtifact(repoPath, state, "harnessReview")).payload;
+  if (
+    !harnessReviewAccepted(harnessReview, harness) ||
+    harnessReview.finalHarnessCommit !== state.testCommit ||
+    harnessReview.corrections.length !== state.harnessCorrectionCount
+  ) {
+    throw resumeError("Independent harness review is missing or inconsistent");
+  }
   if (harness.testCommit !== state.testCommit) {
     throw resumeError("T1 artifact does not match persisted state");
   }
@@ -248,6 +283,7 @@ async function finalizeVerifiedRun(
   const startedAt = Date.now();
   const state = await loadRunState(repoPath, runId);
   state.repairCount ??= 0;
+  state.harnessCorrectionCount ??= 0;
   state.model ??= "";
   state.permissionProfile ??= "";
   state.baselineProtectedConfiguration ??= {};
@@ -267,6 +303,14 @@ async function finalizeVerifiedRun(
     }
     await inspectBaseline(repoPath, state.repositoryCapabilities?.controlFiles);
     const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
+    const harnessReview = (await loadVerifiedArtifact(repoPath, state, "harnessReview")).payload;
+    if (
+      !harnessReviewAccepted(harnessReview, harness) ||
+      harnessReview.finalHarnessCommit !== state.testCommit ||
+      harnessReview.corrections.length !== state.harnessCorrectionCount
+    ) {
+      throw releaseGateError("Independent harness review is missing or inconsistent");
+    }
     const protectedActual = await hashFiles(repoPath, Object.keys(harness.protectedHashes));
     if (!hashRecordsEqual(harness.protectedHashes, protectedActual)) {
       throw releaseGateError("Protected T1 hashes changed before release gate");

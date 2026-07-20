@@ -499,8 +499,10 @@ If a sufficient check cannot be created in the available environment, ChangeSafe
 
 After C1 and optional T1, an independent Verifier fork from C0 challenges assertion provenance,
 critical-risk coverage, preservation, and plausible green-but-wrong implementations. Test Author
-may perform at most two bounded corrections. Implementation cannot begin until the harness review
-accepts.
+may perform at most two bounded append-only corrections in its original thread. Each correction
+passes the same path, configuration, baseline-outcome, and deterministic-command gates and receives
+a separate commit; no previously protected path may be changed. Implementation cannot begin until
+the final harness review accepts.
 
 Tests and assertions designated as protected are recorded for later verification.
 

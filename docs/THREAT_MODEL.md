@@ -46,6 +46,9 @@ operating-system sandbox.
 - Harness artifacts require grounded executable check mappings for every protected invariant,
   acceptance criterion, and critical contract or plan risk. Applicable shared-state isolation must
   name both its target and executable checks; unresolved applicability blocks implementation.
+- A fresh read-only C0 Verifier must accept the final harness. At most two corrections may resume
+  the original Test Author; they can add test evidence but cannot change prior protected paths.
+  Correction commits, verdicts, and lineage are persisted and revalidated before implementation.
 - Coverage commands are immutable baseline capabilities and use the same sandbox, argv, cwd,
   timeout, environment, output, configuration, and mutation controls as other checks. C1 and final
   evidence must cover the same impacted production slice; numeric or matrix regression and any
