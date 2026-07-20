@@ -51,8 +51,11 @@ inherit Implementer history. A bounded harness correction resumes only the origi
    `harness-review.json` opens the Implementer boundary.
 3. `implementation.ts` forks Implementer, validates actual paths, commits I1, runs
    deterministic checks, compares final scoped coverage with C1, and forks an independent
-   Verifier. One local repair may resume the same Implementer before a fresh Verifier fork and
-   receives a separate final coverage artifact.
+   Verifier. Final acceptance combines the model verdict with the already validated contract-to-
+   check mappings, H1 result, protected hashes, C1/T1/final commands, and coverage comparison; an
+   accepted verdict cannot retain findings or residual risks. One local repair may resume the same
+   Implementer only for an `IMPLEMENTATION_DEFECT` on a selected production path before a fresh
+   Verifier fork and receives a separate final coverage artifact.
 4. `orchestrator.ts` validates persisted boundaries and applies the final release
    gate before emitting `VERIFIED`.
 

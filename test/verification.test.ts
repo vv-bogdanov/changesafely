@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { HarnessReviewArtifact, VerificationArtifact } from "../src/schemas.js";
-import { harnessReviewAccepted, verificationAccepted } from "../src/verification.js";
+import {
+  finalVerificationAccepted,
+  harnessReviewAccepted,
+  verificationAccepted,
+} from "../src/verification.js";
 import { validHarness } from "./support/artifacts.js";
 
 function attempt(verdict: "accept" | "reject"): VerificationArtifact {
@@ -75,4 +79,24 @@ test("accepts only a consistent bounded harness review sequence", () => {
     ),
     false,
   );
+});
+
+test("requires a clean final verdict without warnings or residual risks", () => {
+  const accepted = attempt("accept");
+  accepted.findings = [];
+  assert.equal(finalVerificationAccepted(accepted), true);
+
+  accepted.findings = [
+    {
+      code: "UNRESOLVED",
+      severity: "warning",
+      message: "A required boundary remains uncertain.",
+      path: "src/value.ts",
+    },
+  ];
+  assert.equal(finalVerificationAccepted(accepted), false);
+
+  accepted.findings = [];
+  accepted.residualRisks = ["A required boundary remains uncertain."];
+  assert.equal(finalVerificationAccepted(accepted), false);
 });

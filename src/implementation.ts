@@ -34,6 +34,7 @@ import { implementerPrompt, repairPrompt, verifierPrompt } from "./prompts.js";
 import { implementationReport } from "./report.js";
 import {
   capabilitiesSha256,
+  isCapabilityTestPath,
   type RepositoryCapabilities,
   requireRepositoryCheck,
 } from "./repository-capabilities.js";
@@ -58,7 +59,11 @@ import {
   verificationArtifactSchema,
 } from "./schemas.js";
 import type { TraceWriter } from "./trace.js";
-import { harnessReviewAccepted, hashRecordsEqual, verificationAccepted } from "./verification.js";
+import {
+  finalVerificationAccepted,
+  harnessReviewAccepted,
+  hashRecordsEqual,
+} from "./verification.js";
 
 export interface ImplementationOptions {
   repoPath: string;
@@ -130,8 +135,36 @@ function repairableVerification(verification: VerificationArtifact, planPaths: s
     verification.scopeConformant &&
     verification.evidenceSufficient &&
     errors.length > 0 &&
-    errors.every((finding) => finding.path !== "" && pathWithinPrefixes(finding.path, planPaths))
+    errors.every(
+      (finding) =>
+        finding.code === "IMPLEMENTATION_DEFECT" &&
+        finding.path !== "" &&
+        pathWithinPrefixes(finding.path, planPaths),
+    )
   );
+}
+
+function verificationFailureNextAction(
+  verification: VerificationArtifact,
+  repairCount: number,
+): string {
+  if (repairCount === 1) {
+    return "The bounded repair was exhausted; inspect findings and start a new plan.";
+  }
+  const codes = new Set(verification.findings.map((finding) => finding.code));
+  if (codes.has("HARNESS_DEFECT")) {
+    return "Start a new run and route the invalid oracle or missing evidence to Test Author.";
+  }
+  if (codes.has("CONTRACT_DEFECT") || codes.has("SCOPE_DEFECT")) {
+    return "Correct the contract or selected scope, then start a new planning run.";
+  }
+  if (codes.has("EVIDENCE_DEFECT")) {
+    return "Strengthen the deterministic verification environment, then start a new run.";
+  }
+  if (verification.verdict === "accept") {
+    return "Resolve every remaining finding and residual risk before another verification run.";
+  }
+  return "Verifier findings are not safely repairable within the selected production scope.";
 }
 
 async function validateImplementationChange(input: {
@@ -147,7 +180,12 @@ async function validateImplementationChange(input: {
   );
   const actualPaths = await changedPaths(input.repoPath, input.fromCommit);
   if (actualPaths.length === 0) {
-    throw implementationError("IMPLEMENTATION_EMPTY", "Implementer made no production change");
+    input.state.status = "REPLAN_REQUIRED";
+    throw implementationError(
+      "IMPLEMENTATION_REPLAN_REQUIRED",
+      "The selected plan produced no safe production change",
+      2,
+    );
   }
   const protectedAfter = await hashFiles(
     input.repoPath,
@@ -285,6 +323,9 @@ export async function runImplementationAndVerification(
   const selectedPlanKey = parsePlanArtifactKey(decision.winnerPlanId);
   const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
   const harnessReview = (await loadVerifiedArtifact(repoPath, state, "harnessReview")).payload;
+  const characterizationCommandEvidence = (
+    await loadVerifiedArtifact(repoPath, state, "characterizationCommands")
+  ).payload;
   const harnessCommandEvidence = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
   if (
     !harnessReviewAccepted(harnessReview, harness) ||
@@ -407,6 +448,9 @@ export async function runImplementationAndVerification(
       { role: "implementer", trace: store.trace },
     );
     const planPaths = [...new Set(plan.files.map((file) => file.path))];
+    const productionPlanPaths = planPaths.filter(
+      (path) => !isCapabilityTestPath(capabilities, path),
+    );
     let actualPaths = await validateImplementationChange({
       repoPath,
       fromCommit: state.testCommit,
@@ -560,7 +604,10 @@ export async function runImplementationAndVerification(
           implementationCommit,
           harnessDiff,
           implementationDiff,
+          harness,
+          harnessReview,
           commandResults: {
+            characterizationBaseline: characterizationCommandEvidence,
             harnessBaseline: harnessCommandEvidence,
             final: toCommandEvidence(commandResults, repoPath),
           },
@@ -584,7 +631,7 @@ export async function runImplementationAndVerification(
     };
 
     verification = await verify("verifier");
-    if (repairableVerification(verification, planPaths)) {
+    if (repairableVerification(verification, productionPlanPaths)) {
       const firstVerificationStored = await store.writeArtifact(
         "verificationAttempt1",
         "verifier",
@@ -704,15 +751,13 @@ export async function runImplementationAndVerification(
         : artifactInputs(state, "coverageFinal", "implementation", "verificationCommands"),
     );
     state.artifacts.verification = verificationStored.hash;
-    const accepted = verificationAccepted(verification);
+    const accepted = finalVerificationAccepted(verification);
     state.phase = "verification-complete";
     state.status = accepted ? "RUNNING" : "FAILED";
     state.reason = verification.reason;
     state.nextAction = accepted
       ? "Apply the final deterministic release gate."
-      : state.repairCount === 1
-        ? "The bounded repair was exhausted; inspect findings and start a new plan."
-        : "Verifier findings are not safely repairable within the selected scope.";
+      : verificationFailureNextAction(verification, state.repairCount);
     await store.writeState(state);
     reportProgress(
       options.onProgress,
@@ -763,7 +808,12 @@ export async function runImplementationAndVerification(
     }
     state.phase = "implementation-failed";
     state.reason = failure instanceof Error ? failure.message : String(failure);
-    state.nextAction = "Inspect the branch and persisted artifacts; no cleanup was performed.";
+    state.nextAction =
+      state.status === "REPLAN_REQUIRED"
+        ? "Start a new planning run after correcting the contract, harness, or selected scope."
+        : state.status === "HUMAN_DECISION_REQUIRED"
+          ? "Review the approval-sensitive diff before starting a new run."
+          : "Inspect the branch and persisted artifacts; no cleanup was performed.";
     await store.writeState(state);
     await store.trace.recordFailure("workflow", "implementation.completed", failure, {
       phase: state.phase,

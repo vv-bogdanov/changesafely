@@ -49,6 +49,9 @@ operating-system sandbox.
 - A fresh read-only C0 Verifier must accept the final harness. At most two corrections may resume
   the original Test Author; they can add test evidence but cannot change prior protected paths.
   Correction commits, verdicts, and lineage are persisted and revalidated before implementation.
+- Final verification receives the complete protected mapping and C1/T1/final command evidence.
+  An `accept` verdict with any finding or residual risk fails closed, and only a finding on a
+  selected production path can enter the single Implementer repair.
 - Coverage commands are immutable baseline capabilities and use the same sandbox, argv, cwd,
   timeout, environment, output, configuration, and mutation controls as other checks. C1 and final
   evidence must cover the same impacted production slice; numeric or matrix regression and any

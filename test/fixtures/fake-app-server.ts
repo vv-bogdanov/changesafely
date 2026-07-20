@@ -771,6 +771,15 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       await writeFile(".changesafely/test-implementer-started", "ready\n", "utf8");
       await new Promise((resolve) => setTimeout(resolve, 30_000));
     }
+    if (mode === "implementer-replan") {
+      return {
+        summary: "The selected contract and harness do not support a safe production change.",
+        changedPaths: [],
+        testsAdded: [],
+        scopeNotes: ["No repository path was changed."],
+        residualRisks: ["The required behavior needs a corrected contract or harness."],
+      };
+    }
     const source =
       mode === "refactor"
         ? "export const value = 1; // refactored without behavior change\n"
@@ -828,6 +837,44 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         residualRisks: [],
       };
     }
+    if (mode === "harness-defect-verifier") {
+      return {
+        verdict: "reject",
+        contractFulfilled: false,
+        invariantsPreserved: true,
+        scopeConformant: true,
+        evidenceSufficient: true,
+        reason: "The protected harness contains an invalid oracle.",
+        findings: [
+          {
+            code: "HARNESS_DEFECT",
+            severity: "error",
+            message: "Route the invalid oracle back to Test Author.",
+            path: "test/value.test.ts",
+          },
+        ],
+        residualRisks: [],
+      };
+    }
+    if (mode === "contract-defect-verifier") {
+      return {
+        verdict: "reject",
+        contractFulfilled: false,
+        invariantsPreserved: true,
+        scopeConformant: true,
+        evidenceSufficient: true,
+        reason: "The contract does not ground the required production behavior.",
+        findings: [
+          {
+            code: "CONTRACT_DEFECT",
+            severity: "error",
+            message: "Route the missing semantic decision back to the contract boundary.",
+            path: "src/value.ts",
+          },
+        ],
+        residualRisks: [],
+      };
+    }
     if (mode === "repair" && verifierNumber === 1) {
       return {
         verdict: "reject",
@@ -838,7 +885,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         reason: "A concrete local implementation defect remains.",
         findings: [
           {
-            code: "LOCAL_DEFECT",
+            code: "IMPLEMENTATION_DEFECT",
             severity: "error",
             message: "Remove the temporary implementation marker.",
             path: "src/value.ts",
@@ -854,8 +901,21 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       scopeConformant: true,
       evidenceSufficient: true,
       reason: "Actual diff is scoped and deterministic tests pass.",
-      findings: [],
-      residualRisks: ["Fixture verification covers only the requested value."],
+      findings:
+        mode === "verifier-warning"
+          ? [
+              {
+                code: "CRITICAL_UNCERTAINTY",
+                severity: "warning",
+                message: "A required behavior remains uncertain despite the accept verdict.",
+                path: target?.sources[0]?.path ?? "src/value.ts",
+              },
+            ]
+          : [],
+      residualRisks:
+        mode === "verifier-residual-risk"
+          ? ["A required behavior remains uncertain despite the accept verdict."]
+          : [],
     };
   }
   return { kind: "smoke", message: "ok" };

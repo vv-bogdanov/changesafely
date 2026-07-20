@@ -108,7 +108,9 @@ function prompts(): Record<string, string> {
       implementationCommit: "i1",
       harnessDiff: "HARNESS_ONLY",
       implementationDiff: "IMPLEMENTATION_ONLY",
-      commandResults: { harnessBaseline: [], final: [] },
+      harness: validHarness(),
+      harnessReview: { accepted: true },
+      commandResults: { characterizationBaseline: [], harnessBaseline: [], final: [] },
       coverage: { baseline: { mode: "matrix" }, final: { mode: "matrix" } },
     }),
     repair: repairPrompt({
@@ -151,6 +153,9 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   assert.match(values["test-author:correction"] ?? "", /Append new test evidence only/u);
   assert.match(values.verifier ?? "", /try to falsify/u);
   assert.match(values.verifier ?? "", /plausible green-but-wrong/u);
+  assert.match(values.verifier ?? "", /Reconstruct every acceptance criterion/u);
+  assert.match(values.verifier ?? "", /no findings or residual risks/u);
+  assert.match(values.verifier ?? "", /IMPLEMENTATION_DEFECT/u);
   assert.match(values.verifier ?? "", /numeric coverage only as supporting evidence/u);
   assert.match(values.repair ?? "", /contract, harness, or scope/u);
 });
@@ -169,4 +174,6 @@ test("Verifier receives separate harness and implementation boundaries", () => {
   assert.match(prompt, /assess production scope only from T1 to I1/u);
   assert.match(prompt, /"harnessDiff": "HARNESS_ONLY"/u);
   assert.match(prompt, /"implementationDiff": "IMPLEMENTATION_ONLY"/u);
+  assert.match(prompt, /"harnessReview": \{/u);
+  assert.match(prompt, /"characterizationBaseline": \[\]/u);
 });

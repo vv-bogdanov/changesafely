@@ -25,7 +25,11 @@ import {
 } from "./repository-capabilities.js";
 import { isApprovalSensitivePath } from "./repository-policy.js";
 import { resumablePhase } from "./schemas.js";
-import { harnessReviewAccepted, hashRecordsEqual, verificationAccepted } from "./verification.js";
+import {
+  finalVerificationAccepted,
+  harnessReviewAccepted,
+  hashRecordsEqual,
+} from "./verification.js";
 import { runPlanning } from "./workflow.js";
 
 export interface FullRunOptions {
@@ -364,7 +368,7 @@ async function finalizeVerifiedRun(
       );
     }
     const verification = (await loadVerifiedArtifact(repoPath, state, "verification")).payload;
-    if (!verificationAccepted(verification)) {
+    if (!finalVerificationAccepted(verification)) {
       throw releaseGateError("Independent Verifier did not accept the change");
     }
 

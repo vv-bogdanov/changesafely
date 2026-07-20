@@ -568,7 +568,8 @@ It receives:
 - optional change-harness commit;
 - implementation commit;
 - actual diff;
-- deterministic command results;
+- protected harness mappings and accepted H1 evidence;
+- C1, T1, and final deterministic command results;
 - residual unknowns.
 
 It does not receive the Implementer transcript, self-assessment, or explanation of why the code should be correct.
@@ -582,9 +583,15 @@ Verifier tries to falsify the safety claim and answers four questions:
 
 A green suite alone is insufficient. Every acceptance criterion, protected invariant, and critical
 risk must trace to passed deterministic evidence. A residual risk affecting one of them is an error,
-not an accepted warning.
+not an accepted warning. Because the MVP finding format does not encode a trustworthy severity
+mapping back to contract ids, final acceptance fails closed on any remaining finding or residual
+risk.
 
-If Verifier finds a local defect within the approved plan, one bounded repair loop may `resume` the same Implementer. After the fix, a new Verifier forks from `C0` and verifies the change again.
+If Verifier finds a local defect on a selected production path, one bounded repair loop may `resume`
+the same Implementer. The finding must be classified as `IMPLEMENTATION_DEFECT`; contract, harness,
+scope, and evidence classifications cannot enter Implementer repair even when they reference a
+production path. After the fix, all deterministic commands run again and a new Verifier forks from
+`C0`.
 
 If scope must change, replan instead of applying a local repair.
 

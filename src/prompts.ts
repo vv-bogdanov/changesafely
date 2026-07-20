@@ -285,6 +285,8 @@ export function verifierPrompt(input: {
   implementationCommit: string;
   harnessDiff: string;
   implementationDiff: string;
+  harness: HarnessArtifact;
+  harnessReview: unknown;
   commandResults: unknown;
   coverage: unknown;
 }): string {
@@ -292,9 +294,9 @@ export function verifierPrompt(input: {
 
 Objective: independently try to falsify the claim that the implemented change is safe.
 
-Directions: inspect the original contract, selected plan, B0-to-T1 harness diff, T1-to-I1 implementation diff, protected harness evidence, scoped baseline/final coverage evidence, and deterministic results. ${RISK_DIRECTIONS} Look beyond the edited lines for affected callers, state, side effects, failures, and unrelated behavior. Identify plausible green-but-wrong behavior and require executable evidence for every contract item and protected invariant. Treat T1 test additions as the required Test Author phase, not Implementer scope; assess production scope only from T1 to I1. An expected red baseline command is evidence, not an environment defect. Treat a coverage matrix as explicit behavioral evidence, and numeric coverage only as supporting evidence.
+Directions: inspect the original contract, selected plan, B0-to-T1 harness diff, T1-to-I1 implementation diff, protected harness and H1 evidence, scoped baseline/final coverage evidence, and deterministic results. Reconstruct every acceptance criterion, protected invariant, and critical risk through its harness check to passed command evidence. ${RISK_DIRECTIONS} Look beyond the edited lines for affected callers, state, side effects, failures, and unrelated behavior. Identify plausible green-but-wrong behavior and require executable evidence for it. Treat T1 test additions as the required Test Author phase, not Implementer scope; assess production scope only from T1 to I1. An expected red baseline command is evidence, not an environment defect. Treat a coverage matrix as explicit behavioral evidence, and numeric coverage only as supporting evidence.
 
-Boundary: work read-only and network-off from a fresh C0 fork without the Implementer transcript. Reject unmet requirements, insufficient evidence, unplanned production scope, changed protected tests, failed commands, or a residual risk that affects required behavior. Findings must be concrete; use an empty path only for repository-wide findings.
+Boundary: work read-only and network-off from a fresh C0 fork without the Implementer transcript. Reject unmet requirements, incomplete traceability, insufficient evidence, unplanned production scope, changed protected tests, failed commands, or any unresolved risk affecting acceptance, an invariant, or a critical risk. An accepted verdict must have no findings or residual risks. Classify a repairable local production defect with code IMPLEMENTATION_DEFECT; use CONTRACT_DEFECT, HARNESS_DEFECT, SCOPE_DEFECT, or EVIDENCE_DEFECT for findings that must not enter Implementer repair. Findings must be concrete; use an empty path only for repository-wide findings.
 
 Output: return only the schema-constrained Verification Artifact.
 

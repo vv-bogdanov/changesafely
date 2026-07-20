@@ -603,6 +603,29 @@ test("uses the Git diff when the Implementer omits a reported path", async (t) =
   assert.deepEqual(artifact.payload.actualPaths, ["src/value.ts"]);
 });
 
+test("returns REPLAN_REQUIRED when no safe implementation can be written", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "implementer-replan");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value only if the selected contract supports it safely.",
+    plannerCount: 1,
+    clientFactory,
+  });
+  await runHarness({ repoPath, runId: planning.runId, clientFactory });
+
+  await assert.rejects(
+    runImplementationAndVerification({ repoPath, runId: planning.runId, clientFactory }),
+    (error: unknown) =>
+      error instanceof Error && "code" in error && error.code === "IMPLEMENTATION_REPLAN_REQUIRED",
+  );
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.status, "REPLAN_REQUIRED");
+  assert.equal(state.phase, "implementation-failed");
+  assert.match(state.nextAction, /correcting the contract, harness, or selected scope/u);
+  assert.equal(await git(repoPath, ["diff", "--name-only", state.testCommit]), "");
+});
+
 test("runs the selected plan verification commands without rediscovering package scripts", async (t) => {
   const repoPath = await fixtureRepo(t, "node --test", {
     "check:plan": 'node -e "process.exit(0)"',
@@ -712,6 +735,63 @@ console.log(JSON.stringify({ changesafelyCoverage: { schemaVersion: 1, scope: ["
     false,
   );
   assert.equal(state.artifacts.coverageFinal, undefined);
+});
+
+test("rejects an accept verdict that retains findings or residual risks", async (t) => {
+  for (const mode of ["verifier-warning", "verifier-residual-risk"]) {
+    const repoPath = await fixtureRepo(t);
+    const clientFactory = fakeAppServerFactory(repoPath, mode);
+    const planning = await runPlanning({
+      repoPath,
+      task: "Change the fixture value with no unresolved high-risk evidence.",
+      plannerCount: 1,
+      clientFactory,
+    });
+    await runHarness({ repoPath, runId: planning.runId, clientFactory });
+
+    const result = await runImplementationAndVerification({
+      repoPath,
+      runId: planning.runId,
+      clientFactory,
+    });
+    const state = await readRunState(planning.runPath);
+    assert.equal(result.accepted, false, mode);
+    assert.equal(state.status, "FAILED", mode);
+    assert.equal(state.repairCount, 0, mode);
+  }
+});
+
+test("routes harness and contract defects away from Implementer repair", async (t) => {
+  for (const mode of ["harness-defect-verifier", "contract-defect-verifier"]) {
+    const repoPath = await fixtureRepo(t);
+    const clientFactory = fakeAppServerFactory(repoPath, mode);
+    const planning = await runPlanning({
+      repoPath,
+      task: "Change the fixture value without repairing upstream defects in production.",
+      plannerCount: 1,
+      clientFactory,
+    });
+    await runHarness({ repoPath, runId: planning.runId, clientFactory });
+
+    const result = await runImplementationAndVerification({
+      repoPath,
+      runId: planning.runId,
+      clientFactory,
+    });
+    const state = await readRunState(planning.runPath);
+    assert.equal(result.accepted, false, mode);
+    assert.equal(state.repairCount, 0, mode);
+    assert.match(
+      state.nextAction,
+      mode === "harness-defect-verifier" ? /Test Author/u : /contract or selected scope/u,
+      mode,
+    );
+    assert.equal(
+      state.contexts.some((context) => context.role === "repair"),
+      false,
+      mode,
+    );
+  }
 });
 
 test("resumes the same Implementer once for a local repair and forks a fresh Verifier", async (t) => {

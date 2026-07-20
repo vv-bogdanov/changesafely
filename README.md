@@ -23,8 +23,9 @@ stops. Additional toolchains are listed only after a fixture passes.
 - **Tests before production code.** Test Author commits baseline-green C1 and, when behavior
   changes, baseline-red T1. Their union remains protected and must pass an independent H1 review
   before the Implementer can change production paths.
-- **Independent verification.** Verifier forks from C0 rather than inheriting the
-  Implementer transcript and receives the actual diff and command evidence.
+- **Independent verification.** Verifier forks from C0 rather than inheriting the Implementer
+  transcript and receives the actual diff, protected harness mappings, H1 evidence, and every
+  command boundary. Final acceptance permits no unresolved finding or residual risk.
 - **Broad evidence, narrow change.** Discovery and verification inspect the complete
   relevant impact surface while the Implementer changes only the smallest approved
   production surface.

@@ -21,6 +21,14 @@ export function verificationAccepted(verification: VerificationArtifact): boolea
   );
 }
 
+export function finalVerificationAccepted(verification: VerificationArtifact): boolean {
+  return (
+    verificationAccepted(verification) &&
+    verification.findings.length === 0 &&
+    verification.residualRisks.length === 0
+  );
+}
+
 export function harnessReviewAccepted(
   review: HarnessReviewArtifact,
   harness: Pick<StoredHarnessArtifact, "checks" | "protectedPaths">,
