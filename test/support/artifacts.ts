@@ -1,4 +1,9 @@
-import type { ChangeContract, DetailedPlan, EvidenceArtifact } from "../../src/schemas.js";
+import type {
+  ChangeContract,
+  DetailedPlan,
+  EvidenceArtifact,
+  HarnessArtifact,
+} from "../../src/schemas.js";
 
 export function validEvidence(overrides: Partial<EvidenceArtifact> = {}): EvidenceArtifact {
   return {
@@ -121,6 +126,57 @@ export function validPlan(overrides: Partial<DetailedPlan> = {}): DetailedPlan {
     unknowns: [],
     recovery: ["Revert the implementation commit."],
     rejectionReasons: [],
+    ...overrides,
+  };
+}
+
+export function validHarness(overrides: Partial<HarnessArtifact> = {}): HarnessArtifact {
+  return {
+    summary: "Added executable characterization evidence.",
+    testPaths: ["test/value.characterization.test.ts"],
+    fixturePaths: [],
+    targetedCommand: {
+      name: "targeted characterization",
+      argv: ["npm", "test"],
+      cwd: ".",
+      purpose: "Prove existing behavior on baseline",
+    },
+    expectedBaselineOutcome: "pass",
+    expectedFailure: "No failure expected; the baseline behavior must pass.",
+    checks: [
+      {
+        id: "CHK-INV1",
+        kind: "characterization",
+        testPath: "test/value.characterization.test.ts",
+        coveredCriteriaIds: [],
+        coveredInvariantIds: ["INV1"],
+        coveredRiskIds: ["R1"],
+        observable: "The existing public API remains callable.",
+        evidenceBasis: [
+          {
+            source: "preservation",
+            detail: "The existing export is a public boundary.",
+            references: [{ path: "src/value.ts", detail: "Existing exported signature." }],
+          },
+        ],
+        expectedBaselineOutcome: "pass",
+        failureBoundary: "",
+        nonInterferenceTarget: "",
+      },
+    ],
+    nonInterference: {
+      status: "not-applicable",
+      targets: [],
+      checkIds: [],
+      evidenceBasis: [
+        {
+          source: "repository",
+          detail: "The fixture has no shared state or distinct operation identities.",
+          references: [{ path: "src/value.ts", detail: "Single immutable exported value." }],
+        },
+      ],
+    },
+    protectedPaths: ["test/value.characterization.test.ts"],
     ...overrides,
   };
 }

@@ -15,7 +15,7 @@ import {
   verifierPrompt,
 } from "../src/prompts.js";
 import type { RepositoryCapabilities } from "../src/repository-capabilities.js";
-import { validContract, validEvidence, validPlan } from "./support/artifacts.js";
+import { validContract, validEvidence, validHarness, validPlan } from "./support/artifacts.js";
 
 const capabilities: RepositoryCapabilities = {
   checks: [{ id: "npm:.:test", kind: "test", argv: ["npm", "test"], cwd: "." }],
@@ -70,20 +70,7 @@ function prompts(): Record<string, string> {
       plan,
       decision,
       "c1",
-      {
-        summary: "Characterization",
-        testPaths: ["test/value.characterization.test.ts"],
-        fixturePaths: [],
-        targetedCommand: {
-          name: "test",
-          argv: ["npm", "test"],
-          cwd: ".",
-          purpose: "Characterize",
-        },
-        expectedBaselineOutcome: "pass",
-        expectedFailure: "No failure expected.",
-        protectedPaths: ["test/value.characterization.test.ts"],
-      },
+      validHarness({ summary: "Characterization" }),
       ["test"],
       capabilities,
     ),
@@ -127,7 +114,9 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   assert.match(values.planner ?? "", /critical risk in riskMitigation/u);
   assert.match(values.judge ?? "", /strongest executable evidence/u);
   assert.match(values["test-author:characterization"] ?? "", /characterization harness/u);
+  assert.match(values["test-author:characterization"] ?? "", /non-interference/u);
   assert.match(values["test-author:change"] ?? "", /same Test Author from accepted C1/u);
+  assert.match(values["test-author:change"] ?? "", /partial failure/u);
   assert.match(
     values["test-author:change"] ?? "",
     /stop rather than invent an unsupported oracle/iu,

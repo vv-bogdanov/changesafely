@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
-import { validContract, validEvidence, validPlan } from "../support/artifacts.js";
+import type { HarnessArtifact } from "../../src/schemas.js";
+import { validContract, validEvidence, validHarness, validPlan } from "../support/artifacts.js";
 
 interface Message {
   id?: number | string;
@@ -34,6 +35,56 @@ interface FunctionalTarget {
   sources: Array<{ path: string; implementation: string }>;
   tests: Array<{ path: string; content: string }>;
   checks: Array<{ name: string; argv: string[]; cwd: string; purpose: string }>;
+}
+
+function harnessChecks(
+  paths: string[],
+  kind: "characterization" | "change",
+  sourcePath: string,
+): HarnessArtifact["checks"] {
+  return paths.map((testPath, index) => ({
+    id: `CHK-${kind === "characterization" ? "C" : "T"}${index + 1}`,
+    kind,
+    testPath,
+    coveredCriteriaIds: kind === "change" || mode === "refactor" ? ["AC1"] : [],
+    coveredInvariantIds: kind === "characterization" ? ["INV1"] : [],
+    coveredRiskIds: kind === "characterization" ? ["R1"] : [],
+    observable:
+      kind === "characterization"
+        ? "The existing public boundary remains available."
+        : "The requested behavior is observable.",
+    evidenceBasis: [
+      {
+        source: kind === "change" ? ("task" as const) : ("preservation" as const),
+        detail:
+          kind === "change"
+            ? "The requested behavior is explicit in the task."
+            : "The existing public boundary must be preserved.",
+        references:
+          kind === "change"
+            ? []
+            : [{ path: sourcePath, detail: "Existing public behavior boundary." }],
+      },
+    ],
+    expectedBaselineOutcome: kind === "characterization" ? ("pass" as const) : ("fail" as const),
+    failureBoundary: "",
+    nonInterferenceTarget: "",
+  }));
+}
+
+function noSharedState(sourcePath: string): HarnessArtifact["nonInterference"] {
+  return {
+    status: "not-applicable",
+    targets: [],
+    checkIds: [],
+    evidenceBasis: [
+      {
+        source: "repository",
+        detail: "The fixture has no shared state or distinct operation identities.",
+        references: [{ path: sourcePath, detail: "Single local behavior boundary." }],
+      },
+    ],
+  };
 }
 
 function characterizationPath(path: string): string {
@@ -470,15 +521,19 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       }
       const targeted = target.checks[0];
       if (!targeted) throw new Error("Functional target requires one check");
-      return {
+      const testPaths = target.tests.map((item) => characterizationPath(item.path));
+      const sourcePath = target.sources[0]?.path ?? "src/value.ts";
+      return validHarness({
         summary: "Added baseline-green characterization tests.",
-        testPaths: target.tests.map((item) => characterizationPath(item.path)),
+        testPaths,
         fixturePaths: [],
         targetedCommand: targeted,
         expectedBaselineOutcome: "pass",
         expectedFailure: "No failure expected; the baseline behavior must pass.",
-        protectedPaths: target.tests.map((item) => characterizationPath(item.path)),
-      };
+        checks: harnessChecks(testPaths, "characterization", sourcePath),
+        nonInterference: noSharedState(sourcePath),
+        protectedPaths: testPaths,
+      });
     }
     await mkdir("test", { recursive: true });
     await writeFile(
@@ -489,20 +544,20 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     if (mode === "characterization-production") {
       await writeFile("src/value.ts", "export const value = 2;\n", "utf8");
     }
-    return {
+    const characterization = validHarness({
       summary: "Added a baseline-green characterization test.",
-      testPaths: ["test/value.characterization.test.ts"],
-      fixturePaths: [],
-      targetedCommand: {
-        name: "targeted characterization",
-        argv: ["npm", "test"],
-        cwd: ".",
-        purpose: "Prove existing behavior on baseline",
-      },
-      expectedBaselineOutcome: "pass",
-      expectedFailure: "No failure expected; the baseline behavior must pass.",
-      protectedPaths: ["test/value.characterization.test.ts"],
-    };
+      checks: harnessChecks(
+        ["test/value.characterization.test.ts"],
+        "characterization",
+        "src/value.ts",
+      ),
+    });
+    if (mode === "invalid-harness-mapping") {
+      const check = characterization.checks[0];
+      if (!check) throw new Error("Fixture characterization check is missing");
+      check.coveredInvariantIds = [];
+    }
+    return characterization;
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:test-author:change]")) {
     if (mode === "delay-change") {
@@ -517,15 +572,19 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       }
       const targeted = target.checks[0];
       if (!targeted) throw new Error("Functional target requires one check");
-      return {
+      const testPaths = target.tests.map((item) => item.path);
+      const sourcePath = target.sources[0]?.path ?? "src/value.ts";
+      return validHarness({
         summary: "Added failing acceptance tests in the declared test roots.",
-        testPaths: target.tests.map((item) => item.path),
+        testPaths,
         fixturePaths: [],
         targetedCommand: targeted,
         expectedBaselineOutcome: "fail",
         expectedFailure: "Expected the requested value",
-        protectedPaths: target.tests.map((item) => item.path),
-      };
+        checks: harnessChecks(testPaths, "change", sourcePath),
+        nonInterference: noSharedState(sourcePath),
+        protectedPaths: testPaths,
+      });
     }
     await mkdir("test", { recursive: true });
     await writeFile(
@@ -536,7 +595,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
     if (mode === "rewrite-characterization") {
       await writeFile("test/value.characterization.test.ts", "// weakened C1\n", "utf8");
     }
-    return {
+    return validHarness({
       summary: "Added a failing acceptance test for the requested value.",
       testPaths: ["test/value.test.ts"],
       fixturePaths: [],
@@ -548,8 +607,9 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       },
       expectedBaselineOutcome: "fail",
       expectedFailure: "Expected values to be strictly equal",
+      checks: harnessChecks(["test/value.test.ts"], "change", "src/value.ts"),
       protectedPaths: ["test/value.test.ts"],
-    };
+    });
   }
   if (prompt.includes("[CHANGESAFELY_ROLE:implementer]")) {
     if (target) {

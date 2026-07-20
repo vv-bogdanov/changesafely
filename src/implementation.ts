@@ -22,6 +22,7 @@ import {
   diffFrom,
   hashFiles,
 } from "./git.js";
+import { evaluateHarnessEvidence } from "./harness-evidence.js";
 import { type ProgressReporter, reportProgress } from "./progress.js";
 import { implementerPrompt, repairPrompt, verifierPrompt } from "./prompts.js";
 import { implementationReport } from "./report.js";
@@ -275,6 +276,14 @@ export async function runImplementationAndVerification(
   const selectedPlanKey = parsePlanArtifactKey(decision.winnerPlanId);
   const harness = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
   const harnessCommandEvidence = (await loadVerifiedArtifact(repoPath, state, "commands")).payload;
+  const harnessGate = evaluateHarnessEvidence(contract, plan, harness, { final: true });
+  if (harnessGate.length > 0) {
+    throw implementationError(
+      "HARNESS_EVIDENCE_INCOMPLETE",
+      harnessGate.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
+      2,
+    );
+  }
   if (harness.testCommit !== state.testCommit) {
     throw implementationError("HARNESS_COMMIT_MISMATCH", "Harness artifact does not match T1", 2);
   }

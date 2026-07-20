@@ -231,9 +231,10 @@ Runs are stored under `.changesafely/runs/<run-id>/`:
 - `evidence.json`, `contract.json`, `plans/*.json`, `eligibility.json`, and
   `decision.json`: the read-only plan tournament.
 - `characterization.json` and `characterization-commands.json`: protected C1 paths and
-  baseline-green evidence.
+  baseline-green evidence, including stable check-to-invariant and risk mappings.
 - `harness.json` and `commands.json`: the final protected C1/T1 union and its expected baseline
-  outcome.
+  outcome. Artifact v4 binds every declared observation to a protected test path, grounded
+  assertion basis, contract IDs, and applicable failure or non-interference boundary.
 - `implementation.json`, optional `repair.json`, command evidence, and
   `verification.json`: the actual change and independent verdict.
 - `report.md`: concise outcome, residual risks, and next action.

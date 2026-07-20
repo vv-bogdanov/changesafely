@@ -39,7 +39,8 @@ the actual diff and deterministic results and cannot inherit Implementer history
    eligibility rules, and asks the Judge to select one eligible plan.
 2. `harness.ts` revalidates B0, creates the ChangeSafely branch, forks Test Author, proves and
    commits baseline-green C1, then resumes that thread to add baseline-red T1 when behavior
-   changes. It protects the union of both stages.
+   changes. It protects the union of both stages. `harness-evidence.ts` rejects incomplete or
+   invalid check relationships before either a harness commit or the Implementer fork.
 3. `implementation.ts` forks Implementer, validates actual paths, commits I1, runs
    deterministic checks, and forks an independent Verifier. One local repair may
    resume the same Implementer before a fresh Verifier fork.
@@ -59,6 +60,8 @@ task -> evidence -> contract -> plans -> eligibility -> decision
 - Versioned state and artifact contracts with named predecessor hashes.
 - TypeBox contracts used as both inferred TypeScript types and locally compiled JSON Schemas.
 - Structured command argv, real exit codes, timeouts, and bounded output.
+- Stable executable check IDs mapped to acceptance criteria, protected invariants, critical risks,
+  grounded assertion evidence, and explicit non-interference applicability.
 - Explicit App Server thread ids, turn ids, parent C0 id, and checkpoint turn id.
 
 Model statements are proposals or findings, never sufficient proof of success.

@@ -6,7 +6,8 @@ import { ChangeSafelyError } from "./errors.js";
 
 export const RUN_STATE_VERSION = 1;
 export const LEGACY_ARTIFACT_VERSION = 2;
-export const ARTIFACT_VERSION = 3;
+export const PREVIOUS_ARTIFACT_VERSION = 3;
+export const ARTIFACT_VERSION = 4;
 
 type Mutable<Value> = Value extends readonly (infer Item)[]
   ? Mutable<Item>[]
@@ -233,6 +234,38 @@ export const harnessArtifactSchema = strictObject({
   targetedCommand: commandSchema,
   expectedBaselineOutcome: stringEnum("fail", "pass"),
   expectedFailure: Type.String({ minLength: 1, maxLength: 400 }),
+  checks: Type.Array(
+    strictObject({
+      id: identifierSchema,
+      kind: stringEnum("characterization", "change"),
+      testPath: stringSchema,
+      coveredCriteriaIds: Type.Array(identifierSchema, { maxItems: HIGH_RISK_ITEM_LIMIT }),
+      coveredInvariantIds: Type.Array(identifierSchema, { maxItems: HIGH_RISK_ITEM_LIMIT }),
+      coveredRiskIds: Type.Array(identifierSchema, { maxItems: HIGH_RISK_ITEM_LIMIT }),
+      observable: narrativeSchema,
+      evidenceBasis: evidenceBasisListSchema,
+      expectedBaselineOutcome: stringEnum("fail", "pass"),
+      failureBoundary: optionalNarrativeSchema,
+      nonInterferenceTarget: optionalNarrativeSchema,
+    }),
+    { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT * 2 },
+  ),
+  nonInterference: strictObject({
+    status: stringEnum("applicable", "not-applicable", "unknown"),
+    targets: stringArraySchema,
+    checkIds: Type.Array(identifierSchema, { maxItems: HIGH_RISK_PATH_LIMIT * 2 }),
+    evidenceBasis: evidenceBasisListSchema,
+  }),
+  protectedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT }),
+});
+
+const previousHarnessArtifactSchema = strictObject({
+  summary: stringSchema,
+  testPaths: Type.Array(stringSchema, { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT }),
+  fixturePaths: stringArraySchema,
+  targetedCommand: commandSchema,
+  expectedBaselineOutcome: stringEnum("fail", "pass"),
+  expectedFailure: Type.String({ minLength: 1, maxLength: 400 }),
   protectedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT }),
 });
 
@@ -369,6 +402,7 @@ const artifactEnvelopeSchema = strictObject({
   meta: strictObject({
     artifactVersion: Type.Union([
       Type.Literal(LEGACY_ARTIFACT_VERSION),
+      Type.Literal(PREVIOUS_ARTIFACT_VERSION),
       Type.Literal(ARTIFACT_VERSION),
     ]),
     producerVersion: Type.String({ minLength: 1, maxLength: 255 }),
@@ -440,8 +474,20 @@ const storedHarnessArtifactSchema = strictObject({
   testCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
 });
 
+const previousStoredHarnessArtifactSchema = strictObject({
+  ...previousHarnessArtifactSchema.properties,
+  protectedHashes: protectedHashesSchema,
+  testCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+});
+
 const storedCharacterizationArtifactSchema = strictObject({
   ...harnessArtifactSchema.properties,
+  protectedHashes: protectedHashesSchema,
+  characterizationCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+});
+
+const previousStoredCharacterizationArtifactSchema = strictObject({
+  ...previousHarnessArtifactSchema.properties,
   protectedHashes: protectedHashesSchema,
   characterizationCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
 });
@@ -573,6 +619,14 @@ const validateLegacyDetailedPlan = compileArtifactValidator(
   "legacy detailed plan",
   legacyDetailedPlanSchema,
 );
+const validatePreviousStoredHarnessArtifact = compileArtifactValidator(
+  "previous stored harness artifact",
+  previousStoredHarnessArtifactSchema,
+);
+const validatePreviousStoredCharacterizationArtifact = compileArtifactValidator(
+  "previous stored characterization artifact",
+  previousStoredCharacterizationArtifactSchema,
+);
 
 function migratedEvidenceBasis() {
   return [
@@ -701,6 +755,53 @@ export const validateStoredCharacterizationArtifact = compileArtifactValidator(
   "stored characterization artifact",
   storedCharacterizationArtifactSchema,
 );
+
+function legacyHarnessEvidence(testPath: string, expectedBaselineOutcome: "fail" | "pass") {
+  return {
+    checks: [],
+    nonInterference: {
+      status: "unknown" as const,
+      targets: [],
+      checkIds: [],
+      evidenceBasis: [
+        {
+          source: "repository" as const,
+          detail:
+            "The previous artifact format did not record check mappings or non-interference applicability.",
+          references: [{ path: testPath, detail: "Previously protected harness path." }],
+        },
+      ],
+    },
+    expectedBaselineOutcome,
+  };
+}
+
+function firstHarnessPath(harness: { testPaths: string[]; protectedPaths: string[] }): string {
+  const path = harness.testPaths[0] ?? harness.protectedPaths[0];
+  if (!path) throw new Error("Validated previous harness has no protected test path");
+  return path;
+}
+
+export function validatePersistedStoredHarnessArtifact(value: unknown, artifactVersion: number) {
+  if (artifactVersion === ARTIFACT_VERSION) return validateStoredHarnessArtifact(value);
+  const previous = validatePreviousStoredHarnessArtifact(value);
+  return {
+    ...previous,
+    ...legacyHarnessEvidence(firstHarnessPath(previous), previous.expectedBaselineOutcome),
+  } as StoredHarnessArtifact;
+}
+
+export function validatePersistedStoredCharacterizationArtifact(
+  value: unknown,
+  artifactVersion: number,
+) {
+  if (artifactVersion === ARTIFACT_VERSION) return validateStoredCharacterizationArtifact(value);
+  const previous = validatePreviousStoredCharacterizationArtifact(value);
+  return {
+    ...previous,
+    ...legacyHarnessEvidence(firstHarnessPath(previous), previous.expectedBaselineOutcome),
+  } as StoredCharacterizationArtifact;
+}
 export const validateStoredImplementationArtifact = compileArtifactValidator(
   "stored implementation artifact",
   storedImplementationArtifactSchema,

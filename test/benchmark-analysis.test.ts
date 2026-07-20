@@ -18,6 +18,7 @@ import {
   snapshotAttempt,
 } from "../bench/src/repository.js";
 import { ARTIFACT_VERSION } from "../src/schemas.js";
+import { validHarness } from "./support/artifacts.js";
 import { benchmarkComparisonContent, benchmarkRunDocument } from "./support/benchmark.js";
 
 const projectRoot = process.cwd();
@@ -66,18 +67,11 @@ test("evaluates candidate tests against reference and mutants, then replays one 
           inputs: {},
         },
         payload: {
-          summary: "Synthetic protected harness",
-          testPaths: ["test/candidate-mutation.test.ts"],
-          fixturePaths: [],
-          targetedCommand: {
-            name: "test",
-            argv: ["npm", "test"],
-            cwd: ".",
-            purpose: "Run candidate tests",
-          },
-          expectedBaselineOutcome: "fail",
-          expectedFailure: "Missing idempotency",
-          protectedPaths: ["test/candidate-mutation.test.ts"],
+          ...validHarness({
+            summary: "Synthetic protected harness",
+            testPaths: ["test/candidate-mutation.test.ts"],
+            protectedPaths: ["test/candidate-mutation.test.ts"],
+          }),
           protectedHashes: { "test/candidate-mutation.test.ts": "f".repeat(64) },
           testCommit: run.snapshotCommit,
         },

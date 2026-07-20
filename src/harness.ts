@@ -24,6 +24,7 @@ import {
   hashFiles,
   inspectBaseline,
 } from "./git.js";
+import { evaluateHarnessEvidence } from "./harness-evidence.js";
 import { type ProgressReporter, reportProgress } from "./progress.js";
 import { changeHarnessPrompt, testAuthorPrompt } from "./prompts.js";
 import {
@@ -99,6 +100,38 @@ function harnessError(code: string, message: string, exitCode: 1 | 2 = 1): Chang
     exitCode,
     nextAction: "Inspect the Test Author evidence and start a new run after fixing the cause.",
   });
+}
+
+function assertHarnessEvidence(
+  context: HarnessContext,
+  harness: HarnessArtifact,
+  options: { stage?: "characterization" | "change"; final?: boolean },
+): void {
+  const failures = evaluateHarnessEvidence(context.contract, context.plan, harness, options);
+  if (failures.length > 0) {
+    throw harnessError(
+      "HARNESS_EVIDENCE_INCOMPLETE",
+      failures.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
+      2,
+    );
+  }
+}
+
+function mergeNonInterference(
+  characterization: HarnessArtifact,
+  change: HarnessArtifact,
+): HarnessArtifact["nonInterference"] {
+  const applicable = [characterization, change].filter(
+    (artifact) => artifact.nonInterference.status === "applicable",
+  );
+  return {
+    status: applicable.length > 0 ? "applicable" : "not-applicable",
+    targets: unique(applicable.flatMap((artifact) => artifact.nonInterference.targets)),
+    checkIds: unique(applicable.flatMap((artifact) => artifact.nonInterference.checkIds)),
+    evidenceBasis: [characterization, change].flatMap((artifact) =>
+      artifact.nonInterference.evidenceBasis.slice(0, 1),
+    ),
+  };
 }
 
 function selectedTestPaths(plan: DetailedPlan, capabilities: RepositoryCapabilities): string[] {
@@ -461,7 +494,12 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
       trace: store.trace,
     });
     const stage = await validateStageChanges(context, characterization);
-    const command = await runStageCommand(context, characterization, "pass");
+    const normalized = { ...characterization, protectedPaths: stage.protectedPaths };
+    assertHarnessEvidence(context, normalized, {
+      stage: "characterization",
+      final: context.contract.changeKind === "refactor",
+    });
+    const command = await runStageCommand(context, normalized, "pass");
     const characterizationCommit = await commitPaths(
       repoPath,
       stage.changedPaths,
@@ -475,7 +513,6 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
       role: "test-author:characterization",
       commit: characterizationCommit,
     });
-    const normalized = { ...characterization, protectedPaths: stage.protectedPaths };
     const protectedHashes = await hashFiles(repoPath, stage.protectedPaths);
     const stored = await store.writeArtifact(
       "characterization",
@@ -625,7 +662,19 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
     });
     const c1Paths = Object.keys(characterization.protectedHashes);
     const stage = await validateStageChanges(context, change, c1Paths);
-    const command = await runStageCommand(context, change, "fail");
+    const normalizedChange = { ...change, protectedPaths: stage.protectedPaths };
+    assertHarnessEvidence(context, normalizedChange, { stage: "change" });
+    const finalHarness: HarnessArtifact = {
+      ...normalizedChange,
+      summary: `${characterization.summary} ${change.summary}`,
+      testPaths: unique([...characterization.testPaths, ...change.testPaths]),
+      fixturePaths: unique([...characterization.fixturePaths, ...change.fixturePaths]),
+      checks: [...characterization.checks, ...change.checks],
+      nonInterference: mergeNonInterference(characterization, change),
+      protectedPaths: unique([...c1Paths, ...stage.protectedPaths]),
+    };
+    assertHarnessEvidence(context, finalHarness, { final: true });
+    const command = await runStageCommand(context, normalizedChange, "fail");
     const testCommit = await commitPaths(
       repoPath,
       stage.changedPaths,
@@ -639,13 +688,6 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
       role: "test-author:change",
       commit: testCommit,
     });
-    const finalHarness: HarnessArtifact = {
-      ...change,
-      summary: `${characterization.summary} ${change.summary}`,
-      testPaths: unique([...characterization.testPaths, ...change.testPaths]),
-      fixturePaths: unique([...characterization.fixturePaths, ...change.fixturePaths]),
-      protectedPaths: unique([...c1Paths, ...stage.protectedPaths]),
-    };
     return await persistFinalHarness(context, finalHarness, testCommit, command);
   } catch (error) {
     const failure = abortReason(options.signal, error);

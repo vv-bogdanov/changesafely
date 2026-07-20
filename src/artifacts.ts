@@ -12,6 +12,7 @@ import { ChangeSafelyError } from "./errors.js";
 import {
   ARTIFACT_VERSION,
   LEGACY_ARTIFACT_VERSION,
+  PREVIOUS_ARTIFACT_VERSION,
   RUN_STATE_VERSION,
   type RunState,
   validateArtifactEnvelope,
@@ -24,7 +25,10 @@ export type { RunState } from "./schemas.js";
 
 export interface ArtifactEnvelope<T> {
   meta: {
-    artifactVersion: typeof ARTIFACT_VERSION | typeof LEGACY_ARTIFACT_VERSION;
+    artifactVersion:
+      | typeof ARTIFACT_VERSION
+      | typeof PREVIOUS_ARTIFACT_VERSION
+      | typeof LEGACY_ARTIFACT_VERSION;
     producerVersion: string;
     runId: string;
     baselineCommit: string;
@@ -113,7 +117,11 @@ function assertStateVersion(value: unknown): void {
 
 function assertArtifactVersion(value: unknown): void {
   const actual = property(property(value, "meta"), "artifactVersion");
-  if (actual !== ARTIFACT_VERSION && actual !== LEGACY_ARTIFACT_VERSION) {
+  if (
+    actual !== ARTIFACT_VERSION &&
+    actual !== PREVIOUS_ARTIFACT_VERSION &&
+    actual !== LEGACY_ARTIFACT_VERSION
+  ) {
     throw new PersistedVersionError("UNSUPPORTED_ARTIFACT_VERSION", actual, ARTIFACT_VERSION);
   }
 }

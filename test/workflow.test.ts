@@ -299,6 +299,29 @@ test("rejects production changes in C1 and rewrites of protected C1 during T1", 
   }
 });
 
+test("blocks an invalid invariant mapping before the characterization commit", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "invalid-harness-mapping");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value.",
+    plannerCount: 1,
+    clientFactory,
+  });
+
+  await assert.rejects(
+    runHarness({ repoPath, runId: planning.runId, clientFactory }),
+    /MISSING_HARNESS_INVARIANT/u,
+  );
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.phase, "test-author-failed");
+  assert.equal(state.characterizationCommit, "");
+  assert.equal(
+    state.contexts.some((entry) => entry.role === "implementer"),
+    false,
+  );
+});
+
 test("accepts language-neutral nonempty failure output for a red harness", async (t) => {
   const testScript =
     "node -e \"const fs=require('node:fs'); const harness=fs.existsSync('test/value.test.ts'); const implemented=fs.readFileSync('src/value.ts','utf8').includes('= 2'); if(harness && !implemented){console.error('custom domain mismatch');process.exit(1)}\"";

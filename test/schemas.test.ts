@@ -9,16 +9,19 @@ import {
   harnessArtifactSchema,
   implementationArtifactSchema,
   LEGACY_ARTIFACT_VERSION,
+  PREVIOUS_ARTIFACT_VERSION,
   smokeArtifactSchema,
   validateChangeContract,
   validateCommandEvidenceList,
   validateDetailedPlan,
+  validateHarnessArtifact,
   validatePersistedDetailedPlan,
+  validatePersistedStoredHarnessArtifact,
   validatePlanEligibilityList,
   validateSmokeArtifact,
   verificationArtifactSchema,
 } from "../src/schemas.js";
-import { validContract, validPlan } from "./support/artifacts.js";
+import { validContract, validHarness, validPlan } from "./support/artifacts.js";
 
 test("accepts a valid structured artifact", () => {
   assert.deepEqual(validateSmokeArtifact({ kind: "smoke", message: "ready" }), {
@@ -167,6 +170,33 @@ test("normalizes legacy plan unknowns through the artifact v2 compatibility path
 
   assert.equal(migrated.risks[0]?.id, "PR1");
   assert.equal(migrated.unknowns[0]?.resolutionStatus, "unresolved");
+});
+
+test("reads previous harness evidence as explicitly unmapped", () => {
+  const current = validHarness();
+  const previous = {
+    summary: current.summary,
+    testPaths: current.testPaths,
+    fixturePaths: current.fixturePaths,
+    targetedCommand: current.targetedCommand,
+    expectedBaselineOutcome: current.expectedBaselineOutcome,
+    expectedFailure: current.expectedFailure,
+    protectedPaths: current.protectedPaths,
+    protectedHashes: { "test/value.characterization.test.ts": "a".repeat(64) },
+    testCommit: "b".repeat(40),
+  };
+
+  const migrated = validatePersistedStoredHarnessArtifact(previous, PREVIOUS_ARTIFACT_VERSION);
+  assert.deepEqual(migrated.checks, []);
+  assert.equal(migrated.nonInterference.status, "unknown");
+});
+
+test("rejects harness assertions without a grounded evidence basis", () => {
+  const artifact = structuredClone(validHarness()) as Record<string, unknown> & {
+    checks: Array<Record<string, unknown>>;
+  };
+  delete artifact.checks[0]?.evidenceBasis;
+  assert.throws(() => validateHarnessArtifact(artifact), ArtifactValidationError);
 });
 
 function assertStrictObjectPropertiesRequired(value: unknown): void {

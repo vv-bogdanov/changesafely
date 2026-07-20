@@ -120,21 +120,35 @@ export function artifactDefinition<Key extends ArtifactKey>(
   key: Key,
   artifactVersion = Schema.ARTIFACT_VERSION,
 ): ArtifactDefinition<ArtifactPayload<Key>> {
-  const legacy = artifactVersion === Schema.LEGACY_ARTIFACT_VERSION;
+  const legacyContract = artifactVersion === Schema.LEGACY_ARTIFACT_VERSION;
   if (isPlanArtifactKey(key)) {
     return {
       path: artifactPath(key),
-      validate: legacy
+      validate: legacyContract
         ? (value) => Schema.validatePersistedDetailedPlan(value, Schema.LEGACY_ARTIFACT_VERSION)
         : Schema.validateDetailedPlan,
     } as ArtifactDefinition<ArtifactPayload<Key>>;
   }
   const staticKey = key as StaticArtifactKey;
+  let validate = validators[staticKey] as Validator<ArtifactPayload<Key>>;
+  if (legacyContract && staticKey === "contract") {
+    validate = ((value: unknown) =>
+      Schema.validatePersistedChangeContract(value, Schema.LEGACY_ARTIFACT_VERSION)) as Validator<
+      ArtifactPayload<Key>
+    >;
+  } else if (staticKey === "harness") {
+    validate = ((value: unknown) =>
+      Schema.validatePersistedStoredHarnessArtifact(value, artifactVersion)) as Validator<
+      ArtifactPayload<Key>
+    >;
+  } else if (staticKey === "characterization") {
+    validate = ((value: unknown) =>
+      Schema.validatePersistedStoredCharacterizationArtifact(value, artifactVersion)) as Validator<
+      ArtifactPayload<Key>
+    >;
+  }
   return {
     path: artifactPath(key),
-    validate: (legacy && staticKey === "contract"
-      ? (value: unknown) =>
-          Schema.validatePersistedChangeContract(value, Schema.LEGACY_ARTIFACT_VERSION)
-      : validators[staticKey]) as Validator<ArtifactPayload<Key>>,
+    validate,
   };
 }

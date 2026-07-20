@@ -43,6 +43,9 @@ operating-system sandbox.
   schema-validated artifacts rather than hidden transcripts.
 - Only one writer runs at a time. C1 and optional T1 are committed before production code, and
   every protected path from both stages is hash-checked through implementation and verification.
+- Harness artifact v4 requires grounded executable check mappings for every protected invariant,
+  acceptance criterion, and critical contract or plan risk. Applicable shared-state isolation must
+  name both its target and executable checks; unresolved applicability blocks implementation.
 - Repository commands use structured argv, `shell: false`, a sanitized environment,
   timeouts, bounded captured output, an allowlist, and a network-disabled Codex
   sandbox. Real exit codes are persisted.
