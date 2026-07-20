@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build a minimal, complete developer tool that considers several approaches before changing code, creates the missing safety net, implements one selected plan, and independently verifies the actual result.
+Build a minimal, complete high-assurance developer tool for risky changes. It considers several approaches before changing code, creates the missing safety net, implements one selected plan, and independently verifies the actual result. Low-assurance and vibe-coding workflows are outside the product.
 
 Primary specification: [`CHANGESAFELY_SPEC.md`](./CHANGESAFELY_SPEC.md).
 Recorded decisions: [`ARCHITECTURE_DECISIONS.md`](./ARCHITECTURE_DECISIONS.md).
@@ -25,11 +25,15 @@ In order of importance:
 - During iteration, run the smallest relevant set of checks; the full release suite is required only at a release boundary.
 - Documentation-only and metadata-only changes do not require artificial tests.
 - Create a separate verified commit after each completed phase, without mixing in user changes.
+- Keep phase commits local. Do not push after every phase unless the user explicitly requests it.
 - Defer release-only gates, branch protection, and additional compatibility matrices until prerelease unless they prevent a current, demonstrated risk.
 
 ## Engineering rules
 
 - Follow KISS, YAGNI, and minimum sufficient change.
+- Inspect and verify the complete relevant impact surface, but keep production writes minimal and
+  precise. A narrow write scope is never a narrow read or verification scope.
+- Search broadly for failure modes, but assert behavior only from the task or repository evidence.
 - Do not add an abstraction layer without current value; isolating an external protocol or a security invariant counts as current value.
 - Prefer the standard library and existing packages, but use a small maintained dependency when it materially reduces owned code or risk.
 - Do not perform broad refactoring that is unnecessary for the current vertical slice.
@@ -50,7 +54,9 @@ In order of importance:
 - Roles exchange schema-validated artifacts, not hidden session state.
 - Git state, artifacts, and deterministic command results are the sources of truth.
 - Parallelism is allowed only for read-only work; write phases are strictly sequential.
-- A protected safety harness is created before any production-code change.
+- A protected baseline-green characterization harness is created before any production-code
+  change. A separate baseline-red change harness is added when the task intentionally changes
+  behavior.
 - Only one selected plan is implemented.
 - Production deployment, destructive migrations, worktree management, MCP, web UI, and a GitHub App are outside the MVP.
 
@@ -60,14 +66,17 @@ In order of importance:
 - Do not commit user changes.
 - Existing dirty state is allowed while developing ChangeSafely: identify it first and leave changes owned by others untouched.
 - For target-repository runtime, preserve the baseline commit, block the write phase when tracked state is dirty, and create a branch only after read-only planning.
-- At runtime, preserve the safety harness and implementation as separate commits.
+- At runtime, preserve characterization, change-harness when applicable, and implementation
+  boundaries as separate commits.
 - Do not rewrite user history without an explicit request.
 
 ## Tests and checks
 
-- Prove the happy path first, then expand risk coverage.
+- Treat every target task as high risk. Cover the happy path, protected invariants, side effects,
+  failures, isolation, and applicable temporal behavior before implementation.
 - Every behavioral defect should receive a regression test when reasonably practical.
-- Test Author creates protected safety tests before implementation.
+- Test Author creates baseline-green characterization tests and, when behavior changes,
+  baseline-red acceptance or regression tests before implementation.
 - Implementer may add tests, but must not weaken protected tests, assertions, or fixtures.
 - Do not commit an accidental `only`; `skip` is allowed only for a real, explicitly identified platform or opt-in condition. Do not weaken assertions or use excessive mocks to manufacture success.
 - The deterministic runner executes target-repository commands; ChangeSafely developers run project scripts directly.

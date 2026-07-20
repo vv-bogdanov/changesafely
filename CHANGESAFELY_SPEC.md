@@ -1,6 +1,7 @@
 # ChangeSafely - technical specification for a coding agent
 
-**Status:** accepted initial specification for the PoC and MVP; retained as a design record
+**Status:** accepted high-assurance MVP specification; implementation evolves through separately
+verified local phase commits
 
 **Project:** ChangeSafely
 **Track:** OpenAI Build Week - Developer Tools
@@ -66,35 +67,42 @@ ChangeSafely:
 1. explores the repository;
 2. formalizes the task and protected properties;
 3. independently considers several approaches;
-4. selects the minimally sufficient safe plan;
-5. first creates the missing safety net;
-6. implements one selected plan on a separate Git branch;
-7. runs objective checks;
-8. independently compares the actual result with the original task;
-9. delivers a ready branch and report or stops with a concrete reason.
+4. selects the admissible plan with the strongest evidence and lowest unresolved safety risk;
+5. characterizes existing behavior and protected invariants on the baseline;
+6. adds a separate failing regression or acceptance harness when behavior must change;
+7. independently challenges the complete harness before implementation;
+8. implements one selected plan on a separate Git branch with the smallest sufficient production
+   delta;
+9. runs objective checks;
+10. independently tries to falsify the result against the original task;
+11. delivers a ready branch and report or stops with a concrete reason.
 
 ### Short product pitch
 
-> **ChangeSafely explores multiple approaches before touching code, builds the missing safety net, implements the safest minimal plan, and independently verifies the actual change.**
+> **ChangeSafely inspects broadly, builds executable evidence before touching production code,
+> implements the safest minimal plan, and independently tries to falsify the actual change.**
 
 ### Core formula
 
 ```text
 COMPARE BEFORE CODING
-→ TEST BEFORE IMPLEMENTATION
-→ VERIFY AGAINST THE ORIGINAL CONTRACT
+-> CHARACTERIZE AND TEST BEFORE IMPLEMENTATION
+-> VERIFY AGAINST THE ORIGINAL CONTRACT
 ```
 
 ---
 
 ## 3. Target audience
 
-The primary MVP audience:
+The primary MVP audience is developers and teams making high-risk changes:
 
 - developers who use Codex to change existing projects;
 - teams that care about regressions, scope control, and explainable decisions;
 - DevOps engineers who use agents to change configuration and infrastructure code;
 - owners of critical product areas: payments, authentication, permissions, data, and integrations.
+
+Low-risk edits and vibe coding are not target use cases. The workflow's multi-role cost is justified
+only where missed regressions, side effects, isolation defects, or operational failures matter.
 
 The CLI implementation uses **TypeScript / Node.js**. The target repository language is not a
 product invariant: orchestration, artifacts, Git boundaries, and verification do not interpret
@@ -119,9 +127,13 @@ Each planner must propose an independent approach, not a cosmetic variation, and
 
 A shared understanding of the task must be preserved by forking the canonical Codex session, while one actor's intermediate reasoning must not automatically pass to another.
 
-### 4.3. Checks must be created before implementation
+### 4.3. Characterization and change checks must precede implementation
 
-ChangeSafely must first identify what evidence is missing for the selected change and create a protected safety harness before implementing production code.
+ChangeSafely must first identify what evidence is missing for the selected change. It creates a
+baseline-green protected characterization harness for behavior and invariants that must remain
+stable. When behavior intentionally changes, it then creates a separate baseline-red regression or
+acceptance harness. An independent pre-implementation review must accept the combined evidence
+before production code changes.
 
 ### 4.4. Implementation must match the selected scope
 
@@ -162,7 +174,8 @@ The following capabilities are deliberately excluded until the core workflow is 
 - a full CI/CD platform;
 - proof that every possible regression is absent;
 - a complex multi-agent framework or workflow engine;
-- long agent debates and recursive brainstorming trees.
+- long agent debates and recursive brainstorming trees;
+- a low-assurance, fast, or vibe-coding mode.
 
 Do not add these capabilities "for the future" until the core vertical workflow is complete and demonstrated.
 
@@ -214,6 +227,24 @@ Verifier must not inherit the Implementer's reasoning or self-assessment.
 
 The MVP guarantees the ability to return to the original **tracked source code** through the baseline branch or commit. It does not claim to roll back local databases, Docker volumes, queues, external APIs, or production state.
 
+### 6.10. High assurance is the only mode
+
+Every target task is treated as high risk. Cost, latency, and cached-token efficiency are measured
+tradeoffs, not reasons to skip critical evidence or weaken a gate.
+
+### 6.11. Inspect and prove broadly; change narrowly
+
+Read-only roles inspect the complete relevant impact surface, including callers, shared state, side
+effects, failures, temporal behavior, identities, and operational configuration. The production
+write scope remains the smallest set of paths required by the selected plan. A narrow write scope
+must never become a narrow inspection or verification scope.
+
+### 6.12. Search widely; assert conservatively
+
+Roles search broadly for failure modes, but every non-obvious expected behavior must be grounded in
+the task or repository evidence. A critical semantic uncertainty blocks the write phase instead of
+being converted into an unsupported test oracle or a convenient non-goal.
+
 ---
 
 ## 7. Canonical workflow
@@ -235,9 +266,15 @@ BASELINE REVALIDATION
   ↓
 CREATE CHANGESAFELY BRANCH
   ↓
-TEST AUTHOR → PROTECTED SAFETY HARNESS
+TEST AUTHOR → BASELINE-GREEN CHARACTERIZATION
   ↓
-TEST COMMIT (T1)
+CHARACTERIZATION COMMIT (C1)
+  ↓
+OPTIONAL BASELINE-RED CHANGE HARNESS
+  ↓
+CHANGE-HARNESS COMMIT (T1)
+  ↓
+INDEPENDENT HARNESS REVIEW (H1)
   ↓
 IMPLEMENTER
   ↓
@@ -417,7 +454,7 @@ Work continues in the current checkout to preserve the already configured local 
 
 ChangeSafely does not manage worktrees in the MVP. A user or Codex App may run ChangeSafely inside an existing worktree, but the product core must not create and configure one itself.
 
-### 7.8. Test Author and safety harness
+### 7.8. Test Author, characterization, and change harness
 
 Test Author forks from `C0` and receives:
 
@@ -428,18 +465,36 @@ Test Author forks from `C0` and receives:
 
 It does not receive the Implementer transcript and must not tailor checks to the future implementation.
 
-The Test Author's task is to create the minimally sufficient safety net for the selected change.
+The Test Author's task is to build complete risk-driven evidence for the selected change before any
+production edit. It searches across applicable behavior, state, side effects, failures, time, and
+boundaries, but asserts expected behavior only from the task or repository evidence.
 
 Depending on the task type:
 
-- bug fix: a regression test must reproduce the problem on the baseline;
-- feature: an acceptance check must demonstrate that the required behavior is absent;
-- refactoring: characterization tests capture current behavior and pass on the baseline;
+- bug fix: characterization tests first protect unaffected behavior, then a regression test must
+  reproduce the defect on the baseline;
+- feature: characterization tests first protect existing behavior, then an acceptance check must
+  demonstrate that the required behavior is absent;
+- refactoring: characterization tests capture current behavior and protected invariants and pass on
+  the baseline; a red change harness is not required when behavior must remain unchanged;
 - DevOps/configuration: use validation, dry runs, rendered diffs, policy checks, or health checks.
+
+The characterization harness is committed as `C1` only after its registered baseline command
+passes. When the task changes behavior, the same Test Author continues from C1, adds the separate
+red harness, proves its expected baseline failure, and commits it as `T1`. All changed test and
+fixture paths from both stages become protected.
+
+Each critical risk and protected invariant must map to executable functional evidence or a concrete
+blocking gap. Where applicable, the harness checks non-interference, effect count/order/payload,
+partial failure, retry, concurrency, reentrancy, hangs, recovery, input mutation, and state
+isolation. It does not require irrelevant categories or an arbitrary number of tests.
 
 If a sufficient check cannot be created in the available environment, ChangeSafely must return `INSUFFICIENT_VERIFICATION_ENVIRONMENT` rather than generate a meaningless mock for formal success.
 
-After the safety harness is verified, create a separate `T1` commit.
+After C1 and optional T1, an independent Verifier fork from C0 challenges assertion provenance,
+critical-risk coverage, preservation, and plausible green-but-wrong implementations. Test Author
+may perform at most two bounded corrections. Implementation cannot begin until the harness review
+accepts.
 
 Tests and assertions designated as protected are recorded for later verification.
 
@@ -486,7 +541,8 @@ Ordinary CLI code, not the model, runs and records:
 - changes to protected files and instruction sources;
 - the state of protected safety tests.
 
-ChangeSafely must compare the baseline, `T1`, and `I1` to distinguish the safety harness from the implementation.
+ChangeSafely must compare the baseline, `C1`, optional `T1`, and `I1` to distinguish
+characterization, requested behavioral change, and implementation.
 
 The LLM cannot declare verification successful without confirmed command results.
 
@@ -500,7 +556,8 @@ It receives:
 - selected plan;
 - Judge constraints;
 - baseline commit;
-- test commit;
+- characterization commit;
+- optional change-harness commit;
 - implementation commit;
 - actual diff;
 - deterministic command results;
@@ -508,11 +565,16 @@ It receives:
 
 It does not receive the Implementer transcript, self-assessment, or explanation of why the code should be correct.
 
-Verifier answers three questions:
+Verifier tries to falsify the safety claim and answers four questions:
 
 1. Was the original Change Contract satisfied?
 2. Were the stated protected invariants preserved within the available evidence?
 3. Does the actual diff match the selected plan and allowed scope?
+4. Is there a plausible green-but-wrong implementation or uncovered critical risk?
+
+A green suite alone is insufficient. Every acceptance criterion, protected invariant, and critical
+risk must trace to passed deterministic evidence. A residual risk affecting one of them is an error,
+not an accepted warning.
 
 If Verifier finds a local defect within the approved plan, one bounded repair loop may `resume` the same Implementer. After the fix, a new Verifier forks from `C0` and verifies the change again.
 
@@ -548,6 +610,7 @@ Use only when the same actor continues the same hypothesis and scope:
 
 - Planner refines its own plan;
 - Test Author fixes its own invalid harness;
+- Test Author continues from accepted C1 to create T1 and performs bounded harness corrections;
 - Implementer fixes a local error within the selected plan.
 
 ### Forbidden lineage
@@ -755,17 +818,20 @@ This preserves the existing local environment:
 
 ### 10.2. Change history
 
-Minimum target history:
+Target history for a behavior change:
 
 ```text
 B0  baseline commit
  │
- T1  safety harness commit
+ C1  baseline-green characterization commit
+ │
+ T1  baseline-red change-harness commit
  │
  I1  implementation commit
 ```
 
-`T1` must make it possible to see separately which checks were added before implementation.
+For a pure refactor, history may be `B0 -> C1 -> I1`. C1 and T1 must make it possible to review
+preservation evidence and requested behavioral change separately from production code.
 
 ### 10.3. Fingerprint and invalidation
 
@@ -888,7 +954,7 @@ ChangeSafely must:
 - select the minimally sufficient idempotency-aware plan;
 - add tests for timeout, retry, and duplicate effects before implementation;
 - implement the selected change;
-- show two separate commits;
+- show separate characterization, change-harness, and implementation commits;
 - prove completion through real command results;
 - produce a short report understandable in a three-minute video.
 
@@ -909,17 +975,19 @@ The MVP is ready when it demonstrates the following on the golden path:
 7. The Judge gives an explainable choice without a pseudo-precise score.
 8. The baseline is rechecked before the first write.
 9. A separate Git branch is created.
-10. Test Author creates a meaningful safety harness before implementation.
-11. The safety harness is recorded in a separate commit.
-12. Implementer does not inherit a planner transcript.
-13. Protected tests cannot be weakened unnoticed.
-14. Implementation is recorded in a separate commit.
-15. Tests, typecheck/build, and the Git diff are checked deterministically.
-16. Verifier does not inherit the Implementer transcript.
-17. Unexpected scope expansion causes a stop.
-18. The user receives a runnable branch and a clear report.
-19. Judges can install and test the project without rebuilding it from scratch.
-20. The complete core workflow can be demonstrated convincingly in under three minutes.
+10. Test Author creates a baseline-green characterization harness before implementation.
+11. A behavior-changing task also receives a separate baseline-red change harness.
+12. Characterization and change harnesses are recorded in separate commits and independently
+    reviewed before implementation.
+13. Implementer does not inherit a planner transcript.
+14. Protected tests cannot be weakened unnoticed.
+15. Implementation is recorded in a separate commit.
+16. Tests, typecheck/build, and the Git diff are checked deterministically.
+17. Verifier does not inherit the Implementer transcript.
+18. Incomplete critical evidence or unexpected scope expansion causes a stop.
+19. The user receives a runnable branch and a clear assurance report.
+20. Judges can install and test the project without rebuilding it from scratch.
+21. The complete core workflow can be demonstrated convincingly in under three minutes.
 
 ---
 
@@ -987,7 +1055,8 @@ A coding agent must not change the following decisions without explicit agreemen
 8. Roles exchange schema-validated artifacts.
 9. Git, artifacts, and command results are the sources of truth.
 10. Only read-only planners run in parallel; writers are sequential.
-11. A protected safety harness is created before implementation.
+11. A protected baseline-green characterization harness and, when applicable, a separate
+    baseline-red change harness are created and independently reviewed before implementation.
 12. The MVP creates one implementation branch and implements one plan.
 13. ChangeSafely does not perform production deployment or destructive external actions.
 14. Worktree management is outside the MVP.

@@ -80,19 +80,19 @@ This document preserves decisions already made and why they were chosen. When ne
 
 ## AD-13. Formal gates before the LLM Judge
 
-**Decision:** first exclude plans using mandatory criteria, then have the Judge compare eligible plans.
+**Decision:** first exclude plans using mandatory criteria, then have the Judge compare eligible plans. The Judge prefers the admissible plan with the strongest executable evidence and lowest unresolved safety risk; simplicity is a tie-breaker after safety sufficiency.
 
 **Why:** the Judge should not decide alone what can be checked formally. Do not use pseudo-precise numerical scores.
 
-## AD-14. Safety harness before implementation
+## AD-14. Characterization and change harnesses before implementation
 
-**Decision:** a separate Test Author creates protected tests or validation before any production-code change; then a separate commit is created.
+**Decision:** a separate Test Author first creates a protected baseline-green characterization harness in `C1`. When the task intentionally changes behavior, the same Test Author then adds a protected baseline-red acceptance or regression harness in `T1`. A pure refactor may use `C1` as its final safety harness. Both stages complete before any production-code change.
 
-**Why:** tests should verify the contract rather than be tailored to an implementation already written.
+**Why:** characterization proves what must remain intact, while a separate red harness proves the requested delta. Keeping both ahead of implementation prevents tests from being tailored to code already written and avoids mixing preservation evidence with expected failure evidence.
 
 ## AD-15. One write actor
 
-**Decision:** planners may work in parallel; Test Author and Implementer work sequentially.
+**Decision:** planners may work in parallel; the characterization Test Author, change-harness continuation, harness review, and Implementer work sequentially.
 
 **Why:** parallel writes to one checkout create conflicts, unstable state, and complex coordination.
 
@@ -114,11 +114,11 @@ This document preserves decisions already made and why they were chosen. When ne
 
 **Why:** a safety tool must not unilaterally manage a user's uncommitted changes.
 
-## AD-19. Two primary commits
+## AD-19. Separate evidence and implementation commits
 
-**Decision:** `T1` contains the safety harness and `I1` contains the implementation.
+**Decision:** `C1` contains the baseline-green characterization harness, optional `T1` contains the baseline-red change harness, and `I1` contains the implementation. A pure refactor may proceed directly from `C1` to `I1`.
 
-**Why:** this makes the test-first sequence observable and allows separate review of tests and code.
+**Why:** this makes preservation evidence, requested behavioral change, and production code separately observable and reversible.
 
 ## AD-20. Limited rollback guarantee
 
@@ -179,3 +179,42 @@ repository, and keeps runtime/process safety centralized.
 Node/Python polyglot repositories, plus PHP through explicit config, have end-to-end
 fixtures. PHP did not justify a Composer detector. Practical support for additional
 toolchains is claimed only after the corresponding fixture passes.
+
+## AD-27. High assurance is the only product mode
+
+**Decision:** ChangeSafely treats every target task as high risk. It has no reduced-assurance,
+fast, or vibe-coding mode. Model cost and latency are measured, but cannot weaken evidence or
+verification gates.
+
+**Why:** the multi-role workflow has material overhead and differentiated value only when a missed
+regression, side effect, or scope error matters. A cheaper weak mode would blur the product contract
+without serving its intended users.
+
+## AD-28. Broad inspection and proof, narrow production writes
+
+**Decision:** Discovery, planning, Test Author, and Verifier inspect the complete relevant
+behavioral and operational impact surface. The selected plan and Implementer still use the smallest
+sufficient production write scope. A write allowlist never restricts read-only investigation.
+
+**Why:** legacy coupling, shared state, side effects, callers, and operational behavior often live
+outside the obvious edit. Broadening the production diff to match broad analysis would create a
+different risk, so inspection and write scope must remain asymmetric.
+
+## AD-29. Independent harness review before implementation
+
+**Decision:** after C1 and optional T1, reuse the existing Verifier runtime in a fresh read-only C0
+fork to challenge assertion provenance, critical-risk coverage, non-interference evidence, and
+plausible green-but-wrong implementations. Test Author may make at most two bounded corrections.
+Implementation cannot begin until this review accepts the harness.
+
+**Why:** final verification cannot recover safety evidence that was missing before protected tests
+were committed. Reusing Verifier preserves context independence without adding a role framework.
+
+## AD-30. Exhaustive risk search, conservative assertions
+
+**Decision:** roles search broadly across applicable behavior, state, effects, failures, time, and
+boundaries. Every non-obvious expected behavior must be grounded in the task or repository evidence;
+unresolved critical semantics stop the workflow.
+
+**Why:** generic requests for maximal safety can otherwise create invented test oracles. Wide risk
+discovery and strict assertion provenance are both required for a trustworthy harness.

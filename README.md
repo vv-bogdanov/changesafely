@@ -5,9 +5,10 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/vv-bogdanov/changesafely/badge)](https://scorecard.dev/viewer/?uri=github.com/vv-bogdanov/changesafely)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-ChangeSafely is a local TypeScript CLI that compares independent implementation
-plans, creates a protected failing-first safety harness, implements one selected
-plan, and verifies the resulting Git branch from a clean Codex context.
+ChangeSafely is a local TypeScript CLI for high-risk changes. It compares independent
+implementation plans, creates a protected safety harness, implements one selected
+plan, and verifies the resulting Git branch from a clean Codex context. It is not a
+reduced-assurance or vibe-coding mode for routine edits.
 
 The workflow is target-language independent by design. Current model-free end-to-end
 proofs cover prepared npm JavaScript/TypeScript, Python/pytest, config-driven make, and
@@ -23,6 +24,9 @@ stops. Additional toolchains are listed only after a fixture passes.
   Implementer can change production paths. T1 hashes remain protected.
 - **Independent verification.** Verifier forks from C0 rather than inheriting the
   Implementer transcript and receives the actual diff and command evidence.
+- **Broad evidence, narrow change.** Discovery and verification inspect the complete
+  relevant impact surface while the Implementer changes only the smallest approved
+  production surface.
 
 ## Quick Start
 
