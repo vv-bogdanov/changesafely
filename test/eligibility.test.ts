@@ -41,7 +41,7 @@ test("rejects unresolved critical contract uncertainty and duplicate ids", () =>
           critical: true,
           resolutionStatus: "unresolved",
           resolution: "",
-          relatedIds: ["AC1"],
+          relatedIds: ["INV1"],
           evidenceBasis: [
             { source: "task", detail: "The task leaves failure behavior open.", references: [] },
           ],
@@ -53,6 +53,92 @@ test("rejects unresolved critical contract uncertainty and duplicate ids", () =>
   assert.deepEqual(
     result.map((failure) => failure.code),
     ["DUPLICATE_CONTRACT_ID", "UNRESOLVED_CRITICAL_CONTRACT_UNKNOWN"],
+  );
+});
+
+test("accepts natural contract relationship links across known contract ids", () => {
+  const result = evaluateContract(
+    validContract({
+      nonGoals: [
+        {
+          id: "NG1",
+          statement: "Do not change the deployment policy.",
+          evidenceBasis: [
+            { source: "task", detail: "The task is limited to local behavior.", references: [] },
+          ],
+          relatedRiskIds: ["R1"],
+        },
+      ],
+      risks: [
+        {
+          id: "R1",
+          statement: "The local change may need to bound an unknown deployment interaction.",
+          critical: true,
+          resolutionStatus: "unresolved",
+          resolution: "",
+          relatedIds: ["AC1", "INV1", "U1", "NG1"],
+          evidenceBasis: [
+            {
+              source: "repository",
+              detail: "The implementation serves the required and preserved behavior.",
+              references: [{ path: "src/value.ts", detail: "Shared implementation boundary." }],
+            },
+          ],
+        },
+      ],
+      unknowns: [
+        {
+          id: "U1",
+          statement: "The exact deployment topology is not relevant to the local proof.",
+          critical: false,
+          resolutionStatus: "resolved",
+          resolution: "The contract bounds this through R1 and local executable evidence.",
+          relatedIds: ["R1", "NG1"],
+          evidenceBasis: [
+            {
+              source: "repository",
+              detail: "The repository exposes a local behavior boundary.",
+              references: [{ path: "src/value.ts", detail: "Local behavior boundary." }],
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(result, []);
+});
+
+test("rejects unknown and self contract relationship links", () => {
+  const baseRisk = contract.risks[0];
+  assert.ok(baseRisk);
+
+  assert.deepEqual(
+    evaluateContract(
+      validContract({
+        risks: [
+          {
+            ...baseRisk,
+            relatedIds: ["AC1", "MISSING"],
+          },
+        ],
+      }),
+    ).map((failure) => failure.code),
+    ["UNKNOWN_CONTRACT_REFERENCE"],
+  );
+
+  assert.deepEqual(
+    evaluateContract(
+      validContract({
+        risks: [
+          {
+            ...baseRisk,
+            relatedIds: ["R1"],
+          },
+        ],
+      }),
+    ).map((failure) => failure.code),
+    ["SELF_CONTRACT_REFERENCE"],
   );
 });
 
@@ -69,6 +155,140 @@ test("rejects missing critical risk mitigation and unknown coverage ids", () => 
   assert.deepEqual(
     result.failures.map((failure) => failure.code),
     ["MISSING_CRITICAL_RISK_MITIGATION", "UNKNOWN_COVERAGE_ID"],
+  );
+});
+
+test("accepts natural plan relationship links without weakening coverage ids", () => {
+  const linkedContract = validContract({
+    nonGoals: [
+      {
+        id: "NG1",
+        statement: "Do not change deployment policy.",
+        evidenceBasis: [
+          { source: "task", detail: "The task is limited to local behavior.", references: [] },
+        ],
+        relatedRiskIds: ["R1"],
+      },
+    ],
+    unknowns: [
+      {
+        id: "U1",
+        statement: "Deployment topology is not required for the local implementation.",
+        critical: false,
+        resolutionStatus: "resolved",
+        resolution: "The local implementation boundary is enough for this plan.",
+        relatedIds: ["R1", "NG1"],
+        evidenceBasis: [
+          {
+            source: "repository",
+            detail: "The repository exposes the local behavior boundary.",
+            references: [{ path: "src/value.ts", detail: "Local behavior boundary." }],
+          },
+        ],
+      },
+    ],
+  });
+  const linkedPlan = validPlan({
+    risks: [
+      {
+        id: "PR1",
+        statement: "The implementation may affect the locally bounded deployment concern.",
+        critical: false,
+        resolutionStatus: "unresolved",
+        resolution: "",
+        relatedIds: ["R1", "U1", "NG1"],
+        evidenceBasis: [
+          {
+            source: "repository",
+            detail: "The implementation path is shared.",
+            references: [{ path: "src/value.ts", detail: "Planned production edit." }],
+          },
+        ],
+      },
+    ],
+    unknowns: [
+      {
+        id: "PU1",
+        statement: "The plan does not need the exact deployment topology.",
+        critical: false,
+        resolutionStatus: "resolved",
+        resolution: "It is bounded by PR1 and repository-local checks.",
+        relatedIds: ["PR1", "NG1"],
+        evidenceBasis: [
+          {
+            source: "repository",
+            detail: "The planned checks run at the local behavior boundary.",
+            references: [{ path: "test/value.test.ts", detail: "Planned acceptance check." }],
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(evaluatePlan(linkedContract, linkedPlan, capabilities), {
+    planId: "plan-1",
+    eligible: true,
+    failures: [],
+    humanDecisionReasons: [],
+  });
+
+  assert.deepEqual(
+    evaluatePlan(
+      linkedContract,
+      { ...linkedPlan, acceptanceCoverage: [{ id: "U1", strategy: "Not executable coverage." }] },
+      capabilities,
+    ).failures.map((failure) => failure.code),
+    ["MISSING_ACCEPTANCE_COVERAGE", "UNKNOWN_COVERAGE_ID"],
+  );
+});
+
+test("rejects unknown and self plan relationship links", () => {
+  const basePlanRisk = plan.risks[0];
+  assert.ok(basePlanRisk);
+
+  assert.deepEqual(
+    evaluatePlan(
+      contract,
+      {
+        ...plan,
+        risks: [
+          {
+            ...basePlanRisk,
+            relatedIds: ["AC1", "MISSING"],
+          },
+        ],
+      },
+      capabilities,
+    ).failures.map((failure) => failure.code),
+    ["UNKNOWN_PLAN_REFERENCE"],
+  );
+
+  assert.deepEqual(
+    evaluatePlan(
+      contract,
+      {
+        ...plan,
+        unknowns: [
+          {
+            id: "PU1",
+            statement: "The plan unknown points to itself.",
+            critical: false,
+            resolutionStatus: "resolved",
+            resolution: "Invalid relationship fixture.",
+            relatedIds: ["PU1"],
+            evidenceBasis: [
+              {
+                source: "repository",
+                detail: "The implementation has a local boundary.",
+                references: [{ path: "src/value.ts", detail: "Local boundary." }],
+              },
+            ],
+          },
+        ],
+      },
+      capabilities,
+    ).failures.map((failure) => failure.code),
+    ["SELF_PLAN_REFERENCE"],
   );
 });
 

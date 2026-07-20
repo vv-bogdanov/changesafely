@@ -28,6 +28,10 @@ function unknownIds(actual: string[], known: Set<string>): string[] {
   return [...new Set(actual.filter((id) => !known.has(id)))];
 }
 
+function selfRelationship(sourceId: string, actual: string[]): string[] {
+  return actual.includes(sourceId) ? [`${sourceId}->${sourceId}`] : [];
+}
+
 function missingIds(required: string[], covered: string[]): string[] {
   const coverage = new Set(covered);
   return required.filter((id) => !coverage.has(id));
@@ -55,13 +59,12 @@ export function evaluateContract(contract: ChangeContract): EligibilityFailure[]
     );
   }
 
-  const requirementIdSet = new Set(requirementIds);
+  const knownContractIdSet = new Set(allIds);
   const invalidRiskLinks = contract.risks.flatMap((risk) =>
-    unknownIds(risk.relatedIds, requirementIdSet).map((id) => `${risk.id}->${id}`),
+    unknownIds(risk.relatedIds, knownContractIdSet).map((id) => `${risk.id}->${id}`),
   );
-  const knownContractIds = new Set([...requirementIds, ...riskIds]);
   const invalidUnknownLinks = contract.unknowns.flatMap((unknown) =>
-    unknownIds(unknown.relatedIds, knownContractIds).map((id) => `${unknown.id}->${id}`),
+    unknownIds(unknown.relatedIds, knownContractIdSet).map((id) => `${unknown.id}->${id}`),
   );
   const invalidNonGoalLinks = contract.nonGoals.flatMap((nonGoal) =>
     unknownIds(nonGoal.relatedRiskIds, new Set(riskIds)).map((id) => `${nonGoal.id}->${id}`),
@@ -72,6 +75,18 @@ export function evaluateContract(contract: ChangeContract): EligibilityFailure[]
       failures,
       "UNKNOWN_CONTRACT_REFERENCE",
       `Unknown contract relationships: ${invalidLinks.join(", ")}`,
+    );
+  }
+  const selfLinks = [
+    ...contract.risks.flatMap((risk) => selfRelationship(risk.id, risk.relatedIds)),
+    ...contract.unknowns.flatMap((unknown) => selfRelationship(unknown.id, unknown.relatedIds)),
+    ...contract.nonGoals.flatMap((nonGoal) => selfRelationship(nonGoal.id, nonGoal.relatedRiskIds)),
+  ];
+  if (selfLinks.length > 0) {
+    addFailure(
+      failures,
+      "SELF_CONTRACT_REFERENCE",
+      `Contract relationships cannot point to themselves: ${selfLinks.join(", ")}`,
     );
   }
 
@@ -223,10 +238,7 @@ export function evaluatePlan(
       `Plan ids collide with contract ids: ${collidingPlanIds.join(", ")}`,
     );
   }
-  const knownPlanRelationships = new Set([
-    ...knownCoverageIds,
-    ...plan.risks.map((risk) => risk.id),
-  ]);
+  const knownPlanRelationships = new Set([...contractIds, ...planIds]);
   const invalidPlanLinks = [...plan.risks, ...plan.unknowns].flatMap((item) =>
     unknownIds(item.relatedIds, knownPlanRelationships).map((id) => `${item.id}->${id}`),
   );
@@ -235,6 +247,16 @@ export function evaluatePlan(
       failures,
       "UNKNOWN_PLAN_REFERENCE",
       `Unknown plan relationships: ${invalidPlanLinks.join(", ")}`,
+    );
+  }
+  const selfPlanLinks = [...plan.risks, ...plan.unknowns].flatMap((item) =>
+    selfRelationship(item.id, item.relatedIds),
+  );
+  if (selfPlanLinks.length > 0) {
+    addFailure(
+      failures,
+      "SELF_PLAN_REFERENCE",
+      `Plan relationships cannot point to themselves: ${selfPlanLinks.join(", ")}`,
     );
   }
   const incompletePlanRisks = plan.risks.filter(
