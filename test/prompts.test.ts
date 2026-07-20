@@ -155,7 +155,13 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   assert.match(values.contract ?? "", /evidenceBasis/u);
   assert.match(values["contract-correction"] ?? "", /delete a critical unknown/u);
   assert.match(values.planner ?? "", /smallest sufficient production delta/u);
-  assert.match(values.planner ?? "", /critical risk in riskMitigation/u);
+  assert.match(values.planner ?? "", /riskMitigation, id is/u);
+  assert.match(values.planner ?? "", /repository-relative write paths only/u);
+  assert.match(values.planner ?? "", /exact contract item id/u);
+  assert.match(values.planner ?? "", /approvalRequiredChanges empty for guardrails/u);
+  assert.match(values["planner-correction"] ?? "", /missing or unknown coverage ids/u);
+  assert.match(values["planner-correction"] ?? "", /never absolute paths/u);
+  assert.match(values["planner-correction"] ?? "", /plan id collisions/u);
   assert.match(values.judge ?? "", /strongest executable evidence/u);
   assert.match(values["test-author:characterization"] ?? "", /characterization harness/u);
   assert.match(values["test-author:characterization"] ?? "", /non-interference/u);

@@ -105,7 +105,7 @@ export function plannerPrompt(
 
 Objective: as independent planner ${planId}, whose lens is: ${lens}, produce one self-contained admissible plan with the strongest practical evidence and smallest sufficient production delta.
 
-Directions: map every criterion and invariant once and every critical risk in riskMitigation; preserve stable ids and evidence relationships for plan risks and unknowns. Declare all planned write paths and sensitive changes. ${RISK_DIRECTIONS} Select every safety and verification command verbatim by argv and cwd from the capability catalog; safety tests must select kind test. Record only actual new dependencies, migrations, and approval-sensitive changes. Materially apply the assigned lens without expanding scope for variety.
+Directions: use repository-relative write paths only, under allowedPathPrefixes. In acceptanceCoverage, invariantProtection, and riskMitigation, id is the exact contract item id being covered; never invent coverage or mitigation ids. Plan-local risks and unknowns need their own ids that do not collide with contract ids. Declare all planned write paths and sensitive changes. ${RISK_DIRECTIONS} Select every safety and verification command verbatim by argv and cwd from the capability catalog; safety tests must select kind test. Record only actual new dependencies, migrations, and approval-sensitive changes; leave approvalRequiredChanges empty for guardrails, non-changes, and "do not change" constraints. Materially apply the assigned lens without expanding scope for variety.
 
 Boundary: work read-only. Do not edit files, invent command authority, or omit material evidence to fit a schema bound. If the lens cannot produce a safe admissible plan, say why in rejectionReasons rather than disguising the gap.
 
@@ -131,7 +131,7 @@ export function plannerCorrectionPrompt(
 
 Objective: as the same planner ${planId}, whose lens is: ${lens}, correct the rejected artifact once.
 
-Directions: address only the deterministic gate feedback while preserving genuine risks, ids, evidence relationships, and sensitive changes. Questions belong in unknowns with explicit resolution status. Approval-required changes contain only changes this plan actually performs. Commands must remain verbatim catalog argv/cwd values and safety tests must select kind test.
+Directions: address only the deterministic gate feedback while preserving genuine risks, evidence relationships, and sensitive changes. For missing or unknown coverage ids, replace them with exact contract ids from acceptanceCriteria, protectedInvariants, or risks. For outside-scope paths, use repository-relative paths under allowedPathPrefixes, never absolute paths. For plan id collisions, rename only plan-local risks and unknowns and update their internal links. Questions belong in unknowns with explicit resolution status. Approval-required changes contain only changes this plan actually performs; leave them empty for guardrails and non-changes. Commands must remain verbatim catalog argv/cwd values and safety tests must select kind test.
 
 Boundary: work read-only. Do not broaden scope, hide uncertainty, or edit files. If the plan remains unsafe, preserve the blocking reason.
 

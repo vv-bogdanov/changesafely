@@ -24,6 +24,19 @@ function normalizeFailures(failures: EligibilityFailure[]): EligibilityFailure[]
   }));
 }
 
+function isNoOpApprovalGuardrail(change: string): boolean {
+  const normalized = change.trim().toLowerCase();
+  return (
+    normalized.startsWith("no approval") ||
+    normalized.startsWith("no approval-required") ||
+    normalized.startsWith("do not ") ||
+    normalized.startsWith("don't ") ||
+    normalized.startsWith("keep ") ||
+    normalized.startsWith("only modify ") ||
+    normalized.startsWith("implement only ")
+  );
+}
+
 function addFailure(failures: EligibilityFailure[], code: string, message: string): void {
   failures.push({ code, message: truncateEligibilityMessage(message) });
 }
@@ -353,7 +366,7 @@ export function evaluatePlan(
   }
 
   const humanDecisionReasons = [
-    ...plan.approvalRequiredChanges,
+    ...plan.approvalRequiredChanges.filter((change) => !isNoOpApprovalGuardrail(change)),
     ...plan.dependencies.map((item) => `Dependency: ${item}`),
     ...plan.migrations.map((item) => `Migration: ${item}`),
   ];

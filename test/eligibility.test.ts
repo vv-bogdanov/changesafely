@@ -367,6 +367,33 @@ test("requires human approval for a dependency", () => {
   assert.deepEqual(result.humanDecisionReasons, ["Dependency: new-package"]);
 });
 
+test("ignores no-op approval guardrails without hiding real approval changes", () => {
+  const guardrail = evaluatePlan(
+    contract,
+    {
+      ...plan,
+      approvalRequiredChanges: [
+        "No approval-required changes are introduced by this plan.",
+        "Do not alter package.json.",
+        "Keep runtime dependencies unchanged.",
+        "Only modify src/value.ts and test/value.test.ts.",
+        "Implement only the requested local behavior.",
+      ],
+    },
+    capabilities,
+  );
+  assert.equal(guardrail.eligible, true);
+  assert.deepEqual(guardrail.humanDecisionReasons, []);
+
+  const sensitive = evaluatePlan(
+    contract,
+    { ...plan, approvalRequiredChanges: ["Add a new production dependency."] },
+    capabilities,
+  );
+  assert.equal(sensitive.eligible, false);
+  assert.deepEqual(sensitive.humanDecisionReasons, ["Add a new production dependency."]);
+});
+
 test("rejects a safety check that does not execute tests", () => {
   const result = evaluatePlan(
     contract,

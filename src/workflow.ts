@@ -28,6 +28,7 @@ import {
   capabilitiesSha256,
   discoverRepositoryCapabilities,
 } from "./repository-capabilities.js";
+import { normalizeRepositoryPathForRoot } from "./repository-policy.js";
 import {
   completeContext,
   parseRoleArtifact,
@@ -67,6 +68,24 @@ const correctableContractFailureCodes = new Set([
   "INVALID_RISK_RESOLUTION",
   "INVALID_UNKNOWN_RESOLUTION",
 ]);
+
+function normalizePlanRepositoryPaths(plan: DetailedPlan, repoPath: string): DetailedPlan {
+  const path = (rawPath: string) => {
+    try {
+      return normalizeRepositoryPathForRoot(rawPath, repoPath);
+    } catch {
+      return rawPath;
+    }
+  };
+  return {
+    ...plan,
+    files: plan.files.map((file) => ({ ...file, path: path(file.path) })),
+    steps: plan.steps.map((step) => ({
+      ...step,
+      paths: step.paths.map(path),
+    })),
+  };
+}
 
 export interface PlanningOptions {
   repoPath: string;
@@ -427,6 +446,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
           role: `planner:${planId}`,
           trace: store.trace,
         });
+        plan = normalizePlanRepositoryPaths(plan, baseline.repoPath);
         if (plan.planId !== planId || plan.lens !== lens) {
           throw planningError(
             "PLANNER_IDENTITY_MISMATCH",
@@ -467,6 +487,7 @@ export async function runPlanning(options: PlanningOptions): Promise<PlanningRes
             role: `planner-correction:${planId}`,
             trace: store.trace,
           });
+          plan = normalizePlanRepositoryPaths(plan, baseline.repoPath);
           if (plan.planId !== planId || plan.lens !== lens) {
             throw planningError(
               "PLANNER_IDENTITY_MISMATCH",

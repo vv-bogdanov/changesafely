@@ -5,6 +5,7 @@ import {
   isApprovalSensitivePath,
   isTestPath,
   normalizeRepositoryPath,
+  normalizeRepositoryPathForRoot,
   pathWithinPrefixes,
 } from "../src/repository-policy.js";
 
@@ -14,6 +15,21 @@ test("normalizes repository-relative paths and matches the repository root", () 
   assert.equal(pathWithinPrefixes("src/value.ts", ["./src/"]), true);
   assert.equal(pathWithinPrefixes("src/value.ts", ["."]), true);
   assert.equal(pathWithinPrefixes("outside.ts", ["src"]), false);
+});
+
+test("normalizes absolute paths only inside the repository root", () => {
+  assert.equal(
+    normalizeRepositoryPathForRoot("/tmp/repo/src/value.ts", "/tmp/repo"),
+    "src/value.ts",
+  );
+  assert.equal(
+    normalizeRepositoryPathForRoot("test/value.test.ts", "/tmp/repo"),
+    "test/value.test.ts",
+  );
+  assert.throws(
+    () => normalizeRepositoryPathForRoot("/tmp/other/src/value.ts", "/tmp/repo"),
+    /outside repository root/u,
+  );
 });
 
 test("rejects traversal, absolute, and Windows-style repository paths", () => {

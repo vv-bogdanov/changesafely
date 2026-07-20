@@ -1,4 +1,4 @@
-import { posix } from "node:path";
+import { isAbsolute, posix, relative, sep } from "node:path";
 
 export const REPOSITORY_CONTROL_FILE_NAMES: ReadonlySet<string> = new Set([
   "AGENTS.md",
@@ -31,6 +31,20 @@ function safeRepositoryPath(path: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function normalizeRepositoryPathForRoot(rawPath: string, repoPath: string): string {
+  const direct = safeRepositoryPath(rawPath);
+  if (direct) return direct;
+  if (!isAbsolute(rawPath)) {
+    throw new Error(`Invalid repository-relative path: ${rawPath}`);
+  }
+  const relativePath = relative(repoPath, rawPath).split(sep).join("/");
+  const normalized = safeRepositoryPath(relativePath);
+  if (!normalized) {
+    throw new Error(`Path is outside repository root: ${rawPath}`);
+  }
+  return normalized;
 }
 
 export function pathWithinPrefixes(path: string, prefixes: string[]): boolean {
