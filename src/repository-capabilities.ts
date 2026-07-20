@@ -13,7 +13,7 @@ import { validateCommandArgv } from "./runner.js";
 
 const execFileAsync = promisify(execFile);
 
-export type CheckKind = "test" | "typecheck" | "lint" | "build";
+export type CheckKind = "test" | "coverage" | "typecheck" | "lint" | "build";
 
 export interface RepositoryCheck {
   id: string;
@@ -42,7 +42,7 @@ const repositoryConfigSchema = Type.Object(
           id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$" }),
           kind: Type.Unsafe<CheckKind>(
             Type.String({
-              enum: ["test", "typecheck", "lint", "build"],
+              enum: ["test", "coverage", "typecheck", "lint", "build"],
             }),
           ),
           argv: Type.Array(configStringSchema, { minItems: 1, maxItems: 64 }),
@@ -414,6 +414,9 @@ function packageScripts(content: string, path: string): Record<string, string> {
 }
 
 function npmCheckKind(name: string): CheckKind | undefined {
+  if (name === "coverage" || name.startsWith("coverage:") || name === "test:coverage") {
+    return "coverage";
+  }
   const base = name.split(":", 1)[0];
   if (base === "test") return "test";
   if (base === "typecheck") return "typecheck";

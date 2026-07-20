@@ -9,6 +9,12 @@ import {
   loadVerifiedArtifact,
   type RunState,
 } from "./artifacts.js";
+import {
+  buildCoverageEvidence,
+  compareCoverageEvidence,
+  evaluateCoveragePlan,
+  runCoverageChecks,
+} from "./coverage.js";
 import { evaluatePlan } from "./eligibility.js";
 import { abortReason, ChangeSafelyError } from "./errors.js";
 import {
@@ -41,6 +47,7 @@ import {
 } from "./role-runtime.js";
 import { type CommandResult, runCommand, toCommandEvidence } from "./runner.js";
 import {
+  type CoverageEvidence,
   type DetailedPlan,
   implementationArtifactSchema,
   type RunPhase,
@@ -188,7 +195,8 @@ async function runProjectCommands(
 ): Promise<CommandResult[]> {
   const results: CommandResult[] = [];
   for (const command of projectCommands(harness, plan)) {
-    requireRepositoryCheck(capabilities, command.argv, command.cwd);
+    const check = requireRepositoryCheck(capabilities, command.argv, command.cwd);
+    if (check.kind === "coverage") continue;
     results.push(
       await runCommand(command.argv, resolve(repoPath, command.cwd), {
         sandboxed,
@@ -284,6 +292,23 @@ export async function runImplementationAndVerification(
       2,
     );
   }
+  const coverageGate = evaluateCoveragePlan(contract, plan, harness, capabilities);
+  if (coverageGate.length > 0) {
+    throw implementationError(
+      "COVERAGE_EVIDENCE_INCOMPLETE",
+      coverageGate.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
+      2,
+    );
+  }
+  const coverageBaseline = (await loadVerifiedArtifact(repoPath, state, "coverageBaseline"))
+    .payload;
+  if (coverageBaseline.stage !== "baseline") {
+    throw implementationError(
+      "COVERAGE_BOUNDARY_MISMATCH",
+      "Coverage baseline artifact does not describe the C1 boundary",
+      2,
+    );
+  }
   if (harness.testCommit !== state.testCommit) {
     throw implementationError("HARNESS_COMMIT_MISMATCH", "Harness artifact does not match T1", 2);
   }
@@ -323,6 +348,7 @@ export async function runImplementationAndVerification(
   client.setTrace(store.trace);
   let implementationCommit = "";
   let commandResults: CommandResult[] = [];
+  let finalCoverage: CoverageEvidence = coverageBaseline;
   let verification: VerificationArtifact | undefined;
 
   try {
@@ -428,6 +454,59 @@ export async function runImplementationAndVerification(
     await store.writeState(state);
     assertCommandsPassed(commandResults);
 
+    const persistFinalCoverage = async (afterRepair: boolean): Promise<CoverageEvidence> => {
+      const coverageResults = await runCoverageChecks({
+        repoPath,
+        capabilities,
+        sandboxed: options.sandboxCommands ?? false,
+        trace: store.trace,
+        phase: afterRepair ? "deterministic-verification:repair" : "deterministic-verification",
+        ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      assertCommandsPassed(coverageResults);
+      await assertProtectedConfigurationUnchanged(
+        repoPath,
+        state.baselineProtectedConfiguration ?? {},
+      );
+      const mutations = await changedPaths(repoPath, implementationCommit);
+      if (mutations.length > 0) {
+        throw implementationError(
+          "COVERAGE_COMMAND_MUTATED_REPOSITORY",
+          `Coverage command changed tracked paths: ${mutations.join(", ")}`,
+        );
+      }
+      const evidence = buildCoverageEvidence("final", harness, coverageResults, repoPath);
+      const regressions = compareCoverageEvidence(coverageBaseline, evidence);
+      if (regressions.length > 0) {
+        throw implementationError(
+          "COVERAGE_REGRESSION",
+          regressions.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
+        );
+      }
+      if (afterRepair) {
+        const stored = await store.writeArtifact(
+          "coverageFinalRepair",
+          "deterministic-runner",
+          evidence,
+          artifactInputs(state, "coverageBaseline", "repair"),
+        );
+        state.artifacts.coverageFinalRepair = stored.hash;
+      } else {
+        const stored = await store.writeArtifact(
+          "coverageFinal",
+          "deterministic-runner",
+          evidence,
+          artifactInputs(state, "coverageBaseline", "implementation"),
+        );
+        state.artifacts.coverageFinal = stored.hash;
+      }
+      await store.writeState(state);
+      return evidence;
+    };
+
+    finalCoverage = await persistFinalCoverage(false);
+
     const verify = async (
       role: Extract<RunPhase, "verifier" | "verifier:repair">,
     ): Promise<VerificationArtifact> => {
@@ -472,6 +551,7 @@ export async function runImplementationAndVerification(
             harnessBaseline: harnessCommandEvidence,
             final: toCommandEvidence(commandResults, repoPath),
           },
+          coverage: { baseline: coverageBaseline, final: finalCoverage },
         }),
         {
           cwd: repoPath,
@@ -496,7 +576,7 @@ export async function runImplementationAndVerification(
         "verificationAttempt1",
         "verifier",
         verification,
-        artifactInputs(state, "implementation", "verificationCommands"),
+        artifactInputs(state, "coverageFinal", "implementation", "verificationCommands"),
       );
       state.artifacts.verificationAttempt1 = firstVerificationStored.hash;
       state.phase = "repair";
@@ -598,6 +678,7 @@ export async function runImplementationAndVerification(
       state.artifacts.verificationCommandsRepair = commandsStored.hash;
       await store.writeState(state);
       assertCommandsPassed(commandResults);
+      finalCoverage = await persistFinalCoverage(true);
       verification = await verify("verifier:repair");
     }
 
@@ -606,8 +687,8 @@ export async function runImplementationAndVerification(
       state.repairCount === 1 ? "verifier:repair" : "verifier",
       verification,
       state.repairCount === 1
-        ? artifactInputs(state, "repair", "verificationCommandsRepair")
-        : artifactInputs(state, "implementation", "verificationCommands"),
+        ? artifactInputs(state, "coverageFinalRepair", "repair", "verificationCommandsRepair")
+        : artifactInputs(state, "coverageFinal", "implementation", "verificationCommands"),
     );
     state.artifacts.verification = verificationStored.hash;
     const accepted = verificationAccepted(verification);
@@ -635,6 +716,7 @@ export async function runImplementationAndVerification(
         state,
         decision,
         toCommandEvidence(commandResults, repoPath),
+        finalCoverage,
         verification,
       ),
     );

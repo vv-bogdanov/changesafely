@@ -11,6 +11,7 @@ import { type ArtifactKey, isArtifactKey, parsePlanArtifactKey } from "./artifac
 import { ChangeSafelyError } from "./errors.js";
 import {
   ARTIFACT_VERSION,
+  HARNESS_EVIDENCE_ARTIFACT_VERSION,
   LEGACY_ARTIFACT_VERSION,
   PREVIOUS_ARTIFACT_VERSION,
   RUN_STATE_VERSION,
@@ -27,6 +28,7 @@ export interface ArtifactEnvelope<T> {
   meta: {
     artifactVersion:
       | typeof ARTIFACT_VERSION
+      | typeof HARNESS_EVIDENCE_ARTIFACT_VERSION
       | typeof PREVIOUS_ARTIFACT_VERSION
       | typeof LEGACY_ARTIFACT_VERSION;
     producerVersion: string;
@@ -119,6 +121,7 @@ function assertArtifactVersion(value: unknown): void {
   const actual = property(property(value, "meta"), "artifactVersion");
   if (
     actual !== ARTIFACT_VERSION &&
+    actual !== HARNESS_EVIDENCE_ARTIFACT_VERSION &&
     actual !== PREVIOUS_ARTIFACT_VERSION &&
     actual !== LEGACY_ARTIFACT_VERSION
   ) {

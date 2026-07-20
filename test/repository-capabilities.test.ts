@@ -14,7 +14,7 @@ import { createTestRepo } from "./support/repository.js";
 test("discovers deterministic npm checks in root and nested packages", async (t) => {
   const repoPath = await createTestRepo(t, {
     files: {
-      "package.json": `${JSON.stringify({ scripts: { test: "node --test", lint: "biome check .", deploy: "no" } })}\n`,
+      "package.json": `${JSON.stringify({ scripts: { test: "node --test", "test:coverage": "node --test", lint: "biome check .", deploy: "no" } })}\n`,
       "package-lock.json": "{}\n",
       "packages/api/package.json": `${JSON.stringify({ scripts: { "test:unit": "node --test", typecheck: "tsc" } })}\n`,
       "packages/api/test/value.test.js": "// test\n",
@@ -32,6 +32,12 @@ test("discovers deterministic npm checks in root and nested packages", async (t)
         cwd: ".",
       },
       { id: "npm:.:test", kind: "test", argv: ["npm", "test"], cwd: "." },
+      {
+        id: "npm:.:test:coverage",
+        kind: "coverage",
+        argv: ["npm", "run", "test:coverage"],
+        cwd: ".",
+      },
       {
         id: "npm:packages/api:test:unit",
         kind: "test",
@@ -110,7 +116,10 @@ test("authorizes a non-built-in tool through the tracked repository config", asy
     files: {
       [REPOSITORY_CONFIG_PATH]: `${JSON.stringify({
         version: 1,
-        checks: [{ id: "make:test", kind: "test", argv: ["make", "test"], cwd: "." }],
+        checks: [
+          { id: "make:test", kind: "test", argv: ["make", "test"], cwd: "." },
+          { id: "make:coverage", kind: "coverage", argv: ["make", "coverage"], cwd: "." },
+        ],
         testPathPrefixes: ["checks"],
         testFilePatterns: ["*_check.js"],
         controlFiles: ["Makefile"],
@@ -122,6 +131,7 @@ test("authorizes a non-built-in tool through the tracked repository config", asy
 
   const capabilities = await discoverRepositoryCapabilities(repoPath);
   assert.deepEqual(capabilities.checks, [
+    { id: "make:coverage", kind: "coverage", argv: ["make", "coverage"], cwd: "." },
     { id: "make:test", kind: "test", argv: ["make", "test"], cwd: "." },
   ]);
   assert.deepEqual(capabilities.controlFiles, ["Makefile", REPOSITORY_CONFIG_PATH]);

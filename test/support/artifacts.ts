@@ -176,6 +176,52 @@ export function validHarness(overrides: Partial<HarnessArtifact> = {}): HarnessA
         },
       ],
     },
+    coverage: {
+      status: "declared",
+      impactedPaths: ["src/value.ts"],
+      matrix: {
+        branches: {
+          status: "covered",
+          detail: "The public boundary has one observable branch.",
+          checkIds: ["CHK-INV1"],
+          relatedRiskIds: ["R1"],
+          evidenceBasis: [
+            {
+              source: "repository",
+              detail: "The fixture exposes one current behavior path.",
+              references: [{ path: "src/value.ts", detail: "Current implementation." }],
+            },
+          ],
+        },
+        stateTransitions: {
+          status: "not-applicable",
+          detail: "The fixture has no mutable state transition.",
+          checkIds: [],
+          relatedRiskIds: [],
+          evidenceBasis: [
+            {
+              source: "repository",
+              detail: "The exported value is immutable.",
+              references: [{ path: "src/value.ts", detail: "Immutable export." }],
+            },
+          ],
+        },
+        failures: {
+          status: "not-applicable",
+          detail: "The current boundary has no failure mode.",
+          checkIds: [],
+          relatedRiskIds: [],
+          evidenceBasis: [
+            {
+              source: "repository",
+              detail: "The current value access cannot fail.",
+              references: [{ path: "src/value.ts", detail: "Direct value export." }],
+            },
+          ],
+        },
+      },
+      gaps: [],
+    },
     protectedPaths: ["test/value.characterization.test.ts"],
     ...overrides,
   };

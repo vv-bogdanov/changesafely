@@ -39,6 +39,8 @@ test("runner accepts bounded targeted test and verification scripts", () => {
   for (const argv of [
     ["npm", "test", "--", "payment"],
     ["npm", "run", "test:unit"],
+    ["npm", "run", "test:coverage"],
+    ["npm", "run", "coverage"],
     ["npm", "run", "test:unit", "--", "payment"],
     ["npm", "run", "lint:ci"],
     ["npm", "run", "check:types", "--", "--pretty", "false"],

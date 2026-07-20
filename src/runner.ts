@@ -138,7 +138,7 @@ export function validateCommandArgv(argv: string[]): void {
     const allowed =
       isTestCommand(argv) ||
       (args[0] === "run" &&
-        isNpmScript(args[1], ["typecheck", "lint", "check", "build"]) &&
+        isNpmScript(args[1], ["coverage", "typecheck", "lint", "check", "build"]) &&
         acceptsForwardedArgs(args, 2));
     if (!allowed) throw new Error(`npm command is not approved: ${argv.join(" ")}`);
     return;

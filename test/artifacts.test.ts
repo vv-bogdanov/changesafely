@@ -15,6 +15,7 @@ import {
 } from "../src/artifacts.js";
 import {
   ARTIFACT_VERSION,
+  HARNESS_EVIDENCE_ARTIFACT_VERSION,
   LEGACY_ARTIFACT_VERSION,
   PREVIOUS_ARTIFACT_VERSION,
   RUN_STATE_VERSION,
@@ -260,6 +261,49 @@ test("loads an artifact v3 harness as explicitly unmapped evidence", async (t) =
   const loaded = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
   assert.deepEqual(loaded.checks, []);
   assert.equal(loaded.nonInterference.status, "unknown");
+});
+
+test("loads a hash-verified v4 harness with explicit unknown coverage", async (t) => {
+  const repoPath = await mkdtemp(join(tmpdir(), "changesafely-envelope-v4-"));
+  t.after(async () => rm(repoPath, { recursive: true, force: true }));
+  const store = new ArtifactStore(repoPath, "safe-run", baselineCommit);
+  await store.initialize();
+  const state = validState(repoPath);
+  const previousPayload = structuredClone(validHarness()) as Record<string, unknown> & {
+    coverage?: unknown;
+  };
+  delete previousPayload.coverage;
+  Object.assign(previousPayload, {
+    protectedHashes: { "test/value.characterization.test.ts": "c".repeat(64) },
+    testCommit: "d".repeat(40),
+  });
+  state.artifacts.characterization = "0".repeat(64);
+  state.artifacts.contract = "1".repeat(64);
+  state.artifacts.decision = "2".repeat(64);
+  state.artifacts["plan-1"] = "3".repeat(64);
+  const content = `${JSON.stringify({
+    meta: {
+      artifactVersion: HARNESS_EVIDENCE_ARTIFACT_VERSION,
+      producerVersion: "0.1.0",
+      runId: state.runId,
+      baselineCommit,
+      role: "test-author",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      inputs: {
+        characterization: state.artifacts.characterization,
+        contract: state.artifacts.contract,
+        decision: state.artifacts.decision,
+        "plan-1": state.artifacts["plan-1"],
+      },
+    },
+    payload: previousPayload,
+  })}\n`;
+  await store.writeText("harness.json", content);
+  state.artifacts.harness = createHash("sha256").update(content).digest("hex");
+
+  const loaded = (await loadVerifiedArtifact(repoPath, state, "harness")).payload;
+  assert.equal(loaded.checks[0]?.id, "CHK-INV1");
+  assert.equal(loaded.coverage.status, "unknown");
 });
 
 test("binds artifact lineage to named predecessors", async (t) => {

@@ -10,6 +10,7 @@ import {
   loadVerifiedArtifact,
   type RunState,
 } from "./artifacts.js";
+import { buildCoverageEvidence, evaluateCoveragePlan, runCoverageChecks } from "./coverage.js";
 import { evaluateContract, evaluatePlan } from "./eligibility.js";
 import { abortReason, ChangeSafelyError } from "./errors.js";
 import {
@@ -117,6 +118,22 @@ function assertHarnessEvidence(
   }
 }
 
+function assertCoveragePlan(context: HarnessContext, harness: HarnessArtifact): void {
+  const failures = evaluateCoveragePlan(
+    context.contract,
+    context.plan,
+    harness,
+    context.capabilities,
+  );
+  if (failures.length > 0) {
+    throw harnessError(
+      "COVERAGE_EVIDENCE_INCOMPLETE",
+      failures.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
+      2,
+    );
+  }
+}
+
 function mergeNonInterference(
   characterization: HarnessArtifact,
   change: HarnessArtifact,
@@ -131,6 +148,51 @@ function mergeNonInterference(
     evidenceBasis: [characterization, change].flatMap((artifact) =>
       artifact.nonInterference.evidenceBasis.slice(0, 1),
     ),
+  };
+}
+
+function mergeCoverageAssessment(
+  left: HarnessArtifact["coverage"]["matrix"]["branches"],
+  right: HarnessArtifact["coverage"]["matrix"]["branches"],
+): HarnessArtifact["coverage"]["matrix"]["branches"] {
+  const covered = [left, right].filter((assessment) => assessment.status === "covered");
+  return {
+    status: covered.length > 0 ? "covered" : "not-applicable",
+    detail: [left.detail, right.detail].join(" "),
+    checkIds: unique(covered.flatMap((assessment) => assessment.checkIds)),
+    relatedRiskIds: unique([...left.relatedRiskIds, ...right.relatedRiskIds]),
+    evidenceBasis: [left, right].flatMap((assessment) => assessment.evidenceBasis.slice(0, 1)),
+  };
+}
+
+function mergeCoverage(
+  characterization: HarnessArtifact,
+  change: HarnessArtifact,
+): HarnessArtifact["coverage"] {
+  return {
+    status:
+      characterization.coverage.status === "declared" && change.coverage.status === "declared"
+        ? "declared"
+        : "unknown",
+    impactedPaths: unique([
+      ...characterization.coverage.impactedPaths,
+      ...change.coverage.impactedPaths,
+    ]),
+    matrix: {
+      branches: mergeCoverageAssessment(
+        characterization.coverage.matrix.branches,
+        change.coverage.matrix.branches,
+      ),
+      stateTransitions: mergeCoverageAssessment(
+        characterization.coverage.matrix.stateTransitions,
+        change.coverage.matrix.stateTransitions,
+      ),
+      failures: mergeCoverageAssessment(
+        characterization.coverage.matrix.failures,
+        change.coverage.matrix.failures,
+      ),
+    },
+    gaps: [...characterization.coverage.gaps, ...change.coverage.gaps],
   };
 }
 
@@ -352,6 +414,50 @@ async function runStageCommand(
   return command;
 }
 
+async function persistBaselineCoverage(
+  context: HarnessContext,
+  harness: HarnessArtifact,
+  characterizationCommit: string,
+): Promise<void> {
+  const { repoPath, options, capabilities, store, state } = context;
+  const results = await runCoverageChecks({
+    repoPath,
+    capabilities,
+    sandboxed: options.sandboxCommands ?? false,
+    trace: store.trace,
+    phase: "characterization-complete",
+    ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+  const failed = results.filter(
+    (result) => result.exitCode !== 0 || result.timedOut || result.signal !== null,
+  );
+  if (failed.length > 0) {
+    throw harnessError(
+      "BASELINE_COVERAGE_FAILED",
+      `Baseline coverage failed: ${failed
+        .map((result) => `${result.argv.join(" ")} exit ${result.exitCode}`)
+        .join("; ")}`,
+    );
+  }
+  await assertProtectedConfigurationUnchanged(repoPath, state.baselineProtectedConfiguration ?? {});
+  const mutations = await changedPaths(repoPath, characterizationCommit);
+  if (mutations.length > 0) {
+    throw harnessError(
+      "COVERAGE_COMMAND_MUTATED_REPOSITORY",
+      `Coverage command changed tracked paths: ${mutations.join(", ")}`,
+    );
+  }
+  const evidence = buildCoverageEvidence("baseline", harness, results, repoPath);
+  const stored = await store.writeArtifact(
+    "coverageBaseline",
+    "deterministic-runner",
+    evidence,
+    artifactInputs(state, "characterization"),
+  );
+  state.artifacts.coverageBaseline = stored.hash;
+}
+
 async function persistFinalHarness(
   context: HarnessContext,
   harness: HarnessArtifact,
@@ -364,7 +470,14 @@ async function persistFinalHarness(
     "harness",
     "test-author",
     { ...harness, protectedHashes, testCommit },
-    artifactInputs(state, "characterization", "contract", "decision", selectedPlanKey),
+    artifactInputs(
+      state,
+      "characterization",
+      "contract",
+      "coverageBaseline",
+      "decision",
+      selectedPlanKey,
+    ),
   );
   state.artifacts.harness = harnessStored.hash;
   const commandStored = await store.writeArtifact(
@@ -499,6 +612,7 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
       stage: "characterization",
       final: context.contract.changeKind === "refactor",
     });
+    assertCoveragePlan(context, normalized);
     const command = await runStageCommand(context, normalized, "pass");
     const characterizationCommit = await commitPaths(
       repoPath,
@@ -529,6 +643,7 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
     );
     state.artifacts.characterizationCommands = commands.hash;
     state.characterizationCommit = characterizationCommit;
+    await persistBaselineCoverage(context, normalized, characterizationCommit);
     if (context.contract.changeKind === "refactor") {
       return await persistFinalHarness(context, normalized, characterizationCommit, command);
     }
@@ -568,6 +683,14 @@ async function loadCharacterization(
 ): Promise<StoredCharacterizationArtifact> {
   const { state, repoPath } = context;
   const artifact = (await loadVerifiedArtifact(repoPath, state, "characterization")).payload;
+  const coverage = (await loadVerifiedArtifact(repoPath, state, "coverageBaseline")).payload;
+  if (coverage.stage !== "baseline") {
+    throw harnessError(
+      "COVERAGE_BOUNDARY_MISMATCH",
+      "C1 coverage artifact is not baseline evidence",
+      2,
+    );
+  }
   await assertProtectedConfigurationUnchanged(repoPath, state.baselineProtectedConfiguration ?? {});
   if (
     !state.characterizationCommit ||
@@ -664,6 +787,7 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
     const stage = await validateStageChanges(context, change, c1Paths);
     const normalizedChange = { ...change, protectedPaths: stage.protectedPaths };
     assertHarnessEvidence(context, normalizedChange, { stage: "change" });
+    assertCoveragePlan(context, normalizedChange);
     const finalHarness: HarnessArtifact = {
       ...normalizedChange,
       summary: `${characterization.summary} ${change.summary}`,
@@ -671,9 +795,11 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
       fixturePaths: unique([...characterization.fixturePaths, ...change.fixturePaths]),
       checks: [...characterization.checks, ...change.checks],
       nonInterference: mergeNonInterference(characterization, change),
+      coverage: mergeCoverage(characterization, change),
       protectedPaths: unique([...c1Paths, ...stage.protectedPaths]),
     };
     assertHarnessEvidence(context, finalHarness, { final: true });
+    assertCoveragePlan(context, finalHarness);
     const command = await runStageCommand(context, normalizedChange, "fail");
     const testCommit = await commitPaths(
       repoPath,

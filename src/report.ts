@@ -1,7 +1,12 @@
 import type { RunState } from "./artifacts.js";
 import type { PlanEligibility } from "./eligibility.js";
 import type { CommandEvidence } from "./runner.js";
-import type { DecisionArtifact, DetailedPlan, VerificationArtifact } from "./schemas.js";
+import type {
+  CoverageEvidence,
+  DecisionArtifact,
+  DetailedPlan,
+  VerificationArtifact,
+} from "./schemas.js";
 
 export function planningReport(
   state: RunState,
@@ -60,6 +65,7 @@ export function implementationReport(
   state: RunState,
   decision: DecisionArtifact,
   commands: CommandEvidence[],
+  coverage: CoverageEvidence,
   verification: VerificationArtifact,
 ): string {
   const commandLines = commands.map(
@@ -69,6 +75,13 @@ export function implementationReport(
   const findingLines = verification.findings.map(
     (finding) =>
       `- **${finding.severity} ${finding.code}**${finding.path ? ` \`${finding.path}\`` : ""}: ${finding.message}`,
+  );
+  const coverageSummary =
+    coverage.mode === "numeric" && coverage.lines && coverage.branches
+      ? `- Scope: ${coverage.impactedPaths.map((path) => `\`${path}\``).join(", ")}\n- Lines: ${coverage.lines.covered}/${coverage.lines.total} (${coverage.lines.percent.toFixed(2)}%)\n- Branches: ${coverage.branches.covered}/${coverage.branches.total} (${coverage.branches.percent.toFixed(2)}%)`
+      : `- Scope: ${coverage.impactedPaths.map((path) => `\`${path}\``).join(", ")}\n- Evidence mode: executable branch/state-transition/failure matrix`;
+  const coverageGaps = coverage.gaps.map(
+    (gap) => `- \`${gap.path}\`: ${gap.detail}${gap.criticalBehavior ? " (critical)" : ""}`,
   );
   return `# ChangeSafely verification report
 
@@ -94,6 +107,12 @@ ${state.task}
 ## Deterministic commands
 
 ${commandLines.join("\n")}
+
+## Impacted coverage
+
+${coverageSummary}
+
+${coverageGaps.length > 0 ? coverageGaps.join("\n") : "No recorded coverage gaps."}
 
 ## Independent verification
 

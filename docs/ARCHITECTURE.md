@@ -41,16 +41,19 @@ the actual diff and deterministic results and cannot inherit Implementer history
    commits baseline-green C1, then resumes that thread to add baseline-red T1 when behavior
    changes. It protects the union of both stages. `harness-evidence.ts` rejects incomplete or
    invalid check relationships before either a harness commit or the Implementer fork.
+   `coverage.ts` records the C1 impacted-slice baseline using only authorized repository commands
+   and otherwise retains the explicit executable coverage matrix.
 3. `implementation.ts` forks Implementer, validates actual paths, commits I1, runs
-   deterministic checks, and forks an independent Verifier. One local repair may
-   resume the same Implementer before a fresh Verifier fork.
+   deterministic checks, compares final scoped coverage with C1, and forks an independent
+   Verifier. One local repair may resume the same Implementer before a fresh Verifier fork and
+   receives a separate final coverage artifact.
 4. `orchestrator.ts` validates persisted boundaries and applies the final release
    gate before emitting `VERIFIED`.
 
 ```text
 task -> evidence -> contract -> plans -> eligibility -> decision
      -> characterization/C1 -> optional change harness/T1
-     -> implementation/I1 -> commands -> verification -> report
+     -> coverage baseline -> implementation/I1 -> commands + final coverage -> verification -> report
 ```
 
 ## Sources of truth
@@ -62,6 +65,9 @@ task -> evidence -> contract -> plans -> eligibility -> decision
 - Structured command argv, real exit codes, timeouts, and bounded output.
 - Stable executable check IDs mapped to acceptance criteria, protected invariants, critical risks,
   grounded assertion evidence, and explicit non-interference applicability.
+- Comparable C1/final impacted-slice coverage artifacts. Numeric line and branch data is accepted
+  only through a language-neutral repository marker; otherwise the branch/state/failure matrix is
+  preserved without a fabricated percentage.
 - Explicit App Server thread ids, turn ids, parent C0 id, and checkpoint turn id.
 
 Model statements are proposals or findings, never sufficient proof of success.
@@ -110,10 +116,10 @@ allowed only after planning, T1, or independent verification. Before reuse,
 ChangeSafely checks persisted-format versions before full schema validation, the closed
 phase/status contract, named artifact inputs, artifact hashes and schemas, role
 lineage, Git branch and HEAD, baseline ancestry, protected configuration metadata,
-and T1 hashes. Unknown state or artifact versions fail closed. Artifact format v3 adds
-traceable contracts and plans; hash-verified v2 contracts and plans remain readable through
-an explicit conservative normalization. Their unstructured unknowns remain unresolved and
-their write eligibility is rechecked before a branch is created.
+and T1 hashes. Unknown state or artifact versions fail closed. Current artifacts use format v5;
+hash-verified v2-v4 artifacts remain readable through explicit conservative normalization. Missing
+contract provenance, harness mappings, or coverage remains unknown or unresolved, so an older run
+cannot cross a current write boundary by assuming evidence that it never recorded.
 
 Each run also has `trace.jsonl`, a versioned append-only sequence written through one
 serialized `TraceWriter`. It correlates phase and state transitions, role turns,

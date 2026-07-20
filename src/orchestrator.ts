@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { isArtifactKey } from "./artifact-key.js";
 import { ArtifactStore, loadRunState, loadVerifiedArtifact, type RunState } from "./artifacts.js";
+import { compareCoverageEvidence } from "./coverage.js";
 import { ChangeSafelyError } from "./errors.js";
 import {
   acquireRepositoryLock,
@@ -278,7 +279,27 @@ async function finalizeVerifiedRun(
       state.repairCount === 1 ? "verificationCommandsRepair" : "verificationCommands";
     const verificationCommands = (await loadVerifiedArtifact(repoPath, state, finalCommandArtifact))
       .payload;
-    const allCommands = [...characterizationCommands, ...baselineCommands, ...verificationCommands];
+    const coverageBaseline = (await loadVerifiedArtifact(repoPath, state, "coverageBaseline"))
+      .payload;
+    const finalCoverageArtifact = state.repairCount === 1 ? "coverageFinalRepair" : "coverageFinal";
+    const finalCoverage = (await loadVerifiedArtifact(repoPath, state, finalCoverageArtifact))
+      .payload;
+    if (coverageBaseline.stage !== "baseline" || finalCoverage.stage !== "final") {
+      throw releaseGateError("Coverage artifacts do not match their recorded workflow boundaries");
+    }
+    const coverageRegressions = compareCoverageEvidence(coverageBaseline, finalCoverage);
+    if (coverageRegressions.length > 0) {
+      throw releaseGateError(
+        coverageRegressions.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
+      );
+    }
+    const allCommands = [
+      ...characterizationCommands,
+      ...baselineCommands,
+      ...verificationCommands,
+      ...coverageBaseline.commands,
+      ...finalCoverage.commands,
+    ];
     if (
       allCommands.length === 0 ||
       allCommands.some(
@@ -330,7 +351,7 @@ async function finalizeVerifiedRun(
     reportProgress(onProgress, runId, state.phase, "Final release gate passed", startedAt);
     const reportPath = await store.writeText(
       "report.md",
-      implementationReport(state, decision, verificationCommands, verification),
+      implementationReport(state, decision, verificationCommands, finalCoverage, verification),
     );
     return createRunOutcome(repoPath, state, reportPath);
   } catch (error) {

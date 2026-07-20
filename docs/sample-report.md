@@ -21,6 +21,14 @@ Retry a payment once after a transient timeout without allowing a duplicate char
 - `npm run typecheck`: exit 0
 - `npm run build`: exit 0
 
+## Impacted coverage
+
+- Scope: `src/payment.js`
+- Lines: 92/100 (92.00%)
+- Branches: 18/20 (90.00%)
+
+No recorded coverage gaps.
+
 ## Independent verification
 
 ACCEPT: The implementation adds a single bounded retry on `TransientPaymentError`, preserves the backward-compatible `process(paymentId, amount)` shape and stable `idempotencyKey`, adds a harness that fails before implementation, and passes every required command.

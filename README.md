@@ -77,7 +77,8 @@ repositories declare the same command contract in a tracked repository-root
 {
   "version": 1,
   "checks": [
-    { "id": "make:test", "kind": "test", "argv": ["make", "test"], "cwd": "." }
+    { "id": "make:test", "kind": "test", "argv": ["make", "test"], "cwd": "." },
+    { "id": "make:coverage", "kind": "coverage", "argv": ["make", "coverage"], "cwd": "." }
   ],
   "testPathPrefixes": ["tests"],
   "testFilePatterns": ["*_test.py"],
@@ -90,6 +91,18 @@ environment overrides, credentials, or deployment actions. Every cwd is
 repository-relative, every additional control file must already be tracked, and the
 resolved catalog and config are hashed before writes. ChangeSafely never installs the
 declared runtime or project dependencies.
+
+An existing repository coverage command may expose scoped numeric evidence by printing one compact
+JSON object on its own line:
+
+```json
+{"changesafelyCoverage":{"schemaVersion":1,"scope":["src/payment.js"],"lines":{"covered":92,"total":100},"branches":{"covered":18,"total":20}}}
+```
+
+ChangeSafely runs registered coverage commands at C1 and after implementation through the same
+command policy. It does not parse tool-specific reports or install coverage tooling. Without this
+marker, the protected branch/state-transition/failure matrix remains the explicit evidence and no
+percentage is invented.
 
 ## Workflow
 
@@ -233,8 +246,11 @@ Runs are stored under `.changesafely/runs/<run-id>/`:
 - `characterization.json` and `characterization-commands.json`: protected C1 paths and
   baseline-green evidence, including stable check-to-invariant and risk mappings.
 - `harness.json` and `commands.json`: the final protected C1/T1 union and its expected baseline
-  outcome. Artifact v4 binds every declared observation to a protected test path, grounded
-  assertion basis, contract IDs, and applicable failure or non-interference boundary.
+  outcome. Every declared observation is bound to a protected test path, grounded assertion basis,
+  contract IDs, and applicable failure or non-interference boundary.
+- `coverage-baseline.json`, `coverage-final.json`, and optional `coverage-final-repair.json`: the
+  impacted production slice, line/branch measurements when explicitly supplied, the executable
+  coverage matrix, known gaps, and exact coverage command evidence.
 - `implementation.json`, optional `repair.json`, command evidence, and
   `verification.json`: the actual change and independent verdict.
 - `report.md`: concise outcome, residual risks, and next action.

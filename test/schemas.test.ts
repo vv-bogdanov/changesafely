@@ -6,6 +6,7 @@ import {
   decisionArtifactSchema,
   detailedPlanSchema,
   evidenceArtifactSchema,
+  HARNESS_EVIDENCE_ARTIFACT_VERSION,
   harnessArtifactSchema,
   implementationArtifactSchema,
   LEGACY_ARTIFACT_VERSION,
@@ -13,6 +14,7 @@ import {
   smokeArtifactSchema,
   validateChangeContract,
   validateCommandEvidenceList,
+  validateCoverageEvidence,
   validateDetailedPlan,
   validateHarnessArtifact,
   validatePersistedDetailedPlan,
@@ -88,6 +90,31 @@ test("validates persisted deterministic evidence", () => {
         },
       ]),
     ArtifactValidationError,
+  );
+});
+
+test("keeps numeric and matrix coverage evidence states disjoint", () => {
+  const harness = validHarness();
+  const common = {
+    stage: "baseline",
+    impactedPaths: harness.coverage.impactedPaths,
+    matrix: harness.coverage.matrix,
+    gaps: [],
+    commands: [],
+  };
+  assert.throws(
+    () =>
+      validateCoverageEvidence({
+        ...common,
+        mode: "numeric",
+        lines: null,
+        branches: null,
+      }),
+    ArtifactValidationError,
+  );
+  assert.equal(
+    validateCoverageEvidence({ ...common, mode: "matrix", lines: null, branches: null }).mode,
+    "matrix",
   );
 });
 
@@ -189,6 +216,25 @@ test("reads previous harness evidence as explicitly unmapped", () => {
   const migrated = validatePersistedStoredHarnessArtifact(previous, PREVIOUS_ARTIFACT_VERSION);
   assert.deepEqual(migrated.checks, []);
   assert.equal(migrated.nonInterference.status, "unknown");
+  assert.equal(migrated.coverage.status, "unknown");
+});
+
+test("preserves v4 harness mappings while marking coverage as unknown", () => {
+  const previous = structuredClone(validHarness()) as Record<string, unknown> & {
+    coverage?: unknown;
+  };
+  delete previous.coverage;
+  Object.assign(previous, {
+    protectedHashes: { "test/value.characterization.test.ts": "a".repeat(64) },
+    testCommit: "b".repeat(40),
+  });
+
+  const migrated = validatePersistedStoredHarnessArtifact(
+    previous,
+    HARNESS_EVIDENCE_ARTIFACT_VERSION,
+  );
+  assert.equal(migrated.checks[0]?.id, "CHK-INV1");
+  assert.equal(migrated.coverage.status, "unknown");
 });
 
 test("rejects harness assertions without a grounded evidence basis", () => {

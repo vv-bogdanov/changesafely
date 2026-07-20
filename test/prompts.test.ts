@@ -85,6 +85,7 @@ function prompts(): Record<string, string> {
       harnessDiff: "HARNESS_ONLY",
       implementationDiff: "IMPLEMENTATION_ONLY",
       commandResults: { harnessBaseline: [], final: [] },
+      coverage: { baseline: { mode: "matrix" }, final: { mode: "matrix" } },
     }),
     repair: repairPrompt({
       contract,
@@ -124,6 +125,7 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   assert.match(values.implementer ?? "", /smallest sufficient production delta/u);
   assert.match(values.verifier ?? "", /try to falsify/u);
   assert.match(values.verifier ?? "", /plausible green-but-wrong/u);
+  assert.match(values.verifier ?? "", /numeric coverage only as supporting evidence/u);
   assert.match(values.repair ?? "", /contract, harness, or scope/u);
 });
 

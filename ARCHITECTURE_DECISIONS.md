@@ -231,6 +231,21 @@ verification.
 contract. Explicit relationships make omissions inspectable while leaving semantic exploration to
 the roles.
 
-**Compatibility:** new artifacts use format v3. Hash-verified v2 contracts and plans are normalized
-for reading; missing provenance is labeled as migrated, and legacy unknowns remain critical and
-unresolved instead of receiving an invented resolution.
+**Compatibility:** current artifacts use format v5. Hash-verified v2-v4 artifacts are normalized for
+reading; missing provenance, check mappings, or coverage remains explicitly unknown, and legacy
+unknowns remain critical and unresolved instead of receiving an invented resolution. Current write
+phases require current evidence.
+
+## AD-32. Scoped coverage is repository evidence, not a language adapter
+
+**Decision:** record the impacted production slice and an executable branch, state-transition, and
+failure matrix at C1 and after implementation. Discover `coverage` commands through the immutable
+repository capability catalog and execute them through the normal deterministic runner. A command
+may provide line and branch totals through one language-neutral versioned JSON marker. Otherwise,
+retain matrix evidence without inventing a percentage. Changed scope, numeric or matrix regression,
+and uncovered critical behavior block verification or release.
+
+**Why:** high-risk changes need comparable evidence before and after implementation, but embedding
+parsers for Istanbul, coverage.py, PHPUnit, and future ecosystems would increase owned code and make
+tool output a brittle product boundary. Repositories already own their coverage setup; ChangeSafely
+only needs a small explicit interchange contract and fail-closed comparison.

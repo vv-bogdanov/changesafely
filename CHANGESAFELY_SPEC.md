@@ -489,6 +489,12 @@ blocking gap. Where applicable, the harness checks non-interference, effect coun
 partial failure, retry, concurrency, reentrancy, hangs, recovery, input mutation, and state
 isolation. It does not require irrelevant categories or an arbitrary number of tests.
 
+The harness also declares the impacted production slice and an explicit branch, state-transition,
+and failure matrix. Repository-owned coverage commands, when registered in the immutable capability
+catalog, run at C1 and after implementation. Comparable line and branch totals may be supplied by a
+language-neutral versioned marker; otherwise no percentage is inferred. An uncovered critical path,
+changed measurement scope, or unexplained numeric or matrix regression blocks the workflow.
+
 If a sufficient check cannot be created in the available environment, ChangeSafely must return `INSUFFICIENT_VERIFICATION_ENVIRONMENT` rather than generate a meaningless mock for formal success.
 
 After C1 and optional T1, an independent Verifier fork from C0 challenges assertion provenance,
@@ -740,11 +746,11 @@ Repository-controlled commands must run in a restricted environment without prod
 Target-language support is expressed as a deterministic repository capability catalog:
 
 - exact non-interactive argv and repository-relative working directory;
-- check kind such as test, typecheck, lint, or build;
+- check kind such as test, coverage, typecheck, lint, or build;
 - test paths and tracked control files;
 - the detector or explicit configuration that supplied each capability.
 
-The catalog is fixed and hashed before the first write. Plans may select only catalog commands. The model cannot authorize a new executable command, mutate the catalog during a run, or request dependency installation. Common toolchains may have small built-in detectors; other and polyglot repositories use one versioned explicit contract after that contract is implemented and security-qualified.
+The catalog is fixed and hashed before the first write. Plans may select only catalog commands. The model cannot authorize a new executable command, mutate the catalog during a run, or request dependency installation. Common toolchains may have small built-in detectors; other and polyglot repositories use one versioned explicit contract after that contract is implemented and security-qualified. ChangeSafely does not install coverage tools or contain language-specific coverage report adapters.
 
 ### Report Generator
 
@@ -984,10 +990,12 @@ The MVP is ready when it demonstrates the following on the golden path:
 15. Implementation is recorded in a separate commit.
 16. Tests, typecheck/build, and the Git diff are checked deterministically.
 17. Verifier does not inherit the Implementer transcript.
-18. Incomplete critical evidence or unexpected scope expansion causes a stop.
-19. The user receives a runnable branch and a clear assurance report.
-20. Judges can install and test the project without rebuilding it from scratch.
-21. The complete core workflow can be demonstrated convincingly in under three minutes.
+18. Scoped coverage evidence is recorded before and after implementation without fabricating
+    unavailable percentages, and regressions or critical gaps cause a stop.
+19. Incomplete critical evidence or unexpected scope expansion causes a stop.
+20. The user receives a runnable branch and a clear assurance report.
+21. Judges can install and test the project without rebuilding it from scratch.
+22. The complete core workflow can be demonstrated convincingly in under three minutes.
 
 ---
 

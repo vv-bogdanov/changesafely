@@ -16,6 +16,7 @@ async function fixtureRepo(
   t: TestContext,
   testScript = "node --test",
   scripts: Record<string, string> = {},
+  files: Record<string, string> = {},
 ): Promise<string> {
   return createTestRepo(t, {
     prefix: "changesafely-plan-",
@@ -23,6 +24,7 @@ async function fixtureRepo(
       "AGENTS.md": "# Fixture\n",
       "package.json": `${JSON.stringify({ name: "fixture", scripts: { test: testScript, ...scripts } }, null, 2)}\n`,
       "src/value.ts": "export const value = 1;\n",
+      ...files,
     },
   });
 }
@@ -475,6 +477,89 @@ test("runs the selected plan verification commands without rediscovering package
       ["npm", "run", "check:plan"],
     ],
   );
+});
+
+test("records registered numeric coverage at baseline and final boundaries", async (t) => {
+  const marker = JSON.stringify({
+    changesafelyCoverage: {
+      schemaVersion: 1,
+      scope: ["src/value.ts"],
+      lines: { covered: 9, total: 10 },
+      branches: { covered: 4, total: 5 },
+    },
+  });
+  const repoPath = await fixtureRepo(
+    t,
+    "node --test",
+    { "test:coverage": "node coverage.mjs" },
+    { "coverage.mjs": `console.log(${JSON.stringify(marker)});\n` },
+  );
+  const clientFactory = fakeAppServerFactory(repoPath);
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value without reducing impacted coverage.",
+    plannerCount: 1,
+    clientFactory,
+  });
+  await runHarness({ repoPath, runId: planning.runId, clientFactory });
+
+  const result = await runImplementationAndVerification({
+    repoPath,
+    runId: planning.runId,
+    clientFactory,
+  });
+  const baseline = JSON.parse(
+    await readFile(join(planning.runPath, "coverage-baseline.json"), "utf8"),
+  ) as { payload: { mode: string; lines: { percent: number }; commands: unknown[] } };
+  const final = JSON.parse(
+    await readFile(join(planning.runPath, "coverage-final.json"), "utf8"),
+  ) as { payload: { mode: string; lines: { percent: number }; commands: unknown[] } };
+
+  assert.equal(result.accepted, true);
+  assert.equal(baseline.payload.mode, "numeric");
+  assert.equal(final.payload.mode, "numeric");
+  assert.equal(baseline.payload.lines.percent, 90);
+  assert.equal(final.payload.lines.percent, 90);
+  assert.equal(baseline.payload.commands.length, 1);
+  assert.equal(final.payload.commands.length, 1);
+  assert.equal(
+    result.commands.some((command) => command.argv.includes("test:coverage")),
+    false,
+  );
+});
+
+test("blocks a scoped numeric coverage regression before Verifier", async (t) => {
+  const repoPath = await fixtureRepo(
+    t,
+    "node --test",
+    { "test:coverage": "node coverage.mjs" },
+    {
+      "coverage.mjs": `import { readFileSync } from "node:fs";
+const changed = readFileSync("src/value.ts", "utf8").includes("value = 2");
+console.log(JSON.stringify({ changesafelyCoverage: { schemaVersion: 1, scope: ["src/value.ts"], lines: { covered: changed ? 8 : 9, total: 10 }, branches: { covered: 4, total: 5 } } }));
+`,
+    },
+  );
+  const clientFactory = fakeAppServerFactory(repoPath);
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value without reducing impacted coverage.",
+    plannerCount: 1,
+    clientFactory,
+  });
+  await runHarness({ repoPath, runId: planning.runId, clientFactory });
+
+  await assert.rejects(
+    runImplementationAndVerification({ repoPath, runId: planning.runId, clientFactory }),
+    /LINE_COVERAGE_REGRESSION/u,
+  );
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.phase, "implementation-failed");
+  assert.equal(
+    state.contexts.some((context) => context.role === "verifier"),
+    false,
+  );
+  assert.equal(state.artifacts.coverageFinal, undefined);
 });
 
 test("resumes the same Implementer once for a local repair and forks a fresh Verifier", async (t) => {

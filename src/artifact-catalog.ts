@@ -14,12 +14,15 @@ const validators = {
   decision: Schema.validateDecisionArtifact,
   characterization: Schema.validateStoredCharacterizationArtifact,
   characterizationCommands: Schema.validateCommandEvidenceList,
+  coverageBaseline: Schema.validateCoverageEvidence,
   harness: Schema.validateStoredHarnessArtifact,
   commands: Schema.validateCommandEvidenceList,
   implementation: Schema.validateStoredImplementationArtifact,
+  coverageFinal: Schema.validateCoverageEvidence,
   verificationCommands: Schema.validateCommandEvidenceList,
   verificationAttempt1: Schema.validateVerificationArtifact,
   repair: Schema.validateStoredImplementationArtifact,
+  coverageFinalRepair: Schema.validateCoverageEvidence,
   verificationCommandsRepair: Schema.validateCommandEvidenceList,
   verification: Schema.validateVerificationArtifact,
 };
@@ -81,10 +84,14 @@ export function validateArtifactInputKeys(key: ArtifactKey, inputs: ArtifactKey[
       case "characterizationCommands":
         valid = sameKeys(inputs, ["characterization"]);
         break;
+      case "coverageBaseline":
+        valid = sameKeys(inputs, ["characterization"]);
+        break;
       case "harness":
         valid =
           hasOnePlan(inputs, ["contract", "decision"]) ||
-          hasOnePlan(inputs, ["characterization", "contract", "decision"]);
+          hasOnePlan(inputs, ["characterization", "contract", "decision"]) ||
+          hasOnePlan(inputs, ["characterization", "contract", "coverageBaseline", "decision"]);
         break;
       case "commands":
         valid = sameKeys(inputs, ["harness"]);
@@ -92,14 +99,22 @@ export function validateArtifactInputKeys(key: ArtifactKey, inputs: ArtifactKey[
       case "implementation":
         valid = hasOnePlan(inputs, ["decision", "harness"]);
         break;
+      case "coverageFinal":
+        valid = sameKeys(inputs, ["coverageBaseline", "implementation"]);
+        break;
       case "verificationCommands":
         valid = sameKeys(inputs, ["implementation"]);
         break;
       case "verificationAttempt1":
-        valid = sameKeys(inputs, ["implementation", "verificationCommands"]);
+        valid =
+          sameKeys(inputs, ["implementation", "verificationCommands"]) ||
+          sameKeys(inputs, ["coverageFinal", "implementation", "verificationCommands"]);
         break;
       case "repair":
         valid = sameKeys(inputs, ["verificationAttempt1"]);
+        break;
+      case "coverageFinalRepair":
+        valid = sameKeys(inputs, ["coverageBaseline", "repair"]);
         break;
       case "verificationCommandsRepair":
         valid = sameKeys(inputs, ["repair"]);
@@ -107,7 +122,9 @@ export function validateArtifactInputKeys(key: ArtifactKey, inputs: ArtifactKey[
       case "verification":
         valid =
           sameKeys(inputs, ["implementation", "verificationCommands"]) ||
-          sameKeys(inputs, ["repair", "verificationCommandsRepair"]);
+          sameKeys(inputs, ["repair", "verificationCommandsRepair"]) ||
+          sameKeys(inputs, ["coverageFinal", "implementation", "verificationCommands"]) ||
+          sameKeys(inputs, ["coverageFinalRepair", "repair", "verificationCommandsRepair"]);
         break;
     }
   }

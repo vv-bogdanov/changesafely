@@ -7,7 +7,8 @@ import { ChangeSafelyError } from "./errors.js";
 export const RUN_STATE_VERSION = 1;
 export const LEGACY_ARTIFACT_VERSION = 2;
 export const PREVIOUS_ARTIFACT_VERSION = 3;
-export const ARTIFACT_VERSION = 4;
+export const HARNESS_EVIDENCE_ARTIFACT_VERSION = 4;
+export const ARTIFACT_VERSION = 5;
 
 type Mutable<Value> = Value extends readonly (infer Item)[]
   ? Mutable<Item>[]
@@ -227,7 +228,7 @@ export const decisionArtifactSchema = strictObject({
   humanDecisionReason: Type.String({ maxLength: 400 }),
 });
 
-export const harnessArtifactSchema = strictObject({
+const harnessEvidenceArtifactSchema = strictObject({
   summary: stringSchema,
   testPaths: Type.Array(stringSchema, { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT }),
   fixturePaths: stringArraySchema,
@@ -257,6 +258,37 @@ export const harnessArtifactSchema = strictObject({
     evidenceBasis: evidenceBasisListSchema,
   }),
   protectedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT }),
+});
+
+const coverageAssessmentSchema = strictObject({
+  status: stringEnum("covered", "not-applicable"),
+  detail: narrativeSchema,
+  checkIds: Type.Array(identifierSchema, { maxItems: HIGH_RISK_PATH_LIMIT * 2 }),
+  relatedRiskIds: Type.Array(identifierSchema, { maxItems: HIGH_RISK_ITEM_LIMIT }),
+  evidenceBasis: evidenceBasisListSchema,
+});
+const coverageMatrixSchema = strictObject({
+  branches: coverageAssessmentSchema,
+  stateTransitions: coverageAssessmentSchema,
+  failures: coverageAssessmentSchema,
+});
+const coverageGapSchema = strictObject({
+  path: stringSchema,
+  detail: narrativeSchema,
+  criticalBehavior: Type.Boolean(),
+  relatedRiskIds: Type.Array(identifierSchema, { maxItems: HIGH_RISK_ITEM_LIMIT }),
+  evidenceBasis: evidenceBasisListSchema,
+});
+const coveragePlanSchema = strictObject({
+  status: stringEnum("declared", "unknown"),
+  impactedPaths: Type.Array(stringSchema, { maxItems: HIGH_RISK_PATH_LIMIT }),
+  matrix: coverageMatrixSchema,
+  gaps: Type.Array(coverageGapSchema, { maxItems: HIGH_RISK_ITEM_LIMIT * 2 }),
+});
+
+export const harnessArtifactSchema = strictObject({
+  ...harnessEvidenceArtifactSchema.properties,
+  coverage: coveragePlanSchema,
 });
 
 const previousHarnessArtifactSchema = strictObject({
@@ -322,7 +354,7 @@ const contextEntrySchema = strictObject({
 
 const repositoryCheckSchema = strictObject({
   id: Type.String({ minLength: 1, maxLength: 255 }),
-  kind: stringEnum("test", "typecheck", "lint", "build"),
+  kind: stringEnum("test", "coverage", "typecheck", "lint", "build"),
   argv: Type.Array(stringSchema, { minItems: 1, maxItems: 64 }),
   cwd: Type.String({ minLength: 1, maxLength: 4096 }),
 });
@@ -403,6 +435,7 @@ const artifactEnvelopeSchema = strictObject({
     artifactVersion: Type.Union([
       Type.Literal(LEGACY_ARTIFACT_VERSION),
       Type.Literal(PREVIOUS_ARTIFACT_VERSION),
+      Type.Literal(HARNESS_EVIDENCE_ARTIFACT_VERSION),
       Type.Literal(ARTIFACT_VERSION),
     ]),
     producerVersion: Type.String({ minLength: 1, maxLength: 255 }),
@@ -462,6 +495,33 @@ const commandEvidenceListSchema = Type.Array(commandEvidenceSchema, {
   maxItems: HIGH_RISK_ITEM_LIMIT,
 });
 
+const coverageMetricSchema = strictObject({
+  covered: Type.Integer({ minimum: 0 }),
+  total: Type.Integer({ minimum: 0 }),
+  percent: Type.Number({ minimum: 0, maximum: 100 }),
+});
+const coverageEvidenceProperties = {
+  stage: stringEnum("baseline", "final"),
+  impactedPaths: Type.Array(stringSchema, { minItems: 1, maxItems: HIGH_RISK_PATH_LIMIT }),
+  matrix: coverageMatrixSchema,
+  gaps: Type.Array(coverageGapSchema, { maxItems: HIGH_RISK_ITEM_LIMIT * 2 }),
+  commands: Type.Array(commandEvidenceSchema, { maxItems: HIGH_RISK_ITEM_LIMIT }),
+};
+const coverageEvidenceSchema = Type.Union([
+  strictObject({
+    ...coverageEvidenceProperties,
+    mode: Type.Literal("numeric"),
+    lines: coverageMetricSchema,
+    branches: coverageMetricSchema,
+  }),
+  strictObject({
+    ...coverageEvidenceProperties,
+    mode: Type.Literal("matrix"),
+    lines: Type.Null(),
+    branches: Type.Null(),
+  }),
+]);
+
 const protectedHashesSchema = Type.Record(Type.String(), sha256Schema, {
   minProperties: 1,
   maxProperties: HIGH_RISK_PATH_LIMIT,
@@ -480,6 +540,12 @@ const previousStoredHarnessArtifactSchema = strictObject({
   testCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
 });
 
+const harnessEvidenceStoredHarnessArtifactSchema = strictObject({
+  ...harnessEvidenceArtifactSchema.properties,
+  protectedHashes: protectedHashesSchema,
+  testCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+});
+
 const storedCharacterizationArtifactSchema = strictObject({
   ...harnessArtifactSchema.properties,
   protectedHashes: protectedHashesSchema,
@@ -488,6 +554,12 @@ const storedCharacterizationArtifactSchema = strictObject({
 
 const previousStoredCharacterizationArtifactSchema = strictObject({
   ...previousHarnessArtifactSchema.properties,
+  protectedHashes: protectedHashesSchema,
+  characterizationCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
+});
+
+const harnessEvidenceStoredCharacterizationArtifactSchema = strictObject({
+  ...harnessEvidenceArtifactSchema.properties,
   protectedHashes: protectedHashesSchema,
   characterizationCommit: Type.String({ pattern: "^[a-f0-9]{40,64}$" }),
 });
@@ -510,6 +582,7 @@ export type RunPhase = RunState["phase"];
 export type RunStatus = RunState["status"];
 export type PlanEligibility = Mutable<Type.Static<typeof planEligibilitySchema>>;
 export type CommandEvidence = Mutable<Type.Static<typeof commandEvidenceSchema>>;
+export type CoverageEvidence = Mutable<Type.Static<typeof coverageEvidenceSchema>>;
 export type StoredHarnessArtifact = Mutable<Type.Static<typeof storedHarnessArtifactSchema>>;
 export type StoredCharacterizationArtifact = Mutable<
   Type.Static<typeof storedCharacterizationArtifactSchema>
@@ -626,6 +699,14 @@ const validatePreviousStoredHarnessArtifact = compileArtifactValidator(
 const validatePreviousStoredCharacterizationArtifact = compileArtifactValidator(
   "previous stored characterization artifact",
   previousStoredCharacterizationArtifactSchema,
+);
+const validateHarnessEvidenceStoredHarnessArtifact = compileArtifactValidator(
+  "harness evidence stored harness artifact",
+  harnessEvidenceStoredHarnessArtifactSchema,
+);
+const validateHarnessEvidenceStoredCharacterizationArtifact = compileArtifactValidator(
+  "harness evidence stored characterization artifact",
+  harnessEvidenceStoredCharacterizationArtifactSchema,
 );
 
 function migratedEvidenceBasis() {
@@ -782,12 +863,48 @@ function firstHarnessPath(harness: { testPaths: string[]; protectedPaths: string
   return path;
 }
 
+function legacyCoveragePlan(testPath: string) {
+  const assessment = (kind: string) => ({
+    status: "not-applicable" as const,
+    detail: `The previous artifact format did not record the ${kind} coverage matrix.`,
+    checkIds: [],
+    relatedRiskIds: [],
+    evidenceBasis: [
+      {
+        source: "repository" as const,
+        detail: "Coverage evidence is unavailable in the previous artifact format.",
+        references: [{ path: testPath, detail: "Previously protected harness path." }],
+      },
+    ],
+  });
+  return {
+    coverage: {
+      status: "unknown" as const,
+      impactedPaths: [],
+      matrix: {
+        branches: assessment("branch"),
+        stateTransitions: assessment("state-transition"),
+        failures: assessment("failure"),
+      },
+      gaps: [],
+    },
+  };
+}
+
 export function validatePersistedStoredHarnessArtifact(value: unknown, artifactVersion: number) {
   if (artifactVersion === ARTIFACT_VERSION) return validateStoredHarnessArtifact(value);
+  if (artifactVersion === HARNESS_EVIDENCE_ARTIFACT_VERSION) {
+    const previous = validateHarnessEvidenceStoredHarnessArtifact(value);
+    return {
+      ...previous,
+      ...legacyCoveragePlan(firstHarnessPath(previous)),
+    } as StoredHarnessArtifact;
+  }
   const previous = validatePreviousStoredHarnessArtifact(value);
   return {
     ...previous,
     ...legacyHarnessEvidence(firstHarnessPath(previous), previous.expectedBaselineOutcome),
+    ...legacyCoveragePlan(firstHarnessPath(previous)),
   } as StoredHarnessArtifact;
 }
 
@@ -796,12 +913,24 @@ export function validatePersistedStoredCharacterizationArtifact(
   artifactVersion: number,
 ) {
   if (artifactVersion === ARTIFACT_VERSION) return validateStoredCharacterizationArtifact(value);
+  if (artifactVersion === HARNESS_EVIDENCE_ARTIFACT_VERSION) {
+    const previous = validateHarnessEvidenceStoredCharacterizationArtifact(value);
+    return {
+      ...previous,
+      ...legacyCoveragePlan(firstHarnessPath(previous)),
+    } as StoredCharacterizationArtifact;
+  }
   const previous = validatePreviousStoredCharacterizationArtifact(value);
   return {
     ...previous,
     ...legacyHarnessEvidence(firstHarnessPath(previous), previous.expectedBaselineOutcome),
+    ...legacyCoveragePlan(firstHarnessPath(previous)),
   } as StoredCharacterizationArtifact;
 }
+export const validateCoverageEvidence = compileArtifactValidator(
+  "coverage evidence artifact",
+  coverageEvidenceSchema,
+);
 export const validateStoredImplementationArtifact = compileArtifactValidator(
   "stored implementation artifact",
   storedImplementationArtifactSchema,

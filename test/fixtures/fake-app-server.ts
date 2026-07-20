@@ -87,6 +87,45 @@ function noSharedState(sourcePath: string): HarnessArtifact["nonInterference"] {
   };
 }
 
+function harnessCoverage(sourcePaths: string[], checkIds: string[]): HarnessArtifact["coverage"] {
+  const sourcePath = sourcePaths[0] ?? "src/value.ts";
+  const notApplicable = (detail: string): HarnessArtifact["coverage"]["matrix"]["failures"] => ({
+    status: "not-applicable",
+    detail,
+    checkIds: [],
+    relatedRiskIds: [],
+    evidenceBasis: [
+      {
+        source: "repository",
+        detail,
+        references: [{ path: sourcePath, detail: "Local fixture boundary." }],
+      },
+    ],
+  });
+  return {
+    status: "declared",
+    impactedPaths: sourcePaths,
+    matrix: {
+      branches: {
+        status: "covered",
+        detail: "The fixture behavior path is exercised.",
+        checkIds,
+        relatedRiskIds: ["R1"],
+        evidenceBasis: [
+          {
+            source: "repository",
+            detail: "The source exposes the behavior under change.",
+            references: [{ path: sourcePath, detail: "Impacted implementation." }],
+          },
+        ],
+      },
+      stateTransitions: notApplicable("The fixture has no mutable state transition."),
+      failures: notApplicable("The fixture has no applicable failure boundary."),
+    },
+    gaps: [],
+  };
+}
+
 function characterizationPath(path: string): string {
   if (path.endsWith("_test.php")) return path.replace(/_test\.php$/u, "_characterization_test.php");
   if (/\/test_[^/]+\.py$/u.test(path)) return path.replace(/\.py$/u, "_characterization.py");
@@ -532,6 +571,10 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         expectedFailure: "No failure expected; the baseline behavior must pass.",
         checks: harnessChecks(testPaths, "characterization", sourcePath),
         nonInterference: noSharedState(sourcePath),
+        coverage: harnessCoverage(
+          target.sources.map((source) => source.path),
+          testPaths.map((_, index) => `CHK-C${index + 1}`),
+        ),
         protectedPaths: testPaths,
       });
     }
@@ -551,6 +594,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         "characterization",
         "src/value.ts",
       ),
+      coverage: harnessCoverage(["src/value.ts"], ["CHK-C1"]),
     });
     if (mode === "invalid-harness-mapping") {
       const check = characterization.checks[0];
@@ -583,6 +627,10 @@ async function structuredOutput(prompt: string): Promise<unknown> {
         expectedFailure: "Expected the requested value",
         checks: harnessChecks(testPaths, "change", sourcePath),
         nonInterference: noSharedState(sourcePath),
+        coverage: harnessCoverage(
+          target.sources.map((source) => source.path),
+          testPaths.map((_, index) => `CHK-T${index + 1}`),
+        ),
         protectedPaths: testPaths,
       });
     }
@@ -608,6 +656,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       expectedBaselineOutcome: "fail",
       expectedFailure: "Expected values to be strictly equal",
       checks: harnessChecks(["test/value.test.ts"], "change", "src/value.ts"),
+      coverage: harnessCoverage(["src/value.ts"], ["CHK-T1"]),
       protectedPaths: ["test/value.test.ts"],
     });
   }
