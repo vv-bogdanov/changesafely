@@ -658,6 +658,27 @@ test("blocks an invalid invariant mapping before the characterization commit", a
   );
 });
 
+test("lets Test Author correct one deterministic harness evidence mapping before C1", async (t) => {
+  const repoPath = await fixtureRepo(t);
+  const clientFactory = fakeAppServerFactory(repoPath, "harness-evidence-correction");
+  const planning = await runPlanning({
+    repoPath,
+    task: "Change the fixture value with corrected harness evidence.",
+    plannerCount: 1,
+    clientFactory,
+  });
+
+  const harness = await runHarness({ repoPath, runId: planning.runId, clientFactory });
+  const state = await readRunState(planning.runPath);
+  assert.equal(state.phase, "harness-complete");
+  assert.ok(harness.protectedHashes["test/value.characterization.test.ts"]);
+  assert.ok(
+    state.contexts.some((entry) =>
+      entry.role.startsWith("test-author:evidence-correction:characterization"),
+    ),
+  );
+});
+
 test("accepts language-neutral nonempty failure output for a red harness", async (t) => {
   const testScript =
     "node -e \"const fs=require('node:fs'); const harness=fs.existsSync('test/value.test.ts'); const implemented=fs.readFileSync('src/value.ts','utf8').includes('= 2'); if(harness && !implemented){console.error('custom domain mismatch');process.exit(1)}\"";

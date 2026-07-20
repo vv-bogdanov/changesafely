@@ -281,6 +281,49 @@ Judge decision:
 ${data(decision)}`;
 }
 
+export function harnessEvidenceCorrectionPrompt(input: {
+  stage: "characterization" | "change";
+  contract: ChangeContract;
+  plan: DetailedPlan;
+  decision: DecisionArtifact;
+  harness: HarnessArtifact;
+  feedback: Array<{ code: string; message: string }>;
+  allowedTestPaths: string[];
+  immutablePaths: string[];
+}): string {
+  return `${roleHeader(`test-author:evidence-correction:${input.stage}`)}
+[CHANGESAFELY_CORRECTION]
+
+Objective: correct the same ${input.stage} Harness Artifact once after deterministic evidence feedback, before it is committed.
+
+Directions: address only the listed feedback. ${HARNESS_MAPPING_DIRECTIONS} Preserve expectedBaselineOutcome, genuine observations, and existing protected evidence. Add or adjust executable test evidence only when needed to cover missing acceptance criteria, protected invariants, critical risks, non-interference, or coverage matrix links. Keep changes inside the allowed test/fixture scope.
+
+Boundary: you are the only writer and network is off. Do not change production code, manifests, lockfiles, instructions, public behavior, existing test lines, immutable paths, or secret/config files. Do not weaken assertions, use skip/only, or invent unsupported oracles.
+
+Output: return only the complete corrected Harness Artifact after any required edits.
+
+Gate feedback:
+${data(input.feedback)}
+
+Allowed test and fixture paths/prefixes:
+${data(input.allowedTestPaths)}
+
+Immutable paths:
+${data(input.immutablePaths)}
+
+Contract:
+${data(input.contract)}
+
+Selected plan:
+${data(input.plan)}
+
+Judge decision:
+${data(input.decision)}
+
+Rejected harness artifact:
+${data(input.harness)}`;
+}
+
 export function implementerPrompt(
   contract: ChangeContract,
   plan: DetailedPlan,

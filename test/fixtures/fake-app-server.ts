@@ -698,6 +698,23 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       humanDecisionReason: "",
     };
   }
+  if (prompt.includes("[CHANGESAFELY_ROLE:test-author:evidence-correction:")) {
+    const characterization = validHarness({
+      summary: "Corrected baseline-green characterization evidence mapping.",
+      checks: harnessChecks(
+        ["test/value.characterization.test.ts"],
+        "characterization",
+        "src/value.ts",
+      ),
+      coverage: harnessCoverage(["src/value.ts"], ["CHK-C1"]),
+    });
+    if (mode === "invalid-harness-mapping") {
+      const check = characterization.checks[0];
+      if (!check) throw new Error("Fixture characterization check is missing");
+      check.coveredInvariantIds = [];
+    }
+    return characterization;
+  }
   if (prompt.includes("[CHANGESAFELY_ROLE:test-author:characterization]")) {
     if (target) {
       for (const item of target.tests) {
@@ -743,7 +760,7 @@ async function structuredOutput(prompt: string): Promise<unknown> {
       ),
       coverage: harnessCoverage(["src/value.ts"], ["CHK-C1"]),
     });
-    if (mode === "invalid-harness-mapping") {
+    if (mode === "invalid-harness-mapping" || mode === "harness-evidence-correction") {
       const check = characterization.checks[0];
       if (!check) throw new Error("Fixture characterization check is missing");
       check.coveredInvariantIds = [];

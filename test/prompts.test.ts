@@ -7,6 +7,7 @@ import {
   discoveryPrompt,
   HIGH_ASSURANCE_DOCTRINE,
   harnessCorrectionPrompt,
+  harnessEvidenceCorrectionPrompt,
   harnessVerifierPrompt,
   implementerPrompt,
   judgeCorrectionPrompt,
@@ -106,6 +107,16 @@ function prompts(): Record<string, string> {
       immutablePaths: ["test/value.test.ts"],
       allowedTestScopes: ["test"],
     }),
+    "test-author:evidence-correction": harnessEvidenceCorrectionPrompt({
+      stage: "characterization",
+      contract,
+      plan,
+      decision,
+      harness: validHarness(),
+      feedback: [{ code: "MISSING_HARNESS_INVARIANT", message: "Missing INV1" }],
+      allowedTestPaths: ["test"],
+      immutablePaths: [],
+    }),
     verifier: verifierPrompt({
       contract,
       plan,
@@ -179,6 +190,10 @@ test("role prompts keep broad reasoning and narrow action boundaries", () => {
   assert.match(values.implementer ?? "", /smallest sufficient production delta/u);
   assert.match(values["verifier:harness"] ?? "", /plausible green-but-wrong/u);
   assert.match(values["test-author:correction"] ?? "", /Append new test evidence only/u);
+  assert.match(values["test-author:evidence-correction"] ?? "", /correct the same/u);
+  assert.match(values["test-author:evidence-correction"] ?? "", /coveredCriteriaIds only/u);
+  assert.match(values["test-author:evidence-correction"] ?? "", /Gate feedback/u);
+  assert.match(values["test-author:evidence-correction"] ?? "", /Immutable paths/u);
   assert.match(values.verifier ?? "", /try to falsify/u);
   assert.match(values.verifier ?? "", /plausible green-but-wrong/u);
   assert.match(values.verifier ?? "", /Reconstruct every acceptance criterion/u);

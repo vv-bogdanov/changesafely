@@ -10,7 +10,12 @@ import {
   loadVerifiedArtifact,
   type RunState,
 } from "./artifacts.js";
-import { buildCoverageEvidence, evaluateCoveragePlan, runCoverageChecks } from "./coverage.js";
+import {
+  buildCoverageEvidence,
+  type CoverageFailure,
+  evaluateCoveragePlan,
+  runCoverageChecks,
+} from "./coverage.js";
 import { evaluateContract, evaluatePlan } from "./eligibility.js";
 import { abortReason, ChangeSafelyError } from "./errors.js";
 import {
@@ -25,11 +30,12 @@ import {
   hashFiles,
   inspectBaseline,
 } from "./git.js";
-import { evaluateHarnessEvidence } from "./harness-evidence.js";
+import { evaluateHarnessEvidence, type HarnessEvidenceFailure } from "./harness-evidence.js";
 import { type ProgressReporter, reportProgress } from "./progress.js";
 import {
   changeHarnessPrompt,
   harnessCorrectionPrompt,
+  harnessEvidenceCorrectionPrompt,
   harnessVerifierPrompt,
   testAuthorPrompt,
 } from "./prompts.js";
@@ -111,6 +117,9 @@ interface HarnessCorrection {
   changedPaths: string[];
 }
 
+type HarnessGateOptions = { stage?: "characterization" | "change"; final?: boolean };
+type HarnessGateFailure = CoverageFailure | HarnessEvidenceFailure;
+
 function harnessError(code: string, message: string, exitCode: 1 | 2 = 1): ChangeSafelyError {
   return new ChangeSafelyError(code, message, {
     exitCode,
@@ -118,18 +127,18 @@ function harnessError(code: string, message: string, exitCode: 1 | 2 = 1): Chang
   });
 }
 
+function formatHarnessGateFailures(failures: HarnessGateFailure[]): string {
+  return failures.map((failure) => `${failure.code}: ${failure.message}`).join("; ");
+}
+
 function assertHarnessEvidence(
   context: HarnessContext,
   harness: HarnessArtifact,
-  options: { stage?: "characterization" | "change"; final?: boolean },
+  options: HarnessGateOptions,
 ): void {
   const failures = evaluateHarnessEvidence(context.contract, context.plan, harness, options);
   if (failures.length > 0) {
-    throw harnessError(
-      "HARNESS_EVIDENCE_INCOMPLETE",
-      failures.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
-      2,
-    );
+    throw harnessError("HARNESS_EVIDENCE_INCOMPLETE", formatHarnessGateFailures(failures), 2);
   }
 }
 
@@ -141,12 +150,19 @@ function assertCoveragePlan(context: HarnessContext, harness: HarnessArtifact): 
     context.capabilities,
   );
   if (failures.length > 0) {
-    throw harnessError(
-      "COVERAGE_EVIDENCE_INCOMPLETE",
-      failures.map((failure) => `${failure.code}: ${failure.message}`).join("; "),
-      2,
-    );
+    throw harnessError("COVERAGE_EVIDENCE_INCOMPLETE", formatHarnessGateFailures(failures), 2);
   }
+}
+
+function harnessGateFailures(
+  context: HarnessContext,
+  harness: HarnessArtifact,
+  options: HarnessGateOptions,
+): HarnessGateFailure[] {
+  return [
+    ...evaluateHarnessEvidence(context.contract, context.plan, harness, options),
+    ...evaluateCoveragePlan(context.contract, context.plan, harness, context.capabilities),
+  ];
 }
 
 function mergeNonInterference(
@@ -374,6 +390,83 @@ async function validateStageChanges(
     throw harnessError("HARNESS_SKIP_ONLY", "Harness contains forbidden skip/only usage");
   }
   return { changedPaths: paths, protectedPaths };
+}
+
+async function correctHarnessEvidenceOnce(input: {
+  context: HarnessContext;
+  client: AppServerClient;
+  threadId: string;
+  previousTurnId: string;
+  stageName: "characterization" | "change";
+  harness: HarnessArtifact;
+  feedback: HarnessGateFailure[];
+  gateOptions: HarnessGateOptions;
+  immutablePaths?: string[];
+  allowedTestPaths?: string[];
+}): Promise<{ harness: HarnessArtifact; stage: ValidatedStage; turnId: string }> {
+  const { context, client, threadId, previousTurnId, stageName, harness, feedback, gateOptions } =
+    input;
+  const { state, store, repoPath, options } = context;
+  const immutablePaths = input.immutablePaths ?? [];
+  const allowedTestPaths = input.allowedTestPaths ?? context.allowedTestPaths;
+  state.phase = "harness-correction";
+  state.nextAction = `Wait for bounded ${stageName} harness evidence correction.`;
+  await store.writeState(state);
+  await client.resumeThread({
+    threadId,
+    cwd: repoPath,
+    approvalPolicy: "never",
+    sandbox: "workspace-write",
+  });
+  const correctionRole = `test-author:evidence-correction:${stageName}`;
+  const correctionContext = startContext(
+    correctionRole,
+    threadId,
+    context.contractThreadId,
+    previousTurnId,
+  );
+  state.contexts.push(correctionContext);
+  await store.writeState(state);
+  const correctionTurn = await client.runTurn(
+    threadId,
+    harnessEvidenceCorrectionPrompt({
+      stage: stageName,
+      contract: context.contract,
+      plan: context.plan,
+      decision: context.decision,
+      harness,
+      feedback,
+      allowedTestPaths,
+      immutablePaths,
+    }),
+    {
+      cwd: repoPath,
+      sandboxPolicy: workspaceWritePolicy(repoPath),
+      effort: context.roleEffort,
+      ...(options.model ? { model: options.model } : {}),
+      outputSchema: harnessArtifactSchema,
+      role: correctionRole,
+      phase: "harness-correction",
+    },
+  );
+  completeContext(correctionContext, correctionTurn.turnId);
+  const correction = await parseRoleArtifact(correctionTurn.message, validateHarnessArtifact, {
+    role: correctionRole,
+    trace: store.trace,
+  });
+  if (correction.expectedBaselineOutcome !== harness.expectedBaselineOutcome) {
+    throw harnessError(
+      "HARNESS_CORRECTION_OUTCOME_CHANGED",
+      "Harness evidence correction changed the established baseline outcome",
+    );
+  }
+  const stage = await validateStageChanges(context, correction, immutablePaths, allowedTestPaths);
+  const normalized = { ...correction, protectedPaths: stage.protectedPaths };
+  const remaining = harnessGateFailures(context, normalized, gateOptions);
+  if (remaining.length > 0) {
+    throw harnessError("HARNESS_EVIDENCE_INCOMPLETE", formatHarnessGateFailures(remaining), 2);
+  }
+  return { harness: normalized, stage, turnId: correctionTurn.turnId };
 }
 
 async function runStageCommand(
@@ -883,12 +976,33 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
       },
     );
     completeContext(roleContext, turn.turnId);
+    let lastTestAuthorTurnId = turn.turnId;
     const characterization = await parseRoleArtifact(turn.message, validateHarnessArtifact, {
       role: "test-author:characterization",
       trace: store.trace,
     });
-    const stage = await validateStageChanges(context, characterization);
-    const normalized = { ...characterization, protectedPaths: stage.protectedPaths };
+    let stage = await validateStageChanges(context, characterization);
+    let normalized = { ...characterization, protectedPaths: stage.protectedPaths };
+    const gateOptions: HarnessGateOptions = {
+      stage: "characterization",
+      final: context.contract.changeKind === "refactor",
+    };
+    const gateFailures = harnessGateFailures(context, normalized, gateOptions);
+    if (gateFailures.length > 0) {
+      const corrected = await correctHarnessEvidenceOnce({
+        context,
+        client,
+        threadId: fork.thread.id,
+        previousTurnId: turn.turnId,
+        stageName: "characterization",
+        harness: normalized,
+        feedback: gateFailures,
+        gateOptions,
+      });
+      normalized = corrected.harness;
+      stage = corrected.stage;
+      lastTestAuthorTurnId = corrected.turnId;
+    }
     assertHarnessEvidence(context, normalized, {
       stage: "characterization",
       final: context.contract.changeKind === "refactor",
@@ -930,7 +1044,7 @@ async function createCharacterization(context: HarnessContext): Promise<HarnessR
         context,
         client,
         fork.thread.id,
-        turn.turnId,
+        lastTestAuthorTurnId,
         normalized,
         characterizationCommit,
         command,
@@ -1072,13 +1186,32 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
       },
     );
     completeContext(roleContext, turn.turnId);
+    let lastTestAuthorTurnId = turn.turnId;
     const change = await parseRoleArtifact(turn.message, validateHarnessArtifact, {
       role: "test-author:change",
       trace: store.trace,
     });
     const c1Paths = Object.keys(characterization.protectedHashes);
-    const stage = await validateStageChanges(context, change, c1Paths);
-    const normalizedChange = { ...change, protectedPaths: stage.protectedPaths };
+    let stage = await validateStageChanges(context, change, c1Paths);
+    let normalizedChange = { ...change, protectedPaths: stage.protectedPaths };
+    const gateOptions: HarnessGateOptions = { stage: "change" };
+    const gateFailures = harnessGateFailures(context, normalizedChange, gateOptions);
+    if (gateFailures.length > 0) {
+      const corrected = await correctHarnessEvidenceOnce({
+        context,
+        client,
+        threadId: characterizationContext.threadId,
+        previousTurnId: turn.turnId,
+        stageName: "change",
+        harness: normalizedChange,
+        feedback: gateFailures,
+        gateOptions,
+        immutablePaths: c1Paths,
+      });
+      normalizedChange = corrected.harness;
+      stage = corrected.stage;
+      lastTestAuthorTurnId = corrected.turnId;
+    }
     assertHarnessEvidence(context, normalizedChange, { stage: "change" });
     assertCoveragePlan(context, normalizedChange);
     const finalHarness: HarnessArtifact = {
@@ -1111,7 +1244,7 @@ async function createChangeHarness(context: HarnessContext): Promise<HarnessResu
       context,
       client,
       characterizationContext.threadId,
-      turn.turnId,
+      lastTestAuthorTurnId,
       finalHarness,
       testCommit,
       command,
