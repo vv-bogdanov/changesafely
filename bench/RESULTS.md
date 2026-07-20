@@ -4,6 +4,45 @@
 > publishable measurements. Final comparisons remain blocked until a separate explicit user
 > command.
 
+## Phase 5 contract-calibration diagnostic
+
+The Phase 5 diagnostic ran on 2026-07-20 UTC after the model-free gates for commit
+`c9d82ee4c5656fa98d0d081a029d7d66000b9aed`. It used `gpt-5.3-codex-spark`, medium effort,
+development measurement mode, Direct before ChangeSafely, one attempt per mode, and disabled
+worker network access. No final or publishable measurement was started.
+
+Raw evidence is retained locally under ignored
+`bench/results/phase5-contract-calibration/`. All six attempts were evaluated, replayed, and
+included in the generated local report
+`bench/results/phase5-contract-calibration/report.md`.
+
+| Scenario | Direct candidate | Mutants | Time / turns | Tokens | ChangeSafely candidate | Product status | Workflow depth | Time / turns | Tokens |
+| --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | ---: |
+| Double Charge v4 | `safe_success` | 4/7 | 32.2 s / 1 | 109,669 / 94,976 | `unsafe_green` | `BLOCKED` | D0/C0 only | 60.4 s / 2 | 299,972 / 242,304 |
+| Legacy Spaghetti v3 | `safe_success` | 5/8 | 36.7 s / 1 | 169,143 / 149,248 | `unsafe_green` | `BLOCKED` | D0/C0 only | 70.6 s / 2 | 321,851 / 264,192 |
+| Tenant Leak v4 | `unsafe_green` | 3/11 | 34.1 s / 1 | 64,987 / 51,456 | `unsafe_green` | `BLOCKED` | D0/C0 only | 70.8 s / 2 | 246,879 / 208,128 |
+
+`Tokens` is total/cached input. A ChangeSafely safe stop leaves the baseline snapshot unchanged, so
+the controller candidate outcome remains `unsafe_green` while the product status is `BLOCKED`.
+
+The diagnostic did not meet the utility targets:
+
+- ChangeSafely false `VERIFIED`: **0/3**.
+- ChangeSafely runs that passed Contract and reached Planner: **0/3**; target was at least 2/3.
+- ChangeSafely runs that reached the full B0/C1/T1/I1 path: **0/3**; target was at least 1/3.
+- Protected harness reference validity: **not applicable**, because no protected harness was
+  produced.
+- Block reasons were specific unresolved critical unknowns, not generic model uncertainty:
+  - Double Charge: store atomicity/thread-safety for concurrent duplicate `retryPayment` calls.
+  - Legacy Spaghetti: whether preview mode must avoid all caller-object mutation or only
+    module-shared side effects.
+  - Tenant Leak: fail-open vs fail-closed stale-cache behavior under backend/cache failure.
+
+Assessment: the structural relationship blocker is gone, but Spark still classifies locally
+testable high-risk policy questions as unresolved critical unknowns. The next smallest product
+iteration should tighten Contract calibration again: require Contract to explain why no conservative
+local harness can express the safe boundary before marking a critical unknown as unresolved.
+
 ## Phase 10 frozen high-assurance set
 
 The Phase 10 development set froze product commit
