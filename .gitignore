@@ -5,3 +5,4 @@ dist/
 *.tgz
 /STEP.md
 /bench/results/
+/.ai/mcp/mcp.json
